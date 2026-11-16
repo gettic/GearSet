@@ -1,0 +1,16 @@
+## Interface: 16001
+## Title: Gear Set
+## Notes: Browse armor sets, see them on your character, and track which pieces you have or still need. /gs or /gearset
+## Author: Gettic
+## Version: 0.0.1-beta.1
+## SavedVariables: GearSetDB
+
+Core.lua
+Theme.lua
+SetsData.lua
+Data.lua
+Owned.lua
+UI\Main.lua
+UI\SetList.lua
+UI\Preview.lua
+UI\PieceList.lua
