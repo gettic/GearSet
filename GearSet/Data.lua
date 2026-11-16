@@ -178,6 +178,150 @@ function Data:Filter(search, f)
     return out
 end
 
+-- ---------------------------------------------------------------------------
+-- Where a piece comes from: ns.SourcesData (SourcesData.lua) holds
+--   [itemID] = "type|field|field" with ";" between several sources.
+-- Parsed only when a row is opened, then cached per item (nothing at load).
+local SOURCE_MAX_LINES = 3
+local SOURCE_TYPES = {      -- letter -> Blizzard's TRANSMOG_SOURCE_n, own text key
+    b = { 1, "SRC_BOSS" }, z = { nil, "SRC_DROP" }, q = { 2, "SRC_QUEST" },
+    v = { 3, "SRC_VENDOR" }, w = { 4, "SRC_WORLD" }, c = { 6, "SRC_PROFESSION" },
+}
+local sourceCache = {}
+
+local function Trim(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
+
+-- "a|b||c" -> { "a", "b", "", "c" } (empty fields kept)
+local function SplitFields(s)
+    local out = {}
+    for f in (s .. "|"):gmatch("(.-)|") do out[#out + 1] = Trim(f) end
+    return out
+end
+
+local function TypeWord(letter)
+    local t = SOURCE_TYPES[letter]
+    local g = t[1] and _G["TRANSMOG_SOURCE_" .. t[1]]   -- z (trash/several bosses) has none
+    if type(g) == "string" and g ~= "" then return g end
+    return ns.L[t[2]]
+end
+
+local function Has(s) return s and s ~= "" end
+
+-- One source entry -> one shown line (nil if it can't be read).
+local function SourceLine(entry)
+    local f = SplitFields(entry)
+    local kind, a, b, c = f[1], f[2], f[3], f[4]
+    if kind == "x" then return Has(a) and a or nil end
+    if not SOURCE_TYPES[kind] then return nil end
+    local word = TypeWord(kind)
+    local text
+    if kind == "c" then
+        if not Has(a) then return word end
+        text = Has(b) and ("%s (%s)"):format(a, b) or a
+    elseif kind == "w" then
+        text = Has(a) and a or nil
+    else
+        if Has(a) and Has(b) then text = a .. " - " .. b
+        else text = Has(a) and a or (Has(b) and b or nil) end
+        if text and kind == "v" and Has(c) then text = ("%s (%s)"):format(text, c) end
+    end
+    return text and (word .. ": " .. text) or word
+end
+
+-- Returns shown lines (max 3 + "+N more"), all lines, and whether the source is known.
+function Data:GetSourceLines(piece)
+    local itemID = piece and piece.itemID
+    if not itemID then return { ns.L.SRC_UNKNOWN }, {}, false end
+    local hit = sourceCache[itemID]
+    if not hit then
+        local all = {}
+        local tbl = ns.SourcesData
+        local raw = type(tbl) == "table" and tbl[itemID]
+        if type(raw) == "string" then
+            for entry in raw:gmatch("[^;]+") do
+                local line = SourceLine(entry)
+                if line then all[#all + 1] = line end
+            end
+        end
+        local shown = {}
+        if #all == 0 then
+            shown[1] = ns.L.SRC_UNKNOWN
+        else
+            for i = 1, math.min(#all, SOURCE_MAX_LINES) do shown[i] = all[i] end
+            if #all > SOURCE_MAX_LINES then
+                shown[#shown + 1] = ns.L.SRC_MORE:format(#all - SOURCE_MAX_LINES)
+            end
+        end
+        hit = { shown = shown, all = all }
+        sourceCache[itemID] = hit
+    end
+    return hit.shown, hit.all, #hit.all > 0
+end
+
+-- ---------------------------------------------------------------------------
+-- "Report a mistake" link: a new GitHub issue with title and body filled in.
+local REPORT_BASE = "https://github.com/gettic/GearSet/issues/new"
+local REPORT_MAX_URL = 1900
+
+local function UrlEncode(s)
+    return (tostring(s):gsub("[^A-Za-z0-9%-_%.~]", function(ch)
+        return ("%%%02X"):format(ch:byte())
+    end))
+end
+Data.UrlEncode = UrlEncode
+
+local function AddonVersion()
+    local get = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
+    local v = get and get(ns.ADDON or "GearSet", "Version")
+    return v or "?"
+end
+
+local function ItemName(itemID)
+    local name
+    if C_Item and C_Item.GetItemNameByID then name = C_Item.GetItemNameByID(itemID) end
+    if not name and GetItemInfo then name = GetItemInfo(itemID) end
+    return name or ("item " .. itemID)
+end
+
+-- lines = the source lines to quote (all of them if nil).
+function Data:ReportURL(piece, set, lines)
+    local itemID = piece.itemID
+    local name = ItemName(itemID)
+    if not lines then
+        local shown, all = self:GetSourceLines(piece)
+        lines = #all > 0 and all or shown
+    end
+    local version, build = "?", "?"
+    if GetBuildInfo then version, build = GetBuildInfo() end
+    local locale = GetLocale and GetLocale() or "?"
+
+    local function Build(shownText)
+        local body = table.concat({
+            ("Item: %s (%d)"):format(name, itemID),
+            ("Set: %s (%s)"):format(set and set.name or "?", tostring(set and set.id or "?")),
+            "Shown: " .. shownText,
+            "Addon: " .. AddonVersion(),
+            ("Client: %s (%s) %s"):format(tostring(version), tostring(build), locale),
+            "",
+            "What is right:",
+            "",
+        }, "\n")
+        return ("%s?title=%s&body=%s&labels=wrong-source"):format(REPORT_BASE,
+            UrlEncode(("Wrong source: %s (%d)"):format(name, itemID)), UrlEncode(body))
+    end
+
+    local shownText = table.concat(lines, "; ")
+    local url = Build(shownText)
+    -- Keep the link short enough for the dialog: cut the quoted lines if needed.
+    while #url > REPORT_MAX_URL and #shownText > 0 do
+        -- an encoded letter takes 1-3 bytes, so cut a third of the excess (+10) per round
+        shownText = shownText:sub(1, math.max(0, #shownText - 10 - math.floor((#url - REPORT_MAX_URL) / 3)))
+        url = Build(shownText .. "...")
+        if #shownText == 0 then break end
+    end
+    return url
+end
+
 -- /gs check: verify the bundled table against the game's own item data.
 function Data:CheckClassic()
     local tbl = ClassicTable()

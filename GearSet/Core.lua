@@ -22,7 +22,21 @@ ns.L = {
     RESET = "Reset",
     ONLY_SET = "Only the set",
     ONLY_SET_TIP = "Take off your own gear so only the set's pieces show.",
-    PIECE_TIP = "Click to take this piece off or put it back on the preview.",
+    PIECE_TIP = "Click to show or hide where this piece comes from.",
+    SHOW_PIECE_TIP = "Tick to show this piece on the preview, untick to take it off.",
+    NO_MODEL_TIP = "This piece doesn't show on the character.",
+    -- Source lines (type words come from the game's TRANSMOG_SOURCE_n strings when it has them).
+    SRC_BOSS = "Boss Drop",
+    SRC_QUEST = "Quest",
+    SRC_VENDOR = "Vendor",
+    SRC_WORLD = "World Drop",
+    SRC_PROFESSION = "Profession",
+    SRC_DROP = "Drop",               -- z: trash or several bosses in one place
+    SRC_UNKNOWN = "Source unknown",
+    SRC_MORE = "+%d more",
+    REPORT = "Report a mistake",
+    REPORT_TIP = "Opens a link you can copy into your browser to tell us the right source.",
+    REPORT_POPUP = "Copy this link into your browser to report the mistake (needs a GitHub account):\nPress Ctrl+C to copy.",
     STATE_equipped = "Equipped",
     STATE_bags = "In bags",
     STATE_bank = "In bank",
@@ -85,6 +99,53 @@ end
 -- Register an event only if this client knows it (unknown events throw).
 function ns.SafeRegister(frame, event)
     return pcall(frame.RegisterEvent, frame, event)
+end
+
+-- "Report a mistake": Blizzard's own dialog with the link filled in and selected.
+-- The text can't be changed (typing puts the link back), so Ctrl+C always copies all of it.
+local REPORT_MAX = 2000
+-- Newer dialog code has GetEditBox()/GetOwningDialog(); older uses .editBox and the parent.
+local function ReportBox(self)
+    return (self.GetEditBox and self:GetEditBox()) or self.editBox or self.EditBox
+end
+local function BoxDialog(box)
+    return (box.GetOwningDialog and box:GetOwningDialog()) or box:GetParent()
+end
+local function KeepLink(box, data)
+    if data and box:GetText() ~= data then box:SetText(data) end
+    box:HighlightText()
+end
+
+StaticPopupDialogs["GEARSET_REPORT"] = {
+    text = ns.L.REPORT_POPUP,
+    button1 = CLOSE or "Close",
+    hasEditBox = true,
+    editBoxWidth = 360,
+    maxLetters = REPORT_MAX,
+    OnShow = function(self, data)
+        local box = ReportBox(self)
+        if not box then return end
+        if box.SetMaxLetters then box:SetMaxLetters(REPORT_MAX) end
+        box:SetText(data or self.data or "")
+        box:SetCursorPosition(0)
+        box:HighlightText()
+        box:SetFocus()
+    end,
+    EditBoxOnTextChanged = function(box, data)
+        local d = BoxDialog(box)
+        KeepLink(box, data or (d and d.data))
+    end,
+    EditBoxOnEnterPressed = function(box) local d = BoxDialog(box) if d then d:Hide() end end,
+    EditBoxOnEscapePressed = function(box) local d = BoxDialog(box) if d then d:Hide() end end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+function ns.ShowReport(url)
+    if not url then return end
+    StaticPopup_Show("GEARSET_REPORT", nil, nil, url)
 end
 
 local events = CreateFrame("Frame")

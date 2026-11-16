@@ -125,9 +125,11 @@ function Preview:ShowSet(set)
     self:Apply()
 end
 
--- Click on a piece in the right list: take it off / put it back on.
-function Preview:TogglePiece(itemID)
-    self.hidden[itemID] = not self.hidden[itemID] or nil
+-- Check box on a piece in the right list: put it on (shown) or take it off the preview.
+function Preview:SetPieceShown(itemID, shown)
+    local hidden = not shown or nil
+    if self.hidden[itemID] == hidden then return end
+    self.hidden[itemID] = hidden
     self:Apply()
 end
 

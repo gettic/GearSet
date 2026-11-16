@@ -1,3 +1,4 @@
+-- Data gathered from Warcraft Wiki (https://warcraft.wiki.gg), CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Facts only; game content (c) Blizzard Entertainment.
 -- Gear Set: bundled classic item sets (IDs only).
 -- [itemSetID] = { c = classMask, i = { itemID, ... } }
 -- c: class bits, 1 << (classID - 1); 0 = all classes. Names come from the game at runtime.

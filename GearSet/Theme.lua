@@ -31,6 +31,13 @@ Theme.art = {
         background = "Interface\\Minimap\\UI-Minimap-Background",
         highlight  = "Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight",
     },
+    -- Piece row open/closed marker (Blizzard's +/- buttons); text "+"/"-" if missing.
+    expand = {
+        plus  = "Interface\\Buttons\\UI-PlusButton-Up",
+        minus = "Interface\\Buttons\\UI-MinusButton-Up",
+        size  = 14,
+    },
+    detailBand = { 0, 0, 0, 0.35 },                     -- background of an opened piece row
 }
 
 Theme.fonts = {
@@ -52,6 +59,9 @@ Theme.colors = {
     partial  = Color("NORMAL_FONT_COLOR", 1, 0.82, 0),
     none     = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),
     text     = Color("HIGHLIGHT_FONT_COLOR", 1, 1, 1),
+    detail   = Color("LIGHTGRAY_FONT_COLOR", 0.8, 0.8, 0.8),   -- source lines
+    link     = Color("LINK_FONT_COLOR", 0.4, 0.73, 1),          -- "Report a mistake"
+    linkHover = Color("HIGHLIGHT_FONT_COLOR", 1, 1, 1),
 }
 
 -- Colour per piece state.
@@ -100,6 +110,17 @@ function Theme.SetAtlasOr(tex, atlas, file)
     end
     if file then tex:SetTexture(file) end
     return false
+end
+
+-- Set a texture file; false if this client doesn't have it (SetTexture may return
+-- true anyway, so the loaded file ID is checked too; 0/nil = missing).
+function Theme.TryTexture(tex, file)
+    if not file or tex:SetTexture(file) == false then return false end
+    if tex.GetTextureFileID then
+        local id = tex:GetTextureFileID()
+        if id == nil or id == 0 then return false end
+    end
+    return true
 end
 
 -- Background behind the character model: class art if the client has it.

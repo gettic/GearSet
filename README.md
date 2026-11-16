@@ -4,7 +4,7 @@ Keeps track of all known armor sets in the game, in one window with three parts:
 
 A World of Warcraft addon for **WoW Forever**.
 
-> **Beta:** this is a beta (v0.0.1-beta.4). It has not been fully tested in the game yet, so things may not work as they should. Please tell us what you find.
+> **Beta:** this is a beta (v0.0.1-beta.5). It has not been fully tested in the game yet, so things may not work as they should. Please tell us what you find.
 
 ## Install
 
@@ -34,6 +34,7 @@ It also works with minimap-button collector addons such as Mini Map. If one of t
 | Find a set | Type in the search box |
 | Filter | Class, armor type, "Only my class", "Hide complete sets", "Reset filters" |
 | Count | Each set shows how many of its pieces you have |
+| Order | Complete sets first, then sets you have some pieces of, then the rest. In each group, the sets you own most of come first, then A-Z |
 
 ### Preview (middle)
 
@@ -44,12 +45,23 @@ Your character wearing the chosen set.
 | Turn | Drag with the mouse |
 | Zoom | Mouse wheel |
 | Show only the set | Tick "Only the set" to take off your own gear (off by default, so your own gear shows with the set) |
-| Take a piece off | Click the piece in the list on the right; click again to put it back |
+| Take a piece off | Untick its box in the list on the right; tick it again to put it back |
 | Start over | "Reset" turns the model back, zooms out and puts all pieces back |
 
 ### Pieces (right)
 
 The set's pieces, with "Have x / y" at the top. Each piece shows where it is: Equipped, In bags, In bank, Look collected or Need.
+
+| What | How |
+|---|---|
+| Show on the preview | Tick the box by the piece. Untick it to take the piece off. Necklaces, rings and trinkets don't show on the model, so their box is greyed out |
+| See how to get it | Click the piece (the +/-). It shows up to 3 lines: boss drop, quest, vendor, profession, world drop, or "Drop: <place>" for trash or several bosses. One piece is open at a time |
+| No source | "Source unknown" means the addon has no entry for that piece |
+| Wrong source | Open the piece and click "Report a mistake" |
+
+### Report a mistake
+
+A box appears with a ready link, already selected. Press Ctrl+C, then paste the link into your browser. It opens a pre-filled GitHub issue (you need a GitHub account). Add what is right and submit. Fixes come in the next update.
 
 ## Colours
 
@@ -83,13 +95,18 @@ The addon is in the `GearSet` folder (`GearSet_Forever.toc`, interface 16001). S
 | `Core.lua` | Text, saved settings, slash commands |
 | `Theme.lua` | Every look choice (Blizzard templates, atlases, fonts, colours) in one place |
 | `SetsData.lua` | The built-in list of classic sets |
-| `Data.lua` | Builds, sorts and filters the sets; `/gs check` |
+| `SourcesData.lua` | The built-in list of where each piece comes from |
+| `Data.lua` | Builds, sorts and filters the sets; source lines and report link; `/gs check` |
 | `Owned.lua` | Works out whether you have each piece |
 | `UI\Main.lua` | The main window |
 | `UI\SetList.lua` | The set list, search and filter |
 | `UI\Preview.lua` | The character preview |
 | `UI\PieceList.lua` | The list of pieces |
 | `UI\Minimap.lua` | The minimap button and the Addon Compartment entry |
+
+## Credits
+
+Set, item and source data gathered from Warcraft Wiki (https://warcraft.wiki.gg), whose text is available under CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). World of Warcraft and its content are trademarks and property of Blizzard Entertainment.
 
 ## License
 

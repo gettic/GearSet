@@ -166,9 +166,32 @@ function SetList:Build(parent)
     self.empty:Hide()
 end
 
+-- Complete sets first, then sets with some pieces, then the rest.
+-- Inside a group: highest share owned, then most pieces owned, then name order.
+-- Counts are worked out once per set before sorting (never in the comparator).
+local function SortOwnedFirst(list)
+    local rank = {}
+    for _, s in ipairs(list) do
+        local have, total = ns.Owned:SetCount(s)
+        local group = (have >= total and 1) or (have > 0 and 2) or 3
+        rank[s] = { group, total > 0 and have / total or 0, have }
+    end
+    table.sort(list, function(a, b)
+        local ra, rb = rank[a], rank[b]
+        if ra[1] ~= rb[1] then return ra[1] < rb[1] end
+        if ra[2] ~= rb[2] then return ra[2] > rb[2] end
+        if ra[3] ~= rb[3] then return ra[3] > rb[3] end
+        if a.name ~= b.name then return a.name < b.name end
+        return a.key < b.key
+    end)
+    return list
+end
+
 function SetList:Refresh()
     if not self.box then return end
-    local list = ns.Data:Filter(ns.db.search, ns.db.filters)
+    -- Window hidden: skip the work; OnShow refreshes everything.
+    if not (ns.UI and ns.UI:IsShown()) then return end
+    local list = SortOwnedFirst(ns.Data:Filter(ns.db.search, ns.db.filters))
     local retain = ScrollBoxConstants and ScrollBoxConstants.RetainScrollPosition
     self.box:SetDataProvider(CreateDataProvider(list), retain)
     self.empty:SetShown(#list == 0)
