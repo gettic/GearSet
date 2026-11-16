@@ -82,11 +82,38 @@ local function DragUpdate(btn)
     MB:UpdatePosition()
 end
 
--- First icon the client can load (SetTexture returns false for a missing file;
--- clients that return nothing are taken as success).
+-- True when the texture really has a file now. SetTexture returns false for a bad file on
+-- some clients; on others it returns true anyway, so also ask for the loaded file ID
+-- (nil/0 = path not in this client). Clients without either check count as success.
+local function Loaded(tex, file)
+    if tex:SetTexture(file) == false then return false end
+    if tex.GetTextureFileID then
+        local id = tex:GetTextureFileID()
+        if id == nil or id == 0 then return false end
+    end
+    return true
+end
+
+-- First icon the client can load. Icons files are square with a frame, so they are
+-- cropped and drawn at 17 px; other textures (the tracking symbol) have their own
+-- transparent edges and are drawn whole, filling the 20 px background circle.
 local function SetIcon(tex)
-    for _, file in ipairs(Theme.art.minimapIcon) do
-        if tex:SetTexture(file) ~= false then return end
+    local list = Theme.art.minimapIcon
+    for i, file in ipairs(list) do
+        if i == #list or Loaded(tex, file) then
+            if i == #list then tex:SetTexture(file) end
+            tex:ClearAllPoints()
+            if file:lower():find("^interface\\icons\\") then
+                tex:SetSize(17, 17)
+                tex:SetPoint("TOPLEFT", 7, -6)
+                tex:SetTexCoord(0.05, 0.95, 0.05, 0.95)
+            else
+                tex:SetSize(20, 20)
+                tex:SetPoint("TOPLEFT", 7, -5)
+                tex:SetTexCoord(0, 1, 0, 1)
+            end
+            return
+        end
     end
 end
 
@@ -107,10 +134,7 @@ function MB:Build()
     bg:SetPoint("TOPLEFT", 7, -5)
 
     local icon = btn:CreateTexture(nil, "ARTWORK")
-    icon:SetSize(17, 17)
-    icon:SetPoint("TOPLEFT", 7, -6)
-    icon:SetTexCoord(0.05, 0.95, 0.05, 0.95)
-    SetIcon(icon)
+    SetIcon(icon)   -- also sets size, point and texcoords for the chosen file
     btn.icon = icon   -- collectors look for .icon
 
     local border = btn:CreateTexture(nil, "OVERLAY")

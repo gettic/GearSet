@@ -4,7 +4,7 @@ Keeps track of all known armor sets in the game, in one window with three parts:
 
 A World of Warcraft addon for **WoW Forever**.
 
-> **Beta:** this is a beta (v0.0.1-beta.3). It has not been fully tested in the game yet, so things may not work as they should. Please tell us what you find.
+> **Beta:** this is a beta (v0.0.1-beta.4). It has not been fully tested in the game yet, so things may not work as they should. Please tell us what you find.
 
 ## Install
 
@@ -21,7 +21,7 @@ Type `/gs` (or `/gearset`) to open or close the window. You can also click the m
 
 | What | How |
 |---|---|
-| Open or close the window | Click the button (a plate chest icon), or pick **Gear Set** in the Addon Compartment |
+| Open or close the window | Click the button (the transmog symbol), or pick **Gear Set** in the Addon Compartment |
 | Move it | Drag it around the minimap |
 | Hide or show it | `/gs minimap` |
 
