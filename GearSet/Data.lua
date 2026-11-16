@@ -1,7 +1,5 @@
--- Gear Set: set data layer. Turns every source into one shape:
---   set = { key, id, name, classMask, armor, source, pieces = { { itemID, slot, order, sourceID } } }
--- Sources (providers): "classic" = the bundled table in SetsData.lua.
--- The game's own transmog set list is added in a later step (plan step 8).
+-- Gear Set: set data layer. Turns the bundled table (SetsData.lua) into one shape:
+--   set = { key, id, name, classMask, armor, pieces = { { itemID, slot, order, sourceID } } }
 local _, ns = ...
 
 local Data = {}
@@ -27,9 +25,9 @@ local GetItemInfoInstant = (C_Item and C_Item.GetItemInfoInstant) or GetItemInfo
 local GetItemSetInfo = (C_Item and C_Item.GetItemSetInfo) or GetItemSetInfo
 local GetItemSubClassInfo = (C_Item and C_Item.GetItemSubClassInfo) or GetItemSubClassInfo
 
--- The bundled classic table (SetsData.lua). Accepts the few names it may use.
+-- The bundled classic table (SetsData.lua).
 local function ClassicTable()
-    return ns.ClassicSets or ns.SetsData or _G.GearSet_ClassicSets
+    return ns.ClassicSets
 end
 
 function Data.ClassBit(classID)
@@ -46,6 +44,8 @@ function Data.ArmorName(subclass)
 end
 
 -- One piece from an itemID; nil if this client doesn't know the item.
+-- Also returns the armor subclass (1 cloth .. 4 plate) when the piece counts for
+-- the set's armor type (armor, not a cloak); only used while building, not stored.
 local function MakePiece(itemID)
     local id, _, _, equipLoc, _, classID, subclassID = GetItemInfoInstant(itemID)
     if not id then return nil end
@@ -55,23 +55,12 @@ local function MakePiece(itemID)
         local ok, _, src = pcall(C_TransmogCollection.GetItemInfo, itemID)
         if ok then sourceID = src end
     end
-    return {
-        itemID = itemID, slot = slot[1], order = slot[2], sourceID = sourceID,
-        equipLoc = equipLoc, classID = classID, subclassID = subclassID,
-    }
-end
-
--- Most common armor type (cloth..plate) among body pieces; cloaks don't count.
-local function ArmorOf(pieces)
-    local count, best, bestN = {}, 0, 0
-    for _, p in ipairs(pieces) do
-        if p.classID == ARMOR_CLASS and p.equipLoc ~= "INVTYPE_CLOAK"
-            and p.subclassID and p.subclassID >= 1 and p.subclassID <= 4 then
-            count[p.subclassID] = (count[p.subclassID] or 0) + 1
-            if count[p.subclassID] > bestN then best, bestN = p.subclassID, count[p.subclassID] end
-        end
+    local armor
+    if classID == ARMOR_CLASS and equipLoc ~= "INVTYPE_CLOAK"
+        and subclassID and subclassID >= 1 and subclassID <= 4 then
+        armor = subclassID
     end
-    return best
+    return { itemID = itemID, slot = slot[1], order = slot[2], sourceID = sourceID }, armor
 end
 
 local function SortPieces(pieces)
@@ -87,18 +76,24 @@ local function BuildClassic(out)
     for setID, entry in pairs(tbl) do
         if type(entry) == "table" and type(entry.i) == "table" then
             local pieces = {}
+            -- Most common armor type (cloth..plate) among body pieces; cloaks don't count.
+            local count, best, bestN = {}, 0, 0
             for _, itemID in ipairs(entry.i) do
-                local p = MakePiece(itemID)
+                local p, armor = MakePiece(itemID)
                 if p then pieces[#pieces + 1] = p end
+                if armor then
+                    count[armor] = (count[armor] or 0) + 1
+                    if count[armor] > bestN then best, bestN = armor, count[armor] end
+                end
             end
             if #pieces > 0 then  -- sets whose items this client lacks are skipped
                 SortPieces(pieces)
                 local name = GetItemSetInfo and GetItemSetInfo(setID)
                 out[#out + 1] = {
-                    key = "c" .. setID, id = setID, source = "classic",
+                    key = "c" .. setID, id = setID,
                     name = (name and name ~= "") and name or ns.L.UNKNOWN_SET:format(setID),
                     classMask = tonumber(entry.c) or 0,
-                    armor = ArmorOf(pieces),
+                    armor = best,
                     pieces = pieces,
                 }
             end
@@ -259,9 +254,11 @@ function Data:GetSourceLines(piece)
 end
 
 -- ---------------------------------------------------------------------------
--- "Report a mistake" link: a new GitHub issue with title and body filled in.
+-- "Report wrong source" link (one per set): a new GitHub issue with title and body
+-- filled in. Never holds the character's name or realm.
 local REPORT_BASE = "https://github.com/gettic/GearSet/issues/new"
 local REPORT_MAX_URL = 1900
+local WIKI_SEARCH = "https://warcraft.wiki.gg/wiki/Special:Search?search="
 
 local function UrlEncode(s)
     return (tostring(s):gsub("[^A-Za-z0-9%-_%.~]", function(ch)
@@ -276,57 +273,84 @@ local function AddonVersion()
     return v or "?"
 end
 
+-- Item name if the client has it loaded, else nil.
 local function ItemName(itemID)
     local name
     if C_Item and C_Item.GetItemNameByID then name = C_Item.GetItemNameByID(itemID) end
     if not name and GetItemInfo then name = GetItemInfo(itemID) end
-    return name or ("item " .. itemID)
+    return name
 end
 
--- lines = the source lines to quote (all of them if nil).
-function Data:ReportURL(piece, set, lines)
-    local itemID = piece.itemID
-    local name = ItemName(itemID)
-    if not lines then
-        local shown, all = self:GetSourceLines(piece)
-        lines = #all > 0 and all or shown
+-- Text to search for a piece online: its name (item ID until the name has loaded).
+function Data:SearchText(piece)
+    return ItemName(piece.itemID) or tostring(piece.itemID)
+end
+
+-- Warcraft Wiki search for the piece (the site the source data comes from).
+function Data:WikiSearchURL(piece)
+    return WIKI_SEARCH .. UrlEncode(self:SearchText(piece))
+end
+
+-- One body line per piece. mode 1: name + shown lines, 2: ID + shown lines,
+-- 3: ID + the short data code (e.g. "b|Onyxia|Onyxia's Lair").
+local function PieceReportLine(piece, mode)
+    local id = piece.itemID
+    local src
+    if mode == 3 then
+        local tbl = ns.SourcesData
+        src = (type(tbl) == "table" and tbl[id]) or "?"
+    else
+        local shown, all = Data:GetSourceLines(piece)
+        src = table.concat(#all > 0 and all or shown, "; ")
     end
+    local name = mode == 1 and ItemName(id)
+    if name then return ("- %s (%d): %s"):format(name, id, src) end
+    return ("- %d: %s"):format(id, src)
+end
+
+-- Link for a whole set: every piece with its sources, addon version, client, language.
+-- Shortened step by step to stay under REPORT_MAX_URL (non-Latin names grow a lot
+-- when encoded): names -> item IDs -> data codes -> cut the list with "...".
+function Data:SetReportURL(set)
     local version, build = "?", "?"
     if GetBuildInfo then version, build = GetBuildInfo() end
     local locale = GetLocale and GetLocale() or "?"
+    local setName = set.name or "?"
+    local title = UrlEncode(("Wrong source: %s (set %s)"):format(setName, tostring(set.id)))
 
-    local function Build(shownText)
-        local body = table.concat({
-            ("Item: %s (%d)"):format(name, itemID),
-            ("Set: %s (%s)"):format(set and set.name or "?", tostring(set and set.id or "?")),
-            "Shown: " .. shownText,
-            "Addon: " .. AddonVersion(),
-            ("Client: %s (%s) %s"):format(tostring(version), tostring(build), locale),
-            "",
-            "What is right:",
-            "",
-        }, "\n")
+    local function Build(lines, cut)
+        local body = { ("Set: %s (%s)"):format(setName, tostring(set.id)) }
+        for _, l in ipairs(lines) do body[#body + 1] = l end
+        if cut then body[#body + 1] = "..." end
+        body[#body + 1] = "Addon: " .. AddonVersion()
+        body[#body + 1] = ("Client: %s (%s) %s"):format(tostring(version), tostring(build), locale)
+        body[#body + 1] = ""
+        body[#body + 1] = "What is wrong:"
+        body[#body + 1] = ""
         return ("%s?title=%s&body=%s&labels=wrong-source"):format(REPORT_BASE,
-            UrlEncode(("Wrong source: %s (%d)"):format(name, itemID)), UrlEncode(body))
+            title, UrlEncode(table.concat(body, "\n")))
     end
 
-    local shownText = table.concat(lines, "; ")
-    local url = Build(shownText)
-    -- Keep the link short enough for the dialog: cut the quoted lines if needed.
-    while #url > REPORT_MAX_URL and #shownText > 0 do
-        -- an encoded letter takes 1-3 bytes, so cut a third of the excess (+10) per round
-        shownText = shownText:sub(1, math.max(0, #shownText - 10 - math.floor((#url - REPORT_MAX_URL) / 3)))
-        url = Build(shownText .. "...")
-        if #shownText == 0 then break end
+    local url, lines
+    for mode = 1, 3 do
+        lines = {}
+        for _, p in ipairs(set.pieces) do lines[#lines + 1] = PieceReportLine(p, mode) end
+        url = Build(lines)
+        if #url <= REPORT_MAX_URL then return url end
+    end
+    while #lines > 0 and #url > REPORT_MAX_URL do
+        lines[#lines] = nil
+        url = Build(lines, true)
     end
     return url
 end
 
 -- /gs check: verify the bundled table against the game's own item data.
 function Data:CheckClassic()
+    local L = ns.L
     local tbl = ClassicTable()
     if type(tbl) ~= "table" then
-        ns.Print("No built-in set list found (SetsData.lua).")
+        ns.Print(L.CHECK_NO_LIST)
         return
     end
     local problems, setsN, itemsN, pending = 0, 0, 0, 0
@@ -338,27 +362,27 @@ function Data:CheckClassic()
     local function Finish()
         if done then return end
         done = true
-        ns.Print(("Check done: %d sets, %d items, %d problems%s."):format(
-            setsN, itemsN, problems, problems > 40 and " (first 40 shown)" or ""))
+        ns.Print(L.CHECK_DONE:format(setsN, itemsN, problems, problems > 40 and L.CHECK_FIRST_40 or ""))
     end
     for setID, entry in pairs(tbl) do
         setsN = setsN + 1
         local name = GetItemSetInfo and GetItemSetInfo(setID)
-        if not name or name == "" then Report(("Set %d: the game has no item set with this ID."):format(setID)) end
+        if not name or name == "" then Report(L.CHECK_NO_SET:format(setID)) end
         if type(entry) ~= "table" or type(entry.i) ~= "table" then
-            Report(("Set %d: bad entry."):format(setID))
+            Report(L.CHECK_BAD_ENTRY:format(setID))
         else
             for _, itemID in ipairs(entry.i) do
                 itemsN = itemsN + 1
                 if not GetItemInfoInstant(itemID) then
-                    Report(("Set %d: item %d is unknown to this client."):format(setID, itemID))
+                    Report(L.CHECK_NO_ITEM:format(setID, itemID))
                 else
                     pending = pending + 1
                     local item = Item:CreateFromItemID(itemID)
                     item:ContinueOnItemLoad(function()
                         local itemSetID = select(16, C_Item.GetItemInfo(itemID))
                         if itemSetID ~= setID then
-                            Report(("Set %d: item %d belongs to set %s."):format(setID, itemID, tostring(itemSetID)))
+                            Report(L.CHECK_WRONG_SET:format(setID, itemID,
+                                (itemSetID and itemSetID ~= 0) and tostring(itemSetID) or L.CHECK_NONE))
                         end
                         pending = pending - 1
                         if pending == 0 then Finish() end
@@ -369,7 +393,7 @@ function Data:CheckClassic()
     end
     if pending == 0 then Finish() else
         C_Timer.After(15, function()
-            if not done and pending > 0 then Report(("%d items did not load in time."):format(pending)) end
+            if not done and pending > 0 then Report(L.CHECK_SLOW:format(pending)) end
             Finish()
         end)
     end

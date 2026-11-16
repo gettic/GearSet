@@ -30,6 +30,18 @@ local function RestorePosition(frame)
     end
 end
 
+-- Shrink the window (never grow it) so it fits small or 4:3 screens at a large UI scale.
+local FIT_MARGIN = 20
+local function FitToScreen(frame)
+    local w, h = frame:GetWidth(), frame:GetHeight()
+    local sw, sh = UIParent:GetWidth(), UIParent:GetHeight()
+    if not (w and h and sw and sh) or w <= 0 or h <= 0 then return end
+    local scale = math.min(1, sw / (w + FIT_MARGIN), sh / (h + FIT_MARGIN))
+    if scale > 0 and math.abs(frame:GetScale() - scale) > 0.001 then
+        frame:SetScale(scale)
+    end
+end
+
 local function MakeInset(parent, x1, x2)
     local inset = Theme.CreateFrame("Frame", nil, parent, "inset")
     inset:SetPoint("TOPLEFT", parent, "TOPLEFT", x1, TOP)
@@ -76,10 +88,11 @@ function UI:Build()
     self.right = MakeInset(f, 4 + LEFT_W + GAP + MID_W + GAP, nil)
 
     ns.SetList:Build(self.left)
-    ns.Preview:Build(self.mid)
+    ns.Preview:Build(self.mid, f)  -- its Reset / "Only the set" go in the window's bottom bar
     ns.PieceList:Build(self.right)
 
     f:SetScript("OnShow", function()
+        FitToScreen(f)
         if f.SetPortraitToUnit then f:SetPortraitToUnit("player") end
         ns.Owned:Invalidate()
         UI:RefreshAll()

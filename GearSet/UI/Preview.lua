@@ -9,7 +9,8 @@ Preview.hidden = {}     -- [itemID] = true for pieces taken off by clicking them
 
 local MAX_ZOOM = 0.9
 
-function Preview:Build(parent)
+-- parent: the middle inset; bar: the window (its bottom bar holds Reset / "Only the set").
+function Preview:Build(parent, bar)
     local bg = parent:CreateTexture(nil, "BACKGROUND", nil, 1)
     bg:SetPoint("TOPLEFT", 3, -3)
     bg:SetPoint("BOTTOMRIGHT", -3, 3)
@@ -18,7 +19,7 @@ function Preview:Build(parent)
 
     local model = CreateFrame("DressUpModel", nil, parent)
     model:SetPoint("TOPLEFT", 4, -4)
-    model:SetPoint("BOTTOMRIGHT", -4, 40)
+    model:SetPoint("BOTTOMRIGHT", -4, 4)   -- full inset: the controls sit in the window's bottom bar
     model:SetAutoDress(true)
     model:SetUnit("player")
     self.model = model
@@ -45,26 +46,54 @@ function Preview:Build(parent)
     end)
     model:SetScript("OnModelLoaded", function() Preview:OnModelLoaded() end)
 
-    -- Bottom bar: Reset button and "Only the set" check box.
-    local reset = Theme.CreateFrame("Button", nil, parent, "button")
-    reset:SetSize(90, 22)
-    reset:SetPoint("BOTTOMLEFT", 10, 10)
+    -- Window bottom bar (under this panel, like the dressing room): Reset button
+    -- on the left, "Only the set" check box on the right, placed from its label.
+    bar = bar or parent:GetParent() or parent
+    local reset = Theme.CreateFrame("Button", nil, bar, "button")
+    reset:SetSize(100, 22)
+    reset:SetPoint("TOPLEFT", parent, "BOTTOMLEFT", 0, 0)
     reset:SetText(L.RESET)
+    local fs = reset.GetFontString and reset:GetFontString()
+    if fs and fs:GetStringWidth() + 20 > 100 then
+        reset:SetWidth(math.ceil(fs:GetStringWidth()) + 20)
+    end
     reset:SetScript("OnClick", function()
         PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
         Preview:Reset()
     end)
+    reset:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText(L.RESET, 1, 1, 1)
+        local tip = L.RESET_TIP
+        if tip then
+            if Theme.AddHint then
+                Theme.AddHint(GameTooltip, tip)
+            else
+                GameTooltip:AddLine(tip, nil, nil, nil, true)
+            end
+        end
+        GameTooltip:Show()
+    end)
+    reset:SetScript("OnLeave", GameTooltip_Hide)
+    self.reset = reset
 
-    local check = Theme.CreateFrame("CheckButton", nil, parent, "check")
-    check:SetSize(26, 26)
-    check:SetPoint("BOTTOMRIGHT", -110, 8)
+    local size = Theme.sizes and Theme.sizes.check or 24
+    local check = Theme.CreateFrame("CheckButton", nil, bar, "check")
+    check:SetSize(size, size)
     local text = check.Text or check.text
     if not text then
         text = check:CreateFontString(nil, "OVERLAY")
-        text:SetPoint("LEFT", check, "RIGHT", 2, 0)
     end
+    text:ClearAllPoints()
+    text:SetPoint("LEFT", check, "RIGHT", 2, 0)
     Theme.Font(text, "small")
     text:SetText(L.ONLY_SET)
+    local labelW = math.ceil(text:GetStringWidth() or 0)
+    if labelW <= 0 then labelW = 80 end
+    -- Right edge of the label lines up with the panel's right edge (4 px in);
+    -- vertically centred on the Reset button.
+    check:SetPoint("RIGHT", parent, "BOTTOMRIGHT", -(labelW + 2 + 4), -11)
+    check:SetHitRectInsets(0, -(labelW + 2), 0, 0)  -- the label is clickable too
     check:SetChecked(ns.db.onlySet)
     check:SetScript("OnClick", function(self)
         ns.db.onlySet = self:GetChecked() and true or false

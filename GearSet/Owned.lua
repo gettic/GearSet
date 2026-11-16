@@ -75,6 +75,17 @@ function Owned:SetCount(set)
     return have, #set.pieces
 end
 
+-- How many of a set's pieces are in each state: { equipped = n, bags = n, bank = n,
+-- look = n, need = n } (uses the same per-item cache, so cheap after SetCount).
+function Owned:SetBreakdown(set)
+    local out = { equipped = 0, bags = 0, bank = 0, look = 0, need = 0 }
+    for _, p in ipairs(set.pieces) do
+        local s = self:GetState(p)
+        out[s] = (out[s] or 0) + 1
+    end
+    return out
+end
+
 function Owned:Invalidate()
     wipe(stateCache)
     wipe(countCache)

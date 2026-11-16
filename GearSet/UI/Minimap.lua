@@ -65,10 +65,11 @@ end
 -- Tooltip, shared by the button and the compartment entry.
 local function ShowTooltip(owner, anchor)
     GameTooltip:SetOwner(owner, anchor or "ANCHOR_LEFT")
-    GameTooltip:SetText(L.TITLE, 1, 1, 1)
-    GameTooltip:AddLine(L.MINIMAP_TIP_CLICK, nil, nil, nil, true)
+    GameTooltip:SetText(L.TITLE, Theme.colors.title:GetRGB())
+    Theme.AddHint(GameTooltip, L.MINIMAP_TIP_CLICK)
     if owner == MB.button then
-        GameTooltip:AddLine(L.MINIMAP_TIP_DRAG, nil, nil, nil, true)
+        Theme.AddHint(GameTooltip, L.MINIMAP_TIP_DRAG)
+        Theme.AddHint(GameTooltip, L.MINIMAP_TIP_HIDE)
     end
     GameTooltip:Show()
 end
@@ -82,25 +83,13 @@ local function DragUpdate(btn)
     MB:UpdatePosition()
 end
 
--- True when the texture really has a file now. SetTexture returns false for a bad file on
--- some clients; on others it returns true anyway, so also ask for the loaded file ID
--- (nil/0 = path not in this client). Clients without either check count as success.
-local function Loaded(tex, file)
-    if tex:SetTexture(file) == false then return false end
-    if tex.GetTextureFileID then
-        local id = tex:GetTextureFileID()
-        if id == nil or id == 0 then return false end
-    end
-    return true
-end
-
 -- First icon the client can load. Icons files are square with a frame, so they are
 -- cropped and drawn at 17 px; other textures (the tracking symbol) have their own
 -- transparent edges and are drawn whole, filling the 20 px background circle.
 local function SetIcon(tex)
     local list = Theme.art.minimapIcon
     for i, file in ipairs(list) do
-        if i == #list or Loaded(tex, file) then
+        if i == #list or Theme.TryTexture(tex, file) then
             if i == #list then tex:SetTexture(file) end
             tex:ClearAllPoints()
             if file:lower():find("^interface\\icons\\") then
@@ -124,7 +113,7 @@ function MB:Build()
     btn:SetSize(31, 31)
     btn:SetFrameStrata("MEDIUM")
     btn:SetFrameLevel(Minimap:GetFrameLevel() + 8)
-    btn:RegisterForClicks("LeftButtonUp")
+    btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     btn:RegisterForDrag("LeftButton")
     btn:SetHighlightTexture(art.highlight)
 
@@ -142,7 +131,13 @@ function MB:Build()
     border:SetSize(53, 53)
     border:SetPoint("TOPLEFT")
 
-    btn:SetScript("OnClick", function() ns.UI:Toggle() end)
+    btn:SetScript("OnClick", function(_, mouse)
+        if mouse == "RightButton" then
+            MB:Hide()
+        else
+            ns.UI:Toggle()
+        end
+    end)
     btn:SetScript("OnEnter", function(self) ShowTooltip(self) end)
     btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
     btn:SetScript("OnDragStart", function(self)
@@ -179,6 +174,14 @@ function MB:ToggleShown()
     ns.db.minimap.hide = not ns.db.minimap.hide
     self:Refresh()
     return not ns.db.minimap.hide
+end
+
+-- Right-click on the button: hide it and say in chat how to bring it back (/gs minimap).
+function MB:Hide()
+    GameTooltip:Hide()
+    ns.db.minimap.hide = true
+    self:Refresh()
+    ns.Print(L.MINIMAP_HIDDEN)
 end
 
 -- Addon Compartment (named in the .toc). Globals because the .toc refers to them.

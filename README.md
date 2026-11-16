@@ -4,7 +4,7 @@ Keeps track of all known armor sets in the game, in one window with three parts:
 
 A World of Warcraft addon for **WoW Forever**.
 
-> **Beta:** this is a beta (v0.0.1-beta.5). It has not been fully tested in the game yet, so things may not work as they should. Please tell us what you find.
+> **Beta:** this is a beta (v0.0.1-beta.6). It has not been fully tested in the game yet, so things may not work as they should. Please tell us what you find.
 
 ## Install
 
@@ -15,7 +15,7 @@ A World of Warcraft addon for **WoW Forever**.
 
 ## How to use
 
-Type `/gs` (or `/gearset`) to open or close the window. You can also click the minimap button, or pick **Gear Set** in the Addon Compartment (the addons button by the minimap). Esc closes the window. You can drag the window to move it.
+Type `/gs` (or `/gearset`) to open or close the window. You can also click the minimap button, or pick **Gear Set** in the Addon Compartment (the addons button by the minimap). Esc closes the window. You can drag the window to move it. On a small screen or at a large UI scale, it shrinks to fit. You can also set a key in Key Bindings > Gear Set > "Open/close Gear Set" (no key is set by default).
 
 ### Minimap button
 
@@ -23,7 +23,8 @@ Type `/gs` (or `/gearset`) to open or close the window. You can also click the m
 |---|---|
 | Open or close the window | Click the button (the transmog symbol), or pick **Gear Set** in the Addon Compartment |
 | Move it | Drag it around the minimap |
-| Hide or show it | `/gs minimap` |
+| Hide it | Right-click the button |
+| Show or hide it | /gs minimap |
 
 It also works with minimap-button collector addons such as Mini Map. If one of them holds the button, it moves the button, not Gear Set.
 
@@ -32,9 +33,10 @@ It also works with minimap-button collector addons such as Mini Map. If one of t
 | What | How |
 |---|---|
 | Find a set | Type in the search box |
-| Filter | Class, armor type, "Only my class", "Hide complete sets", "Reset filters" |
+| Filter | Class, armor type, "Only my class" (on by default for new installs), "Hide complete sets", "Reset filters" |
+| No match | The list says which search and filters are on, with a button to clear them |
 | Count | Each set shows how many of its pieces you have |
-| Order | Complete sets first, then sets you have some pieces of, then the rest. In each group, the sets you own most of come first, then A-Z |
+| Order | Complete sets first, then sets you have some pieces of, then the rest. In each group, the sets you own most of come first, then A-Z. The chosen set stays in view when the order changes |
 
 ### Preview (middle)
 
@@ -44,34 +46,36 @@ Your character wearing the chosen set.
 |---|---|
 | Turn | Drag with the mouse |
 | Zoom | Mouse wheel |
-| Show only the set | Tick "Only the set" to take off your own gear (off by default, so your own gear shows with the set) |
+| Show only the set | Tick "Only the set" (bottom bar) to take off your own gear (off by default, so your own gear shows with the set) |
 | Take a piece off | Untick its box in the list on the right; tick it again to put it back |
-| Start over | "Reset" turns the model back, zooms out and puts all pieces back |
+| Start over | "Reset view" (bottom bar) turns the model back, zooms out and puts all pieces back |
 
 ### Pieces (right)
 
-The set's pieces, with "Have x / y" at the top. Each piece shows where it is: Equipped, In bags, In bank, Look collected or Need.
+The set's pieces. At the top: the set name (arrows beside it go to the previous or next set), its armor type and classes, "Have x / y", and "Report wrong source". Hover "Have x / y" to see how many pieces are equipped, in your bags, in the bank, or only collected as an appearance. Each piece shows where it is: Equipped, In bags, In bank, Appearance or Need.
 
 | What | How |
 |---|---|
 | Show on the preview | Tick the box by the piece. Untick it to take the piece off. Necklaces, rings and trinkets don't show on the model, so their box is greyed out |
 | See how to get it | Click the piece (the +/-). It shows up to 3 lines: boss drop, quest, vendor, profession, world drop, or "Drop: <place>" for trash or several bosses. One piece is open at a time |
+| Look it up | Open a piece and click "Copy name", then press Ctrl+C. "Wiki link" in that box gives a Warcraft Wiki search link instead |
+| Link in chat | Shift-click a piece |
+| Try it on | Ctrl-click a piece to open the dressing room |
 | No source | "Source unknown" means the addon has no entry for that piece |
-| Wrong source | Open the piece and click "Report a mistake" |
+| Wrong source | Click "Report wrong source" next to "Have x / y" |
 
-### Report a mistake
+### Report wrong source
 
-A box appears with a ready link, already selected. Press Ctrl+C, then paste the link into your browser. It opens a pre-filled GitHub issue (you need a GitHub account). Add what is right and submit. Fixes come in the next update.
+One link for the whole set. A box appears with a ready link, already selected. Press Ctrl+C, then paste the link into your browser. It opens a pre-filled GitHub issue (you need a GitHub account) that lists every piece of the set and what the addon shows for it. Add what is right and submit. Fixes come in the next update.
 
 ## Colours
 
 | Colour | Pieces (right) | Sets (left) and "Have x / y" |
 |---|---|---|
 | Green | You have it: equipped, in bags or in bank | You have every piece |
-| Blue | Look collected (counts as have) | - |
+| Blue | Appearance collected (counts as have) | - |
 | Gold | - | You have some pieces |
-| Red | You still need it | "Have x / y" when you have none |
-| Grey | - | Set list: you have none |
+| Grey | You still need it | You have none |
 
 ## Commands
 
