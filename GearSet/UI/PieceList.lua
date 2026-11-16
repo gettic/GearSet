@@ -2,9 +2,9 @@
 -- Header: set name (prev/next arrows), armor type + classes, "Have x / y" (tooltip
 -- with the breakdown), a "Set bonuses" link (tooltip) and one "Report wrong source" link.
 -- Each row: check box (piece shown on the preview), icon with quality frame, name
--- (up to 2 lines), state, +/- marker. Clicking a row opens it (one at a time) to show
--- where the piece comes from and a "Copy name" button. Shift/Ctrl-click = Blizzard's
--- usual item clicks (link in chat box, dressing room).
+-- (up to 2 lines), state, arrow. Clicking a row opens the piece's guide page
+-- (UI\GuidePage.lua) in place of the list; Back / Esc / right-click return here.
+-- Shift/Ctrl-click = Blizzard's usual item clicks (link in chat box, dressing room).
 local _, ns = ...
 local Theme, L = ns.Theme, ns.L
 
@@ -12,10 +12,8 @@ local PieceList = {}
 ns.PieceList = PieceList
 
 local ROW_H = 36
-local BAND_LEFT = 28        -- detail band starts under the icon
-local BAND_PAD = 6
-local COPY_H = 20
-local INFO_TOP = -32        -- header: title at -10, armor/classes, then "Have x / y"
+local ICON_LEFT = 28        -- icon starts right of the check box
+local INFO_TOP = -32       -- header: title at -10, armor/classes, then "Have x / y"
 local COUNT_TOP = -50
 local LIST_TOP = -74        -- where the scroll list starts below the header
 
@@ -120,24 +118,11 @@ local function ShowCopy(kind, text, alt)
     elseif ns.ShowReport then ns.ShowReport(text) end
 end
 
--- +/- marker: Blizzard's button art, or a plain "+"/"-" if the client lacks it.
-local function SetMarker(row, open)
-    local art = Theme.art.expand
-    if Theme.TryTexture(row.marker, open and art.minus or art.plus) then
-        row.marker:Show()
-        row.markerText:Hide()
-    else
-        row.marker:Hide()
-        row.markerText:SetText(open and "-" or "+")
-        row.markerText:Show()
-    end
-end
-
 local function BuildRow(row)
     row.gsInit = true
     row:RegisterForClicks("LeftButtonUp")
 
-    -- Open row: the select art behind the 36 px top part (like the chosen set).
+    -- Last piece looked at: the select art (like the chosen set).
     row.sel = row:CreateTexture(nil, "BACKGROUND", nil, 1)
     row.sel:SetPoint("TOPLEFT")
     row.sel:SetPoint("TOPRIGHT")
@@ -173,20 +158,26 @@ local function BuildRow(row)
 
     row.icon = row:CreateTexture(nil, "ARTWORK")
     row.icon:SetSize(30, 30)
-    row.icon:SetPoint("TOPLEFT", BAND_LEFT, -3)
+    row.icon:SetPoint("TOPLEFT", ICON_LEFT, -3)
     row.icon:SetTexCoord(unpack(Theme.art.iconCrop or ICON_CROP))
     row.border = row:CreateTexture(nil, "OVERLAY")
     row.border:SetAllPoints(row.icon)
     row.hasBorder = Theme.TryTexture(row.border, ArtFile(Theme.art.iconBorder))
     row.border:Hide()
 
-    local size = Theme.art.expand.size
+    -- Arrow at the right end: the row opens a page. ">" if the art is missing.
+    local arrow = Theme.art.rowArrow or {}
+    local size = arrow.size or 12
     row.marker = row:CreateTexture(nil, "ARTWORK")
     row.marker:SetSize(size, size)
     row.marker:SetPoint("RIGHT", row, "TOPRIGHT", -6, -ROW_H / 2)
-    row.markerText = row:CreateFontString(nil, "OVERLAY")
-    Theme.Font(row.markerText, "normal")
-    row.markerText:SetPoint("CENTER", row.marker, "CENTER")
+    if not Theme.TryTexture(row.marker, arrow.file) then
+        row.marker:Hide()
+        local t = row:CreateFontString(nil, "OVERLAY")
+        Theme.Font(t, "normal")
+        t:SetPoint("CENTER", row.marker, "CENTER")
+        t:SetText(">")
+    end
 
     row.state = row:CreateFontString(nil, "OVERLAY")
     Theme.Font(row.state, "small")
@@ -201,37 +192,6 @@ local function BuildRow(row)
     row.name:SetWordWrap(true)
     if row.name.SetMaxLines then row.name:SetMaxLines(2) end
 
-    -- Detail band (only while the row is open).
-    row.band = row:CreateTexture(nil, "BACKGROUND")
-    row.band:SetPoint("TOPLEFT", BAND_LEFT, -ROW_H)
-    row.band:SetPoint("BOTTOMRIGHT", -4, 2)
-    row.band:SetColorTexture(unpack(Theme.art.detailBand))
-    row.detail = row:CreateFontString(nil, "OVERLAY")
-    Theme.Font(row.detail, "small")
-    row.detail:SetPoint("TOPLEFT", row.band, "TOPLEFT", 8, -BAND_PAD)
-    row.detail:SetPoint("TOPRIGHT", row.band, "TOPRIGHT", -8, -BAND_PAD)
-    row.detail:SetJustifyH("LEFT")
-    row.detail:SetWordWrap(true)
-    if row.detail.SetNonSpaceWrap then row.detail:SetNonSpaceWrap(true) end
-    row.detail:SetTextColor(Theme.colors.detail:GetRGB())
-
-    -- "Copy name": the piece's name (or a wiki search link) ready for Ctrl+C.
-    local copy = Theme.CreateFrame("Button", nil, row, "button")
-    copy:SetHeight(COPY_H)
-    copy:SetPoint("TOPLEFT", row.detail, "BOTTOMLEFT", 0, -6)
-    copy:SetText(L.COPY)
-    local cfs = copy.GetFontString and copy:GetFontString()
-    copy:SetWidth(math.max(80, (cfs and cfs:GetStringWidth() or 60) + 24))
-    copy:SetScript("OnClick", function()
-        local p = row.piece
-        if not p then return end
-        PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
-        ShowCopy("name", ns.Data:SearchText(p), ns.Data:WikiSearchURL(p))
-    end)
-    copy:SetScript("OnEnter", function(self) SimpleTip(self, L.COPY_TIP) end)
-    copy:SetScript("OnLeave", GameTooltip_Hide)
-    row.copy = copy
-
     row:SetScript("OnClick", function(self)
         local p = self.piece
         if not p then return end
@@ -242,9 +202,9 @@ local function BuildRow(row)
             if link and HandleModifiedItemClick then HandleModifiedItemClick(link) end
             return
         end
-        local open = PieceList.openItem ~= p.itemID
-        PlaySound(open and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON or SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF)
-        PieceList:SetOpen(open and p.itemID or nil)
+        PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+        GameTooltip_Hide()
+        PieceList:ShowGuide(p)
     end)
     row:SetScript("OnEnter", PieceTooltip)
     row:SetScript("OnLeave", GameTooltip_Hide)
@@ -292,59 +252,35 @@ local function InitRow(row, piece)
     row.state:SetText(L["STATE_" .. state])
     row.state:SetTextColor(StateColor(state):GetRGB())
 
-    local open = PieceList.openItem == itemID
-    SetMarker(row, open)
-    row.sel:SetShown(open)
-    if open then
-        local shown = ns.Data:GetSourceLines(piece)
-        row.detail:SetText(table.concat(shown, "\n"))
-        row.band:Show()
-        row.detail:Show()
-        row.copy:Show()
-        PieceList:CheckHeight(itemID, row.detail:GetStringHeight())
-    else
-        row.band:Hide()
-        row.detail:Hide()
-        row.copy:Hide()
-    end
+    row.sel:SetShown(PieceList.lastItem == itemID)
 end
 
 -- ---------------------------------------------------------------------------
--- Open row height. The lines are measured with a hidden text before the row is
--- drawn; the drawn text is checked again and the list re-laid out once if it is taller.
-PieceList.extraH = {}   -- [itemID] = drawn text height when it beat the measurement
-
-function PieceList:DetailHeight(piece)
-    local shown = ns.Data:GetSourceLines(piece)
-    local m = self.measure
-    local width = (self.box:GetWidth() or 0) - BAND_LEFT - 4 - 16
-    if width < 100 then width = 250 end
-    m:SetWidth(width)
-    m:SetText(table.concat(shown, "\n"))
-    local h = m:GetStringHeight() or 0
-    if h <= 0 then h = #shown * 12 end
-    local fix = self.extraH[piece.itemID]
-    if fix and fix > h then h = fix end
-    self.measuredH = h
-    return BAND_PAD + h + 6 + COPY_H + BAND_PAD
+-- Guide page: shown in place of the header and list (same right panel).
+function PieceList:ShowGuide(piece)
+    if not (piece and ns.GuidePage and ns.GuidePage.page) then return end
+    self.root:Hide()
+    ns.GuidePage:Open(piece, self.set)
 end
 
-function PieceList:CheckHeight(itemID, drawn)
-    if not drawn or not self.measuredH or drawn <= self.measuredH + 0.5 then return end
-    if (self.extraH[itemID] or 0) >= drawn then return end
-    self.extraH[itemID] = drawn
-    C_Timer.After(0, function() PieceList:Refresh() end)
+function PieceList:HideGuide()
+    if ns.GuidePage and ns.GuidePage:IsOpen() then ns.GuidePage:Back()
+    elseif self.root then self.root:Show() end
 end
 
--- Open one row (itemID) or close all (nil); the list re-lays out.
-function PieceList:SetOpen(itemID)
-    self.openItem = itemID
+-- Called by GuidePage when its page hides (Back, Esc, right-click, window closed):
+-- the list comes back, the piece last looked at is marked and scrolled into view.
+function PieceList:OnGuideClosed()
+    if not self.root then return end
+    local p = ns.GuidePage and ns.GuidePage.piece
+    self.lastItem = p and p.itemID or nil
+    self.root:Show()
     self:Refresh()
-    if itemID and self.set and self.box.ScrollToElementData then
-        for _, p in ipairs(self.set.pieces) do
-            if p.itemID == itemID then
+    if p and self.set and self.box.ScrollToElementData then
+        for _, sp in ipairs(self.set.pieces) do
+            if sp == p then
                 local align = ScrollBoxConstants and ScrollBoxConstants.AlignNearest
-                pcall(self.box.ScrollToElementData, self.box, p, align)
+                pcall(self.box.ScrollToElementData, self.box, sp, align)
                 break
             end
         end
@@ -469,7 +405,13 @@ local function ArrowButton(parent, dir, tip)
     return b
 end
 
-function PieceList:Build(parent)
+function PieceList:Build(panel)
+    -- Header and list live in one frame, so the guide page can stand in for both.
+    local parent = CreateFrame("Frame", nil, panel)
+    parent:SetAllPoints(panel)
+    self.root = parent
+    if ns.GuidePage then ns.GuidePage:Build(panel) end
+
     local nextB = ArrowButton(parent, "next", L.NEXT_SET)
     nextB:SetPoint("TOPRIGHT", -8, -6)
     local prevB = ArrowButton(parent, "prev", L.PREV_SET)
@@ -532,27 +474,8 @@ function PieceList:Build(parent)
     bar:SetPoint("BOTTOMLEFT", box, "BOTTOMRIGHT", 4, 2)
     self.box = box
 
-    -- Invisible text used to measure the open row's lines.
-    local measure = parent:CreateFontString(nil, "OVERLAY")
-    Theme.Font(measure, "small")
-    measure:SetPoint("TOPLEFT")
-    measure:SetJustifyH("LEFT")
-    measure:SetWordWrap(true)
-    if measure.SetNonSpaceWrap then measure:SetNonSpaceWrap(true) end
-    measure:SetAlpha(0)
-    self.measure = measure
-
     local view = CreateScrollBoxListLinearView()
-    if view.SetElementExtentCalculator then
-        view:SetElementExtentCalculator(function(_, piece)
-            if piece and piece.itemID == PieceList.openItem then
-                return ROW_H + PieceList:DetailHeight(piece)
-            end
-            return ROW_H
-        end)
-    else
-        view:SetElementExtent(ROW_H)
-    end
+    view:SetElementExtent(ROW_H)
     view:SetElementInitializer("Button", InitRow)
     ScrollUtil.InitScrollBoxListWithScrollBar(box, bar, view)
 end
@@ -569,9 +492,17 @@ function PieceList:SetTitle(text)
     end
 end
 
+-- Another set closes the guide page (back to the list of the new set).
 function PieceList:ShowSet(set)
-    if set ~= self.set then self.openItem = nil end
+    local changed = set ~= self.set
     self.set = set
+    if changed then
+        self.lastItem = nil
+        if ns.GuidePage and ns.GuidePage:IsOpen() then
+            ns.GuidePage:Back()        -- OnGuideClosed refreshes
+            self.lastItem = nil
+        end
+    end
     self:Refresh()
 end
 
@@ -597,4 +528,5 @@ function PieceList:Refresh()
     self.count:SetTextColor(CountRGB(have, total))
     local retain = ScrollBoxConstants and ScrollBoxConstants.RetainScrollPosition
     self.box:SetDataProvider(CreateDataProvider(set.pieces), retain)
+    if ns.GuidePage and ns.GuidePage:IsOpen() then ns.GuidePage:Refresh() end
 end

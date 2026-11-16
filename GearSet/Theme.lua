@@ -15,6 +15,8 @@ Theme.templates = {
     check     = { "UICheckButtonTemplate" },
     scrollBox = { "WowScrollBoxList" },
     scrollBar = { "MinimalScrollBar" },
+    -- Guide page: scrolling text (modern template, then the classic one; plain ScrollFrame + wheel if neither).
+    scrollFrame = { "ScrollFrameTemplate", "UIPanelScrollFrameTemplate" },
 }
 
 Theme.art = {
@@ -59,7 +61,12 @@ Theme.art = {
         minus = "Interface\\Buttons\\UI-MinusButton-Up",
         size  = 14,
     },
-    detailBand = { 0, 0, 0, 0.35 },                     -- background of an opened piece row
+    detailBand = { 0, 0, 0, 0.35 },                     -- (old open-row band; kept for themes)
+    -- Piece rows: arrow at the right end ("opens a page"); ">" text if missing.
+    rowArrow = { file = "Interface\\ChatFrame\\ChatFrameExpandArrow", size = 12 },
+    -- Guide page: line under the header, fold-out +/- uses `expand` above.
+    guideDivider = { 1, 1, 1, 0.15 },
+    guideIcon = 40,                                      -- item icon size on the guide page
     -- Faction mark on PvP / Arathi Basin set rows: the mount journal's faction atlases
     -- (Blizzard_MountCollection MOUNT_FACTION_TEXTURES), else the classic battle standard icons.
     faction = {
@@ -106,6 +113,12 @@ Theme.colors = {
     removed   = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),         -- names of sets removed from the game
     bonusOn   = Color("GREEN_FONT_COLOR", 0.1, 1, 0.1),          -- set bonus in effect / enough pieces
     bonusOff  = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),         -- set bonus not reached
+    -- Guide page
+    guideHead  = Color("NORMAL_FONT_COLOR", 1, 0.82, 0),         -- section headings (gold)
+    guideSub   = Color("HIGHLIGHT_FONT_COLOR", 1, 1, 1),         -- "Boss Drop: Onyxia"
+    guideLabel = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),        -- "Where", "Level" ...
+    guideText  = Color("LIGHTGRAY_FONT_COLOR", 0.8, 0.8, 0.8),   -- values and paragraphs
+    guideHere  = Color("GREEN_FONT_COLOR", 0.1, 1, 0.1),         -- the chain step for this piece
 }
 
 -- Colour per piece state.

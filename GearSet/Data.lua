@@ -492,6 +492,465 @@ function Data:GetSetBonuses(set, onReady)
 end
 
 -- ---------------------------------------------------------------------------
+-- Guide page: how to get one piece, built on first open from SourcesData plus
+-- ns.GuideData (GuideData.lua; format in plans\piece-guide\data-contract.md).
+-- Every GuideData record is optional: without one the page shows what SourcesData
+-- has and "not known". Result: a list of blocks for UI\GuidePage.lua:
+--   { k = "head"|"sub"|"row"|"text"|"bullet"|"step"|"fold", text, label, here, blocks }
+local guideCache, recordCache = {}, {}
+local GUIDE_MAX_DEPTH = 4
+local BIND_ON_EQUIP = (Enum and Enum.ItemBind and Enum.ItemBind.OnEquip) or 2
+
+-- "key|a|b;key|a|@H" -> { { key = "key", "a", "b" }, { key = "key", "a", fac = "H" } }
+local function ParseRecord(raw)
+    local rows = {}
+    for part in raw:gmatch("[^;]+") do
+        local f = SplitFields(part)
+        local fac
+        local last = f[#f]
+        if #f > 1 and last:sub(1, 1) == "@" then
+            local letter = last:sub(2, 2)
+            if letter == "A" or letter == "H" then fac = letter end
+            f[#f] = nil
+        end
+        if Has(f[1]) then
+            rows[#rows + 1] = { key = f[1], f[2], f[3], f[4], f[5], fac = fac }
+        end
+    end
+    return rows
+end
+
+-- One GuideData record as parsed rows (cached), or nil.
+function Data.GuideRecord(tname, key)
+    if key == nil or key == "" then return nil end
+    local g = ns.GuideData
+    local t = type(g) == "table" and g[tname]
+    if type(t) ~= "table" then return nil end
+    local c = recordCache[tname]
+    if not c then c = {}; recordCache[tname] = c end
+    local hit = c[key]
+    if hit == nil then
+        local raw = t[key]
+        hit = (type(raw) == "string" and raw ~= "") and ParseRecord(raw) or false
+        c[key] = hit
+    end
+    return hit or nil
+end
+
+-- true / false, or nil while the item hasn't loaded.
+function Data.IsBindOnEquip(itemID)
+    local get = (C_Item and C_Item.GetItemInfo) or GetItemInfo
+    if get then
+        local name, _, _, _, _, _, _, _, _, _, _, _, _, bindType = get(itemID)
+        if not name then return nil end
+        if bindType then return bindType == BIND_ON_EQUIP end
+    end
+    local lines = Data:GetItemTooltipLines(itemID)
+    if not lines then return nil end
+    local boe = type(ITEM_BIND_ON_EQUIP) == "string" and ITEM_BIND_ON_EQUIP or "Binds when equipped"
+    for _, l in ipairs(lines) do
+        if l.text == boe then return true end
+    end
+    return false
+end
+
+local function IsMine(row, mine)
+    return not row.fac or not mine or row.fac == mine
+end
+
+-- First non-empty value of a key (player's faction or untagged).
+local function Field(rows, key, mine)
+    for _, r in ipairs(rows or {}) do
+        if r.key == key and Has(r[1]) and IsMine(r, mine) then return r[1], r end
+    end
+end
+
+local function Concat(a, b)
+    if not a then return b end
+    if not b then return a end
+    local out = {}
+    for _, r in ipairs(a) do out[#out + 1] = r end
+    for _, r in ipairs(b) do out[#out + 1] = r end
+    return out
+end
+
+local function Add(out, k, text, label)
+    out[#out + 1] = { k = k, text = text, label = label }
+    return out[#out]
+end
+
+-- "43.4,52.2" -> "(43, 52)"
+local function Coords(s)
+    local x, y = (s or ""):match("^%s*([%d%.]+)%s*,%s*([%d%.]+)")
+    x, y = tonumber(x), tonumber(y)
+    if not (x and y) then return nil end
+    return ("(%d, %d)"):format(math.floor(x + 0.5), math.floor(y + 0.5))
+end
+
+-- "Zone, place text (43, 52)" from zone/where/xy rows, or nil.
+local function WhereText(rec, mine)
+    if not rec then return nil end
+    local zone, where = Field(rec, "zone", mine), Field(rec, "where", mine)
+    local text = (zone and where) and (zone .. ", " .. where) or zone or where
+    local xy = Coords(Field(rec, "xy", mine))
+    if text and xy then text = text .. " " .. xy end
+    return text
+end
+
+-- NPC name <title> - where (from the npc record when there is one).
+local function NpcText(name, mine)
+    local rec = Data.GuideRecord("npc", name)
+    local title = Field(rec, "title", mine)
+    local text = title and ("%s <%s>"):format(name, title) or name
+    local where = WhereText(rec, mine)
+    return where and (text .. " - " .. where) or text
+end
+
+-- "raid, 40 players, level 60" from a place record.
+local function PlaceDesc(rec, mine)
+    local L = ns.L
+    local parts = {}
+    local kind = Field(rec, "kind", mine)
+    if kind then parts[#parts + 1] = L["G_KIND_" .. kind:lower()] or kind end
+    local size = Field(rec, "size", mine)
+    if size then parts[#parts + 1] = L.G_SIZE:format(size) end
+    local level = Field(rec, "level", mine)
+    if level then parts[#parts + 1] = L.G_LEVEL_N:format(level) end
+    if #parts == 0 then return nil end
+    return table.concat(parts, ", ")
+end
+
+local function SkillText(r)
+    local colors = { "ff8040", "ffff00", "40bf40", "808080" }   -- Blizzard's recipe difficulty colours
+    local words = { ns.L.G_SKILL_ORANGE, ns.L.G_SKILL_YELLOW, ns.L.G_SKILL_GREEN, ns.L.G_SKILL_GREY }
+    local parts = {}
+    for i = 1, 4 do
+        if Has(r[i]) then parts[#parts + 1] = ("|cff%s%s %s|r"):format(colors[i], r[i], words[i]) end
+    end
+    return table.concat(parts, ", ")
+end
+
+local AddRows   -- forward
+
+-- A chain or note record inline (cycle and depth guarded).
+local function AddRecord(out, tname, key, ctx)
+    if not Has(key) or ctx.seen[key] or ctx.depth >= GUIDE_MAX_DEPTH then return end
+    local rec = Data.GuideRecord(tname, key)
+    if not rec then return end
+    ctx.seen[key] = true
+    ctx.depth = ctx.depth + 1
+    AddRows(out, rec, ctx)
+    ctx.depth = ctx.depth - 1
+    ctx.seen[key] = nil
+end
+
+-- A fold-out: its blocks are built now (shown when the player opens it). Empty -> nothing.
+local function AddFold(out, text, fill)
+    local blocks = {}
+    fill(blocks)
+    if #blocks == 0 then return end
+    local b = Add(out, "fold", text)
+    b.blocks = blocks
+end
+
+local BLOCK_KEYS = { p = true, b = true, t = true, s = true, fold = true, see = true, chain = true, recipe = true, from = true }
+
+-- Rows of one or more records: labelled rows first (level/min/type, bring/gold and
+-- mat are joined), then text blocks in their order; the other faction's rows go in
+-- a fold-out at the end.
+function AddRows(out, rows, ctx)
+    if not rows then return end
+    local L, mine = ns.L, ctx.mine
+    local own, other, otherFac = {}, {}, nil
+    for _, r in ipairs(rows) do
+        if IsMine(r, mine) then own[#own + 1] = r
+        else other[#other + 1] = r; otherFac = otherFac or r.fac end
+    end
+    local level, minLevel, qtype, bring, mats = nil, nil, nil, {}, {}
+    for _, r in ipairs(own) do
+        local k, a = r.key, r[1]
+        if Has(a) then
+            if k == "level" then level = a
+            elseif k == "min" then minLevel = a
+            elseif k == "type" then qtype = a
+            elseif k == "bring" then bring[#bring + 1] = a
+            elseif k == "gold" then bring[#bring + 1] = L.G_GOLD:format(a)
+            elseif k == "mat" then mats[#mats + 1] = Has(r[2]) and (a .. " " .. r[2]) or a
+            end
+        end
+    end
+    local done, blocks = {}, {}
+    for _, r in ipairs(own) do
+        local k, a, b = r.key, r[1], r[2]
+        if BLOCK_KEYS[k] then
+            blocks[#blocks + 1] = r
+        elseif k == "level" or k == "min" or k == "type" then
+            if not done.level then
+                done.level = true
+                local parts = {}
+                if level then parts[#parts + 1] = level end
+                if minLevel then parts[#parts + 1] = L.G_MIN:format(minLevel) end
+                if qtype then parts[#parts + 1] = qtype end
+                if #parts > 0 then Add(out, "row", table.concat(parts, ", "), L.G_LEVEL) end
+            end
+        elseif k == "bring" or k == "gold" then
+            if not done.bring and #bring > 0 then
+                done.bring = true
+                Add(out, "row", "", L.G_BRING)
+                for _, t in ipairs(bring) do Add(out, "bullet", t).col = true end   -- in the value column
+            end
+        elseif k == "mat" then
+            if not done.mat and #mats > 0 then
+                done.mat = true
+                Add(out, "row", table.concat(mats, ", "), L.G_MATS)
+            end
+        elseif not Has(a) then
+            -- empty value: nothing to show
+        elseif k == "giver" then Add(out, "row", NpcText(a, mine), L.G_GIVER)
+        elseif k == "rep" then Add(out, "row", Has(b) and (a .. " " .. b) or a, L.G_NEEDS)
+        elseif k == "rank" then Add(out, "row", Has(b) and L.G_RANK:format(a, b) or L.G_RANK_N:format(a), L.G_NEEDS)
+        elseif k == "cost" then Add(out, "row", a, L.G_COST)
+        elseif k == "reward" then Add(out, "row", a, L.G_ALSO)
+        elseif k == "chance" then Add(out, "row", a, L.G_CHANCE)
+        elseif k == "skill" then Add(out, "row", SkillText(r), L.G_SKILL)
+        elseif k == "tools" then Add(out, "row", a, L.G_TOOLS)
+        elseif k == "l" then Add(out, "row", Has(b) and b or "", a)
+        end
+        -- zone/where/xy/title/kind/size/need are read by the callers.
+    end
+    for _, r in ipairs(blocks) do
+        local k, a, b, c = r.key, r[1], r[2], r[3]
+        if k == "p" and Has(a) then Add(out, "text", a)
+        elseif k == "b" and Has(a) then Add(out, "bullet", a)
+        elseif k == "t" and Has(a) then Add(out, "head", a)
+        elseif k == "s" and (Has(a) or Has(b)) then
+            local text = b or ""
+            if Has(c) then text = Has(text) and (text .. " - " .. c) or c end
+            local step = Add(out, "step", text, a or "")
+            step.here = Has(b) and ctx.quest == b or nil
+        elseif k == "fold" and Has(a) and Has(b) then
+            AddFold(out, a, function(sub)
+                if Data.GuideRecord("chain", b) then AddRecord(sub, "chain", b, ctx)
+                else AddRecord(sub, "note", b, ctx) end
+            end)
+        elseif k == "see" then AddRecord(out, "note", a, ctx)
+        elseif k == "chain" then AddRecord(out, "chain", a, ctx)
+        elseif k == "recipe" and Has(a) then
+            Add(out, "head", L.G_RECIPE)
+            Add(out, "sub", a)
+        elseif k == "from" and Has(a) then
+            if a == "q" and Has(b) then
+                Add(out, "row", b, L.G_QUEST)
+                AddRecord(out, "quest", b, ctx)
+            elseif a == "v" and Has(b) then Add(out, "row", NpcText(b, mine), L.G_FROM)
+            elseif a == "t" then Add(out, "text", L.G_TRAINER)
+            elseif a == "d" and Has(b) then Add(out, "row", b, L.G_DROP)
+            end
+        end
+    end
+    if #other > 0 then
+        AddFold(out, L.G_OTHER_VERSION:format(Data.FactionName(otherFac) or otherFac), function(sub)
+            local saved = ctx.mine
+            ctx.mine = otherFac
+            AddRows(sub, other, ctx)
+            ctx.mine = saved
+        end)
+    end
+end
+
+-- SourcesData entries of an item: { kind, a, b, c, fac }.
+local function SourceEntries(itemID)
+    local out = {}
+    local tbl = ns.SourcesData
+    local raw = type(tbl) == "table" and tbl[itemID]
+    if type(raw) ~= "string" then return out end
+    for entry in raw:gmatch("[^;]+") do
+        local f = SplitFields(entry)
+        local fac
+        local last = f[#f]
+        if #f > 1 and last and last:sub(1, 1) == "@" then
+            local letter = last:sub(2, 2)
+            if letter == "A" or letter == "H" then fac = letter end
+            f[#f] = nil
+        end
+        if SOURCE_TYPES[f[1]] or f[1] == "x" then
+            out[#out + 1] = { kind = f[1], a = f[2], b = f[3], c = f[4], fac = fac }
+        end
+    end
+    return out
+end
+
+-- Place lines: "Instance: name - raid, 40 players, level 60", "Where: ..."; the
+-- place's need rows are kept for the "Before you go" part.
+local function AddPlace(out, place, label, ctx, state)
+    local L = ns.L
+    local rec = Data.GuideRecord("place", place)
+    if Has(place) then
+        local desc = PlaceDesc(rec, ctx.mine)
+        Add(out, "row", desc and (place .. " - " .. desc) or place, label)
+    end
+    Add(out, "row", WhereText(rec, ctx.mine) or L.G_NOT_KNOWN, L.G_WHERE)
+    for _, r in ipairs(rec or {}) do
+        if r.key == "need" and Has(r[1]) then
+            local id = r[1] .. "|" .. (r[2] or "") .. "|" .. (r.fac or "")
+            if not state.needSeen[id] then
+                state.needSeen[id] = true
+                state.needs[#state.needs + 1] = r
+            end
+        end
+    end
+end
+
+local function HasKey(rows, key)
+    for _, r in ipairs(rows or {}) do if r.key == key then return true end end
+    return false
+end
+
+-- One SourcesData entry as a section. The item's own record goes with the first one.
+local function AddSource(out, e, itemID, ctx, state)
+    local L = ns.L
+    local itemRows
+    if not state.itemDone then
+        state.itemDone = true
+        itemRows = Data.GuideRecord("item", itemID)
+    end
+    local kind, a, b, c = e.kind, e.a, e.b, e.c
+    ctx.quest = nil
+    if kind == "x" then
+        if Has(a) then
+            Add(out, "sub", a)
+            AddRecord(out, "note", a, ctx)
+        end
+        AddRows(out, itemRows, ctx)
+        return
+    end
+    local word = TypeWord(kind)
+    if kind == "b" then
+        Add(out, "sub", Has(a) and (word .. ": " .. a) or word)
+        AddPlace(out, b, L.G_INSTANCE, ctx, state)
+        local bossRows = Data.GuideRecord("boss", a)
+        if not HasKey(bossRows, "chance") and not HasKey(itemRows, "chance") then
+            Add(out, "row", L.G_NOT_KNOWN, L.G_CHANCE)
+        end
+        AddRows(out, Concat(bossRows, itemRows), ctx)
+    elseif kind == "z" or kind == "w" then
+        Add(out, "sub", Has(a) and (word .. ": " .. a) or word)
+        if Has(a) then AddPlace(out, a, L.G_PLACE, ctx, state) end
+        AddRows(out, itemRows, ctx)
+    elseif kind == "v" then
+        Add(out, "sub", Has(a) and (word .. ": " .. a) or word)
+        local npcWhere = Has(a) and WhereText(Data.GuideRecord("npc", a), ctx.mine)
+        Add(out, "row", npcWhere or (Has(b) and b) or L.G_NOT_KNOWN, L.G_WHERE)
+        if not HasKey(itemRows, "cost") then Add(out, "row", L.G_NOT_KNOWN, L.G_COST) end
+        AddRows(out, itemRows, ctx)
+        if Has(c) then
+            if Data.GuideRecord("note", c) then AddRecord(out, "note", c, ctx)
+            else Add(out, "row", c, L.G_NOTE) end
+        end
+    elseif kind == "q" then
+        Add(out, "sub", Has(a) and (word .. ": " .. a) or word)
+        local qrec = Data.GuideRecord("quest", a)
+        if not HasKey(qrec, "giver") then
+            if Has(c) then Add(out, "row", NpcText(c, ctx.mine), L.G_GIVER)
+            elseif Has(b) then Add(out, "row", b, L.G_WHERE)
+            else Add(out, "row", L.G_NOT_KNOWN, L.G_GIVER) end
+        end
+        ctx.quest = a
+        AddRows(out, Concat(qrec, itemRows), ctx)
+        ctx.quest = nil
+    elseif kind == "c" then
+        Add(out, "sub", Has(a) and (word .. ": " .. a .. (Has(b) and (" " .. b) or "")) or word)
+        state.crafted = true
+        if not HasKey(itemRows, "mat") then Add(out, "row", L.G_NOT_KNOWN, L.G_MATS) end
+        AddRows(out, itemRows, ctx)
+    end
+end
+
+-- Blocks for the guide page of one piece (cached; see the format above).
+function Data:GetGuide(piece)
+    local L = ns.L
+    local itemID = piece and piece.itemID
+    if not itemID then return {} end
+    local hit = guideCache[itemID]
+    if hit then return hit end
+
+    local mine = Data.PlayerFaction()
+    local ctx = { mine = mine, seen = {}, depth = 0 }
+    local state = { needs = {}, needSeen = {} }
+    local entries = SourceEntries(itemID)
+    local hasMine = false
+    for _, e in ipairs(entries) do if e.fac and e.fac == mine then hasMine = true end end
+    local own, other = {}, {}
+    local ownQuest = {}
+    for _, e in ipairs(entries) do
+        if hasMine and e.fac and e.fac ~= mine then other[#other + 1] = e
+        else
+            own[#own + 1] = e
+            if e.kind == "q" and Has(e.a) then ownQuest[e.a] = true end
+        end
+    end
+
+    local out = {}
+    Add(out, "head", L.G_HOW)
+    if #own == 0 then Add(out, "text", L.SRC_UNKNOWN) end
+    for _, e in ipairs(own) do AddSource(out, e, itemID, ctx, state) end
+    if not state.itemDone then AddRows(out, Data.GuideRecord("item", itemID), ctx) end
+
+    -- Before you go: keys and attunements of the places above.
+    if #state.needs > 0 then
+        Add(out, "head", L.G_BEFORE)
+        local said = {}
+        for _, r in ipairs(state.needs) do
+            if IsMine(r, mine) then
+                if not said[r[1]] then said[r[1]] = true; Add(out, "text", L.G_NEED_TEXT:format(r[1])) end
+                AddRecord(out, "chain", r[2], ctx)
+            end
+        end
+        for _, r in ipairs(state.needs) do
+            if not IsMine(r, mine) then
+                AddFold(out, L.G_OTHER_VERSION:format(Data.FactionName(r.fac) or r.fac), function(sub)
+                    local saved = ctx.mine
+                    ctx.mine = r.fac
+                    if not said[r[1]] then Add(sub, "text", L.G_NEED_TEXT:format(r[1])) end
+                    AddRecord(sub, "chain", r[2], ctx)
+                    ctx.mine = saved
+                end)
+            end
+        end
+    end
+
+    -- Crafted and binds when equipped: other ways to get it.
+    local cacheable = true
+    if state.crafted then
+        local boe = Data.IsBindOnEquip(itemID)
+        if boe == nil then cacheable = false
+        elseif boe then
+            Add(out, "head", L.G_NOT_CRAFTER)
+            Add(out, "text", L.G_BOE_TIP)
+        end
+    end
+
+    -- The other faction's sources (a quest with a record already covers both).
+    local rest = {}
+    for _, e in ipairs(other) do
+        if not (e.kind == "q" and ownQuest[e.a] and Data.GuideRecord("quest", e.a)) then rest[#rest + 1] = e end
+    end
+    if #rest > 0 then
+        local fac = rest[1].fac
+        AddFold(out, L.G_OTHER_VERSION:format(Data.FactionName(fac) or fac), function(sub)
+            local saved = ctx.mine
+            ctx.mine = fac
+            local s2 = { needs = {}, needSeen = {}, itemDone = true }
+            for _, e in ipairs(rest) do AddSource(sub, e, itemID, ctx, s2) end
+            ctx.mine = saved
+        end)
+    end
+
+    if cacheable then guideCache[itemID] = out end
+    return out
+end
+
+-- ---------------------------------------------------------------------------
 -- "Report wrong source" link (one per set): a new GitHub issue with title and body
 -- filled in. Never holds the character's name or realm.
 local REPORT_BASE = "https://github.com/gettic/GearSet/issues/new"

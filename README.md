@@ -4,7 +4,7 @@ Keeps track of all known armor sets in the game, in one window with three parts:
 
 A World of Warcraft addon for **WoW Forever**.
 
-> **Beta:** this is a beta (v0.0.1-beta.7). It has not been fully tested in the game yet, so things may not work as they should. Please tell us what you find.
+> **Beta:** this is a beta (v0.0.1-beta.8). It has not been fully tested in the game yet, so things may not work as they should. Please tell us what you find.
 
 ## Install
 
@@ -15,7 +15,7 @@ A World of Warcraft addon for **WoW Forever**.
 
 ## How to use
 
-Type `/gs` (or `/gearset`) to open or close the window. You can also click the minimap button, or pick **Gear Set** in the Addon Compartment (the addons button by the minimap). Esc closes the window. You can drag the window to move it. On a small screen or at a large UI scale, it shrinks to fit. You can also set a key in Key Bindings > Gear Set > "Open/close Gear Set" (no key is set by default).
+Type `/gs` (or `/gearset`) to open or close the window. You can also click the minimap button, or pick **Gear Set** in the Addon Compartment (the addons button by the minimap). Esc closes the window. You can drag the window to move it. The window is large (1060x620); on a small screen or at a large UI scale, it shrinks to fit. You can also set a key in Key Bindings > Gear Set > "Open/close Gear Set" (no key is set by default).
 
 ### Minimap button
 
@@ -61,12 +61,33 @@ The set's pieces. At the top: the set name (arrows beside it go to the previous 
 | What | How |
 |---|---|
 | Show on the preview | Tick the box by the piece. Untick it to take the piece off. Necklaces, rings and trinkets don't show on the model, so their box is greyed out |
-| See how to get it | Click the piece (the +/-). It shows up to 3 lines: boss drop, quest (with the quest giver and place), vendor, profession, world drop, or "Drop: <place>" for trash or several bosses. If a piece has a quest or vendor line for each faction, you see only your own. One piece is open at a time |
-| Look it up | Open a piece and click "Copy name", then press Ctrl+C. "Wiki link" in that box gives a Warcraft Wiki search link instead |
+| See how to get it | Click the piece to open its guide page (see below) |
+| Look it up | On the guide page, click "Copy name", then press Ctrl+C. "Wiki link" gives a Warcraft Wiki search link |
 | Link in chat | Shift-click a piece |
 | Try it on | Ctrl-click a piece to open the dressing room |
 | No source | "Source unknown" means the addon has no entry for that piece |
 | Wrong source | Click "Report wrong source" next to "Have x / y" |
+
+### Piece guide
+
+Clicking a piece opens its guide page in the right panel.
+
+| What | How |
+|---|---|
+| The page | The item (hover it for the normal tooltip), whether you have it, and a full guide on how to get it |
+| Go back | "Back" button, Esc, or right-click |
+| Other pieces | The arrows go to the previous or next piece |
+| Look it up | "Copy name" and "Wiki link" are on the page |
+| More steps | Click a "Show ..." link to fold out more (the other faction's version, keys) |
+
+The guide covers:
+
+- Boss drops: the boss, the instance, where it is, and any attunement or key.
+- Quests: the steps, the giver for each faction, and what to bring.
+- Vendors: who sells it, and the PvP rank if one is needed.
+- Crafting: the skill, the materials, and where the recipe comes from.
+
+Anything the addon doesn't know says "not known". Guide text is in English only.
 
 ### Report wrong source
 
@@ -104,12 +125,14 @@ The addon is in the `GearSet` folder (`GearSet_Forever.toc`, interface 16001). S
 | `Theme.lua` | Every look choice (Blizzard templates, atlases, fonts, colours) in one place |
 | `SetsData.lua` | The built-in list of classic sets |
 | `SourcesData.lua` | The built-in list of where each piece comes from |
+| `GuideData.lua` | The built-in guide data (bosses, NPCs, quests, items, quest chains) |
 | `Data.lua` | Builds, sorts and filters the sets; source lines and report link; `/gs check` |
 | `Owned.lua` | Works out whether you have each piece |
 | `UI\Main.lua` | The main window |
 | `UI\SetList.lua` | The set list, search and filter |
 | `UI\Preview.lua` | The character preview |
 | `UI\PieceList.lua` | The list of pieces |
+| `UI\GuidePage.lua` | The guide page for one piece |
 | `UI\Minimap.lua` | The minimap button and the Addon Compartment entry |
 
 ## Credits

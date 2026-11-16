@@ -23,7 +23,7 @@ ns.L = {
     RESET_TIP = "Turn the character back, zoom out and show every piece again.",
     ONLY_SET = "Only the set",
     ONLY_SET_TIP = "Hide your own gear so only the set shows.",
-    PIECE_TIP = "Click to see where this piece comes from.",
+    PIECE_TIP = "Click for a guide on how to get this piece.",
     SHOW_PIECE_TIP = "Show this piece on the character.",
     NO_MODEL_TIP = "This piece doesn't show on the character.",
     -- Source lines (type words come from the game's TRANSMOG_SOURCE_n strings when it has them).
@@ -90,6 +90,62 @@ ns.L = {
     APPEARANCE_NOTE = "A collected appearance counts as having the piece.",
     PREV_SET = "Previous set",
     NEXT_SET = "Next set",
+    -- Guide page (one piece). Row labels, then headings and lines.
+    G_BACK = "Back",                 -- fallback; the game's BACK comes first
+    G_BACK_TIP = "Back to the piece list (or press Esc, or right-click the page).",
+    G_PIECE_N = "Piece %d of %d",
+    G_PREV = "Previous piece",
+    G_NEXT = "Next piece",
+    G_STATE_equipped = "You have it: equipped",
+    G_STATE_bags = "You have it: in your bags",
+    G_STATE_bank = "You have it: in your bank",
+    G_STATE_look = "You have its appearance",
+    G_STATE_need = "You need this piece",
+    G_WIKI_TIP = "Shows a Warcraft Wiki search link for this piece.",
+    WIKI_POPUP = "Press Ctrl+C to copy the link, then paste it into your browser.",
+    G_HOW = "How to get it",
+    G_BEFORE = "Before you go",
+    G_NEED_TEXT = "To get in you need the %s.",
+    G_OTHER_VERSION = "Show the %s version",
+    G_RECIPE = "The recipe",
+    G_NOT_CRAFTER = "Can't make it yourself?",
+    G_BOE_TIP = "It binds when equipped: buy it on the Auction House, or ask a crafter to make it (you bring the materials).",
+    G_TRAINER = "Taught by a trainer.",
+    G_NOT_KNOWN = "not known",
+    G_HERE = "(you are here)",
+    G_FOOTER = "Facts from Warcraft Wiki (CC BY-SA). Something wrong? Use \"Report wrong source\" on the set.",
+    G_INSTANCE = "Instance",
+    G_PLACE = "Place",
+    G_WHERE = "Where",
+    G_CHANCE = "Drop chance",
+    G_LEVEL = "Level",
+    G_MIN = "needs level %s",
+    G_GIVER = "Giver",
+    G_BRING = "You bring",
+    G_GOLD = "%s gold",
+    G_NEEDS = "Needs",
+    G_RANK = "PvP rank %s: %s",
+    G_RANK_N = "PvP rank %s",
+    G_COST = "Cost",
+    G_ALSO = "Also",
+    G_SKILL = "Skill",
+    G_SKILL_ORANGE = "orange",
+    G_SKILL_YELLOW = "yellow",
+    G_SKILL_GREEN = "green",
+    G_SKILL_GREY = "grey",
+    G_MATS = "Materials",
+    G_TOOLS = "Tools",
+    G_QUEST = "Quest",
+    G_FROM = "From",
+    G_DROP = "Drop",
+    G_NOTE = "Note",
+    G_SIZE = "%s players",
+    G_LEVEL_N = "level %s",
+    G_KIND_raid = "raid",
+    G_KIND_dungeon = "dungeon",
+    G_KIND_zone = "zone",
+    G_KIND_city = "city",
+    G_KIND_bg = "battleground",
     -- Empty set list (used with :format)
     EMPTY_SEARCH = "Search: \"%s\"",
     EMPTY_FILTERS = "Filters: %s",
@@ -222,9 +278,10 @@ local function CopyDialog(text)
     }
 end
 
-local COPY_DIALOG = { report = "GEARSET_REPORT", name = "GEARSET_COPYNAME" }
+local COPY_DIALOG = { report = "GEARSET_REPORT", name = "GEARSET_COPYNAME", wiki = "GEARSET_WIKI" }
 
 StaticPopupDialogs.GEARSET_REPORT = CopyDialog(ns.L.REPORT_POPUP)
+StaticPopupDialogs.GEARSET_WIKI = CopyDialog(ns.L.WIKI_POPUP)
 
 local nameDialog = CopyDialog(ns.L.COPY_POPUP)
 nameDialog.button2 = ns.L.WIKI_LINK
@@ -242,7 +299,7 @@ nameDialog.OnCancel = SwapToAlt          -- older dialog code
 nameDialog.OnButton2 = SwapToAlt         -- newer code may call this one instead
 StaticPopupDialogs.GEARSET_COPYNAME = nameDialog
 
--- ns.ShowCopyBox(kind, text, alt): kind "report" or "name"; alt = the "Wiki link" text for "name".
+-- ns.ShowCopyBox(kind, text, alt): kind "report", "name" or "wiki"; alt = the "Wiki link" text for "name".
 function ns.ShowCopyBox(kind, text, alt)
     if not text or text == "" then return end
     local which = COPY_DIALOG[kind] or COPY_DIALOG.report

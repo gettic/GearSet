@@ -5,7 +5,7 @@ local Theme, L = ns.Theme, ns.L
 local UI = {}
 ns.UI = UI
 
-local WIDTH, HEIGHT = 940, 580
+local WIDTH, HEIGHT = 1060, 620   -- right panel 462 x 534 (guide page); FitToScreen shrinks it on small screens
 local TOP, BOTTOM = -60, 26        -- inset area inside ButtonFrameTemplate
 local LEFT_W, MID_W, GAP = 280, 300, 4
 
