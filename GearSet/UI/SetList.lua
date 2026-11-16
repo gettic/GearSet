@@ -7,28 +7,60 @@ ns.SetList = SetList
 
 local ROW_H = 22
 
+-- Class line for a set: class names in class colours; hinted sets (Dungeon Set 1/2)
+-- add "(any class can wear it)"; nil = all classes. Also used by the right panel header.
+function SetList.ClassText(set)
+    local list, hinted = ns.Data:SetClassList(set)
+    if not list then return nil end
+    local names = {}
+    for _, c in ipairs(list) do
+        names[#names + 1] = Theme.ClassColor(c.file):WrapTextInColorCode(c.name)
+    end
+    local text = table.concat(names, ", ")
+    if hinted then text = text .. " " .. Theme.colors.subtle:WrapTextInColorCode(L.ANY_CAN_WEAR) end
+    return text
+end
+
 local function SetTooltip(row)
     local set = row.set
     if not set then return end
     GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
-    GameTooltip:SetText(set.name, Theme.colors.title:GetRGB())
+    local tr, tg, tb = (set.removed and Theme.colors.removed or Theme.colors.title):GetRGB()
+    GameTooltip:SetText(set.name, tr, tg, tb)
     local armor = ns.Data.ArmorName(set.armor)
     if armor then GameTooltip:AddLine(armor, Theme.colors.armorLine:GetRGB()) end
-    if set.classMask == 0 then
+    local classes = SetList.ClassText(set)
+    if not classes then
         GameTooltip:AddLine(L.ALL_CLASSES, Theme.colors.subtle:GetRGB())
     else
-        local names = {}
-        for _, c in ipairs(ns.Data:GetClasses()) do
-            if ns.Data.SetHasClass(set, c.id) then
-                names[#names + 1] = Theme.ClassColor(c.file):WrapTextInColorCode(c.name)
-            end
-        end
         local r, g, b = Theme.colors.text:GetRGB()
-        GameTooltip:AddLine(table.concat(names, ", "), r, g, b, true)
+        GameTooltip:AddLine(classes, r, g, b, true)
     end
+    local faction = ns.Data.FactionName(set.faction)
+    if faction then GameTooltip:AddLine(faction, Theme.colors.subtle:GetRGB()) end
     local have, total = ns.Owned:SetCount(set)
     GameTooltip:AddLine(L.HAVE_COUNT:format(have, total), Theme.CountColor(have, total))
+    if set.removed then
+        local r, g, b = Theme.colors.removed:GetRGB()
+        GameTooltip:AddLine(L.REMOVED_TIP, r, g, b, true)
+    end
     GameTooltip:Show()
+end
+
+-- Faction mark on a row (PvP / Arathi Basin sets); the name ends left of it.
+local function SetFactionIcon(row, faction)
+    local art = Theme.art.faction
+    local entry = faction and art and art[faction]
+    row.label:ClearAllPoints()
+    row.label:SetPoint("LEFT", 8, 0)
+    if entry then
+        Theme.SetArt(row.faction, entry)
+        row.faction:Show()
+        row.label:SetPoint("RIGHT", row.faction, "LEFT", -4, 0)
+    else
+        row.faction:Hide()
+        row.label:SetPoint("RIGHT", row.count, "LEFT", -6, 0)
+    end
 end
 
 local function InitRow(row, set)
@@ -50,6 +82,11 @@ local function InitRow(row, set)
         row.label:SetPoint("RIGHT", row.count, "LEFT", -6, 0)
         row.label:SetJustifyH("LEFT")
         row.label:SetWordWrap(false)
+        row.faction = row:CreateTexture(nil, "ARTWORK")
+        local size = (Theme.art.faction and Theme.art.faction.size) or 14
+        row.faction:SetSize(size, size)
+        row.faction:SetPoint("RIGHT", row.count, "LEFT", -4, 0)
+        row.faction:Hide()
         row:SetScript("OnClick", function(self)
             if self.set then
                 PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
@@ -61,28 +98,51 @@ local function InitRow(row, set)
     end
     row.set = set
     row.label:SetText(set.name)
+    row.label:SetTextColor((set.removed and Theme.colors.removed or Theme.colors.text):GetRGB())
+    SetFactionIcon(row, set.faction)
     local have, total = ns.Owned:SetCount(set)
     row.count:SetText(("%d/%d"):format(have, total))
     row.count:SetTextColor(Theme.CountColor(have, total))
     row.sel:SetShown(set.key == ns.db.lastSet)
 end
 
--- Filter defaults (same as Core.lua's defaults): "Only my class" is on by default,
--- so it only counts as a changed filter when it is turned off.
-local DEFAULT_USABLE = true
+-- Filter defaults: Core.lua's defaults.filters (ns.FILTER_DEFAULTS). "Only my class"
+-- and "Only my faction" are on by default, so they only count as changed when off.
+local FALLBACK_DEFAULTS = { class = 0, armor = 0, usable = true, hideComplete = false,
+    showRemoved = false, kind = "", myFaction = true }
+local function Defaults() return ns.FILTER_DEFAULTS or FALLBACK_DEFAULTS end
+
+-- True when filter table f differs from the defaults in any key (booleans compared
+-- as booleans, so a missing key reads as false).
+local function FiltersDiffer(f)
+    for k, v in pairs(Defaults()) do
+        if type(v) == "boolean" then
+            if (not f[k]) ~= (not v) then return true end
+        elseif f[k] ~= v and f[k] ~= nil then
+            return true
+        end
+    end
+    return false
+end
 
 -- True when any filter differs from its default (the dropdown's reset button shows).
 local function FiltersActive()
-    local f = ns.db.filters
-    return f.class ~= 0 or f.armor ~= 0 or (not f.usable) ~= (not DEFAULT_USABLE) or f.hideComplete
+    return FiltersDiffer(ns.db.filters)
 end
 
--- The one place filters go back to "show everything" (menu entry, dropdown reset
--- button, empty-list button). Doesn't refresh; callers do.
+-- The one place filters go back to their defaults (menu entry, dropdown reset
+-- button, empty-list button). The sort order is not a filter and stays. Doesn't refresh; callers do.
 local function ResetFilters()
     local f = ns.db.filters
-    f.class, f.armor, f.usable, f.hideComplete = 0, 0, DEFAULT_USABLE, false
+    for k, v in pairs(Defaults()) do f[k] = v end
 end
+
+-- Content filter entries (set kinds) in menu order.
+local KINDS = { "d", "r", "p", "c", "w", "f" }
+local function KindName(k) return L["KIND_" .. k:upper()] end
+
+-- Sort orders in menu order; unknown saved values sort like "owned".
+local SORTS = { { "owned", "SORT_OWNED" }, { "closest", "SORT_CLOSEST" }, { "name", "SORT_NAME" } }
 
 -- Search/filter changed: the list starts from the top again.
 local function Changed()
@@ -95,6 +155,13 @@ end
 -- Filter menu (Blizzard Menu API). Falls back to a plain button + context menu.
 local function SetupMenu(owner, root)
     local f = ns.db.filters
+
+    local sortMenu = root:CreateButton(L.SORT)
+    for _, s in ipairs(SORTS) do
+        sortMenu:CreateRadio(L[s[2]], function() return SetList.SortMode() == s[1] end,
+            function() ns.db.sort = s[1]; Changed() end)
+    end
+    root:CreateDivider()
 
     local classMenu = root:CreateButton(L.CLASS)
     classMenu:CreateRadio(L.ALL, function() return f.class == 0 end, function() f.class = 0; Changed() end)
@@ -109,9 +176,17 @@ local function SetupMenu(owner, root)
         armorMenu:CreateRadio(a.name, function() return f.armor == a.id end, function() f.armor = a.id; Changed() end)
     end
 
+    local kindMenu = root:CreateButton(L.CONTENT)
+    kindMenu:CreateRadio(L.ALL, function() return (f.kind or "") == "" end, function() f.kind = ""; Changed() end)
+    for _, k in ipairs(KINDS) do
+        kindMenu:CreateRadio(KindName(k), function() return f.kind == k end, function() f.kind = k; Changed() end)
+    end
+
     root:CreateDivider()
     root:CreateCheckbox(L.USABLE, function() return f.usable end, function() f.usable = not f.usable; Changed() end)
+    root:CreateCheckbox(L.MY_FACTION, function() return f.myFaction end, function() f.myFaction = not f.myFaction; Changed() end)
     root:CreateCheckbox(L.HIDE_COMPLETE, function() return f.hideComplete end, function() f.hideComplete = not f.hideComplete; Changed() end)
+    root:CreateCheckbox(L.SHOW_REMOVED, function() return f.showRemoved end, function() f.showRemoved = not f.showRemoved; Changed() end)
     root:CreateDivider()
     root:CreateButton(L.RESET_FILTERS, function() ResetFilters(); Changed() end)
 end
@@ -119,7 +194,8 @@ end
 -- Lines that say why the list is empty: the search words and each filter that hides sets.
 -- Returns lines, searchOn, filtersOn (pure: no frames, so it can be tested offline).
 -- filtersOn = some filter differs from its default (so "Reset filters" would change it);
--- "Only my class" is named when on (it hides sets) but, being the default, doesn't set it.
+-- "Only my class" / "Only my faction" are named when on (they hide sets) but, being
+-- defaults, don't set it. "Show removed sets" shows more, so it isn't named.
 function SetList.EmptyReason(search, f)
     local lines = {}
     local searchOn = type(search) == "string" and search:match("%S") ~= nil
@@ -133,10 +209,11 @@ function SetList.EmptyReason(search, f)
         end
     end
     if f.armor ~= 0 then parts[#parts + 1] = ns.Data.ArmorName(f.armor) or L.ARMOR end
+    if type(f.kind) == "string" and f.kind ~= "" then parts[#parts + 1] = KindName(f.kind) or L.CONTENT end
     if f.usable then parts[#parts + 1] = L.USABLE end
+    if f.myFaction then parts[#parts + 1] = L.MY_FACTION end
     if f.hideComplete then parts[#parts + 1] = L.HIDE_COMPLETE end
-    local filtersOn = f.class ~= 0 or f.armor ~= 0 or f.hideComplete
-        or (not f.usable) ~= (not DEFAULT_USABLE)
+    local filtersOn = FiltersDiffer(f)
     if #parts > 0 then
         lines[#lines + 1] = L.EMPTY_FILTERS:format(table.concat(parts, ", "))
     end
@@ -283,6 +360,52 @@ local function SortOwnedFirst(list)
     return list
 end
 
+-- Closest to finishing: sets with some pieces first (fewest missing, then highest share),
+-- then untouched sets (fewest pieces), complete sets last; ties by name/key.
+local function SortClosest(list)
+    local rank = {}
+    for _, s in ipairs(list) do
+        local have, total = ns.Owned:SetCount(s)
+        local group = (have >= total and 3) or (have > 0 and 1) or 2
+        rank[s] = { group, total - have, total > 0 and have / total or 0, total }
+    end
+    table.sort(list, function(a, b)
+        local ra, rb = rank[a], rank[b]
+        if ra[1] ~= rb[1] then return ra[1] < rb[1] end
+        if ra[1] == 1 then
+            if ra[2] ~= rb[2] then return ra[2] < rb[2] end
+            if ra[3] ~= rb[3] then return ra[3] > rb[3] end
+        elseif ra[1] == 2 then
+            if ra[4] ~= rb[4] then return ra[4] < rb[4] end
+        end
+        if a.name ~= b.name then return a.name < b.name end
+        return a.key < b.key
+    end)
+    return list
+end
+
+local function SortName(list)
+    table.sort(list, function(a, b)
+        if a.name ~= b.name then return a.name < b.name end
+        return a.key < b.key
+    end)
+    return list
+end
+
+local SORTERS = { owned = SortOwnedFirst, closest = SortClosest, name = SortName }
+
+-- The saved sort order ("owned" when missing or unknown).
+function SetList.SortMode()
+    local mode = ns.db and ns.db.sort
+    return SORTERS[mode] and mode or "owned"
+end
+
+-- Filtered and sorted list, as shown.
+local function BuildList()
+    local list = ns.Data:Filter(ns.db.search, ns.db.filters)
+    return SORTERS[SetList.SortMode()](list)
+end
+
 local function IndexOf(list, key)
     if not (list and key) then return nil end
     for i, s in ipairs(list) do
@@ -303,7 +426,7 @@ function SetList:Refresh()
     if not self.box then return end
     -- Window hidden: skip the work; OnShow refreshes everything.
     if not (ns.UI and ns.UI:IsShown()) then return end
-    local list = SortOwnedFirst(ns.Data:Filter(ns.db.search, ns.db.filters))
+    local list = BuildList()
     self.list = list
     local fromTop = self.fromTop
     self.fromTop = nil
@@ -335,7 +458,7 @@ end
 function SetList:SelectRelative(delta)
     local list = self.list
     if not list then
-        list = SortOwnedFirst(ns.Data:Filter(ns.db.search, ns.db.filters))
+        list = BuildList()
         self.list = list
     end
     local n = #list

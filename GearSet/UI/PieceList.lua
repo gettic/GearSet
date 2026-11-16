@@ -1,6 +1,6 @@
 -- Gear Set: right panel - the set's pieces and whether you have or need each one.
 -- Header: set name (prev/next arrows), armor type + classes, "Have x / y" (tooltip
--- with the breakdown) and one "Report wrong source" link for the whole set.
+-- with the breakdown), a "Set bonuses" link (tooltip) and one "Report wrong source" link.
 -- Each row: check box (piece shown on the preview), icon with quality frame, name
 -- (up to 2 lines), state, +/- marker. Clicking a row opens it (one at a time) to show
 -- where the piece comes from and a "Copy name" button. Shift/Ctrl-click = Blizzard's
@@ -83,6 +83,7 @@ local function PieceTooltip(row)
 end
 
 -- Link-style text button (Blizzard hyperlink colours, underline on hover).
+-- tip: text, or a function(button) that fills and shows the tooltip itself.
 local function LinkButton(parent, text, tip, onClick)
     local b = CreateFrame("Button", nil, parent)
     b:SetHeight(14)
@@ -101,7 +102,7 @@ local function LinkButton(parent, text, tip, onClick)
     b:SetScript("OnEnter", function(self)
         fs:SetTextColor(Theme.colors.linkHover:GetRGB())
         underline:Show()
-        SimpleTip(self, tip)
+        if type(tip) == "function" then tip(self) else SimpleTip(self, tip) end
     end)
     b:SetScript("OnLeave", function()
         fs:SetTextColor(Theme.colors.link:GetRGB())
@@ -361,20 +362,46 @@ local function SetInfoText(set)
         local c = Theme.colors.armorLine or Theme.colors.partial
         parts[1] = c:WrapTextInColorCode(armor)
     end
-    local classes
-    if set.classMask == 0 then
-        classes = L.ALL_CLASSES
-    else
-        local names = {}
-        for _, c in ipairs(ns.Data:GetClasses()) do
-            if ns.Data.SetHasClass(set, c.id) then
-                names[#names + 1] = Theme.ClassColor(c.file):WrapTextInColorCode(c.name)
-            end
-        end
-        classes = table.concat(names, ", ")
-    end
+    -- Class names in class colours; Dungeon Set 1/2 add "(any class can wear it)".
+    local classes = ns.SetList and ns.SetList.ClassText and ns.SetList.ClassText(set)
+    if not classes then classes = L.ALL_CLASSES end
     if classes ~= "" then parts[#parts + 1] = classes end
     return table.concat(parts, " - ")
+end
+
+-- "Set bonuses" tooltip: read on hover only (Data caches per set; one retry if the
+-- item hasn't loaded, then the tooltip fills in if the mouse is still there).
+-- Lines with a piece count are green when you have that many pieces, else grey;
+-- bonuses the game already shows as in effect are green "Active: ...".
+local function BonusTooltip(self)
+    local set = PieceList.set
+    if not set then return end
+    GameTooltip:SetOwner(self, "ANCHOR_BOTTOMLEFT")
+    GameTooltip:SetText(L.BONUSES, 1, 1, 1)
+    local bonuses = ns.Data:GetSetBonuses(set, function(doneSet)
+        if PieceList.set == doneSet and GameTooltip:IsOwned(self) then BonusTooltip(self) end
+    end)
+    if not bonuses then
+        GameTooltip:AddLine(L.LOADING, Theme.colors.loading:GetRGB())
+    elseif #bonuses == 0 then
+        GameTooltip:AddLine(L.BONUS_NONE, Theme.colors.subtle:GetRGB())
+    else
+        local have = ns.Owned:SetCount(set)
+        local on, off = Theme.colors.bonusOn, Theme.colors.bonusOff
+        for _, b in ipairs(bonuses) do
+            local r, g, bl
+            local text
+            if b.active then
+                text = L.BONUS_ACTIVE:format(b.text)
+                r, g, bl = on:GetRGB()
+            else
+                text = L.BONUS_LINE:format(b.n, b.text)
+                r, g, bl = (have >= b.n and on or off):GetRGB()
+            end
+            GameTooltip:AddLine(text, r, g, bl, true)
+        end
+    end
+    GameTooltip:Show()
 end
 
 local function TitleTooltip(self)
@@ -483,6 +510,11 @@ function PieceList:Build(parent)
     countHit:SetScript("OnEnter", CountTooltip)
     countHit:SetScript("OnLeave", GameTooltip_Hide)
 
+    -- "Set bonuses" link right of "Have x / y" (tooltip only; nothing to click).
+    local bonuses = LinkButton(parent, L.BONUSES, BonusTooltip)
+    bonuses:SetPoint("LEFT", count, "RIGHT", 12, 0)
+    self.bonuses = bonuses
+
     local report = LinkButton(parent, L.REPORT, L.REPORT_TIP, function()
         local set = PieceList.set
         if not set then return end
@@ -548,6 +580,7 @@ function PieceList:Refresh()
     local set = self.set
     local hasSet = set ~= nil
     self.report:SetShown(hasSet)
+    self.bonuses:SetShown(hasSet)
     self.prevB:SetEnabled(hasSet)
     self.nextB:SetEnabled(hasSet)
     if not hasSet then

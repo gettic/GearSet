@@ -60,6 +60,13 @@ Theme.art = {
         size  = 14,
     },
     detailBand = { 0, 0, 0, 0.35 },                     -- background of an opened piece row
+    -- Faction mark on PvP / Arathi Basin set rows: the mount journal's faction atlases
+    -- (Blizzard_MountCollection MOUNT_FACTION_TEXTURES), else the classic battle standard icons.
+    faction = {
+        A = { atlas = "MountJournalIcons-Alliance", file = "Interface\\Icons\\INV_BannerPVP_02" },
+        H = { atlas = "MountJournalIcons-Horde",    file = "Interface\\Icons\\INV_BannerPVP_01" },
+        size = 14,
+    },
 }
 Theme.art.rowHighlight = Theme.art.rowHover
 Theme.art.rowSelect    = Theme.art.rowSelected
@@ -96,6 +103,9 @@ Theme.colors = {
     detail    = Color("LIGHTGRAY_FONT_COLOR", 0.8, 0.8, 0.8),    -- source lines
     link      = Color("LINK_FONT_COLOR", 0.4, 0.73, 1),          -- "Report a mistake"
     linkHover = Color("HIGHLIGHT_FONT_COLOR", 1, 1, 1),
+    removed   = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),         -- names of sets removed from the game
+    bonusOn   = Color("GREEN_FONT_COLOR", 0.1, 1, 0.1),          -- set bonus in effect / enough pieces
+    bonusOff  = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),         -- set bonus not reached
 }
 
 -- Colour per piece state.

@@ -4,7 +4,7 @@ Keeps track of all known armor sets in the game, in one window with three parts:
 
 A World of Warcraft addon for **WoW Forever**.
 
-> **Beta:** this is a beta (v0.0.1-beta.6). It has not been fully tested in the game yet, so things may not work as they should. Please tell us what you find.
+> **Beta:** this is a beta (v0.0.1-beta.7). It has not been fully tested in the game yet, so things may not work as they should. Please tell us what you find.
 
 ## Install
 
@@ -33,10 +33,14 @@ It also works with minimap-button collector addons such as Mini Map. If one of t
 | What | How |
 |---|---|
 | Find a set | Type in the search box |
-| Filter | Class, armor type, "Only my class" (on by default for new installs), "Hide complete sets", "Reset filters" |
+| Filter | Class, Armor type, Content (Dungeon, Raid, PvP, Crafted, World, WoW Forever), "Only my class" (on by default for new installs), "Only my faction" (on by default), "Hide complete sets", "Show removed sets", "Reset filters" (puts every filter back to its default; the sort stays) |
+| Only my class | Keeps sets your class can wear. Dungeon Set 1 and 2 are matched to the classes they were made for. Other sets for all classes show only if your class can wear their armor type |
+| Removed sets | Sets taken out of the game in patch 1.11 (old PvP rare sets) are hidden. "Show removed sets" shows them with a grey name |
+| Faction | PvP and Arathi Basin sets show a small faction icon. "Only my faction" hides the other faction's sets |
 | No match | The list says which search and filters are on, with a button to clear them |
 | Count | Each set shows how many of its pieces you have |
-| Order | Complete sets first, then sets you have some pieces of, then the rest. In each group, the sets you own most of come first, then A-Z. The chosen set stays in view when the order changes |
+| Sort | In the filter menu: "Most owned first" (default), "Closest to finishing" or "Name" |
+| Order | "Most owned first": complete sets first, then sets you have some pieces of, then the rest. In each group, the sets you own most of come first, then A-Z. "Closest to finishing": sets missing the fewest pieces first, complete sets last. The chosen set stays in view when the order changes |
 
 ### Preview (middle)
 
@@ -52,12 +56,12 @@ Your character wearing the chosen set.
 
 ### Pieces (right)
 
-The set's pieces. At the top: the set name (arrows beside it go to the previous or next set), its armor type and classes, "Have x / y", and "Report wrong source". Hover "Have x / y" to see how many pieces are equipped, in your bags, in the bank, or only collected as an appearance. Each piece shows where it is: Equipped, In bags, In bank, Appearance or Need.
+The set's pieces. At the top: the set name (arrows beside it go to the previous or next set), its armor type and classes, "Have x / y", and "Report wrong source". Hover "Have x / y" to see how many pieces are equipped, in your bags, in the bank, or only collected as an appearance. Hover "Set bonuses" (next to it) to see the set's bonuses; a bonus is green when you have enough pieces or it is in effect. Each piece shows where it is: Equipped, In bags, In bank, Appearance or Need.
 
 | What | How |
 |---|---|
 | Show on the preview | Tick the box by the piece. Untick it to take the piece off. Necklaces, rings and trinkets don't show on the model, so their box is greyed out |
-| See how to get it | Click the piece (the +/-). It shows up to 3 lines: boss drop, quest, vendor, profession, world drop, or "Drop: <place>" for trash or several bosses. One piece is open at a time |
+| See how to get it | Click the piece (the +/-). It shows up to 3 lines: boss drop, quest (with the quest giver and place), vendor, profession, world drop, or "Drop: <place>" for trash or several bosses. If a piece has a quest or vendor line for each faction, you see only your own. One piece is open at a time |
 | Look it up | Open a piece and click "Copy name", then press Ctrl+C. "Wiki link" in that box gives a Warcraft Wiki search link instead |
 | Link in chat | Shift-click a piece |
 | Try it on | Ctrl-click a piece to open the dressing room |
@@ -66,7 +70,7 @@ The set's pieces. At the top: the set name (arrows beside it go to the previous 
 
 ### Report wrong source
 
-One link for the whole set. A box appears with a ready link, already selected. Press Ctrl+C, then paste the link into your browser. It opens a pre-filled GitHub issue (you need a GitHub account) that lists every piece of the set and what the addon shows for it. Add what is right and submit. Fixes come in the next update.
+One link for the whole set. A box appears with a ready link, already selected. Press Ctrl+C, then paste the link into your browser. It opens a pre-filled GitHub issue (you need a GitHub account) that lists every piece of the set and what the addon shows for it, with both factions' lines. Add what is right and submit. Fixes come in the next update.
 
 ## Colours
 

@@ -45,6 +45,32 @@ ns.L = {
     STATE_need = "Need",
     ALL_CLASSES = "All classes",
     UNKNOWN_SET = "Set %d",
+    ANY_CAN_WEAR = "(any class can wear it)",
+    -- Removed sets
+    SHOW_REMOVED = "Show removed sets",
+    REMOVED_TIP = "Removed in patch 1.11. It can't be bought any more.",
+    -- Sort menu
+    SORT = "Sort",
+    SORT_OWNED = "Most owned first",
+    SORT_CLOSEST = "Closest to finishing",
+    SORT_NAME = "Name",
+    -- Content filter (set kinds)
+    CONTENT = "Content",
+    KIND_D = "Dungeon",
+    KIND_R = "Raid",
+    KIND_P = "PvP",
+    KIND_C = "Crafted",
+    KIND_W = "World",
+    KIND_F = "WoW Forever",
+    MY_FACTION = "Only my faction",
+    ALLIANCE = "Alliance",           -- fallbacks; the game's FACTION_ALLIANCE / FACTION_HORDE come first
+    HORDE = "Horde",
+    -- Set bonuses (right panel header)
+    BONUSES = "Set bonuses",
+    BONUS_LINE = "(%d) %s",
+    BONUS_ACTIVE = "Active: %s",
+    BONUS_NONE = "No set bonus.",
+    SRC_FROM = "from %s",            -- quest giver
     -- One command per line (HandleSlash prints each line on its own).
     HELP = "/gs - open or close the window\n/gs reset - move the window back to the middle\n/gs minimap - show or hide the minimap button\n/gs check - test the set list (for bug reports)",
     POS_RESET = "Window moved back to the middle.",
@@ -100,7 +126,11 @@ local defaults = {
         -- so an existing saved false stays false.
         usable = true,
         hideComplete = false,
+        showRemoved = false,     -- sets removed in patch 1.11 stay hidden
+        kind = "",               -- content: "" = all, else "d"/"r"/"p"/"c"/"w"/"f"
+        myFaction = true,        -- hide the other faction's PvP / Arathi Basin sets
     },
+    sort = "owned",              -- set list order: "owned", "closest", "name"
     search = "",
     lastSet = nil,
     onlySet = false,
@@ -109,6 +139,9 @@ local defaults = {
         hide = false,
     },
 }
+
+-- Filter defaults, read by the set list's "Reset filters" (one place for both).
+ns.FILTER_DEFAULTS = defaults.filters
 
 -- Fill missing or wrong-typed keys from defaults; never removes the user's data.
 local function ApplyDefaults(db, def)
