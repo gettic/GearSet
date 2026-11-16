@@ -49,7 +49,7 @@ local defaults = {
     },
     search = "",
     lastSet = nil,
-    onlySet = true,
+    onlySet = false,
     minimap = {
         angle = 200,             -- degrees around the minimap, 0 = right, 90 = top
         hide = false,

@@ -4,7 +4,7 @@ Keeps track of all known armor sets in the game, in one window with three parts:
 
 A World of Warcraft addon for **WoW Forever**.
 
-> **Beta:** this is a beta (v0.0.1-beta.2). It has not been fully tested in the game yet, so things may not work as they should. Please tell us what you find.
+> **Beta:** this is a beta (v0.0.1-beta.3). It has not been fully tested in the game yet, so things may not work as they should. Please tell us what you find.
 
 ## Install
 
@@ -43,7 +43,7 @@ Your character wearing the chosen set.
 |---|---|
 | Turn | Drag with the mouse |
 | Zoom | Mouse wheel |
-| Show only the set | Tick "Only the set" to take off your own gear |
+| Show only the set | Tick "Only the set" to take off your own gear (off by default, so your own gear shows with the set) |
 | Take a piece off | Click the piece in the list on the right; click again to put it back |
 | Start over | "Reset" turns the model back, zooms out and puts all pieces back |
 
