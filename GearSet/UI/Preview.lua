@@ -43,7 +43,7 @@ function Preview:Build(parent)
         Preview.zoom = math.max(0, math.min(MAX_ZOOM, Preview.zoom + delta * 0.1))
         m:SetPortraitZoom(Preview.zoom)
     end)
-    model:SetScript("OnModelLoaded", function() Preview:Apply() end)
+    model:SetScript("OnModelLoaded", function() Preview:OnModelLoaded() end)
 
     -- Bottom bar: Reset button and "Only the set" check box.
     local reset = Theme.CreateFrame("Button", nil, parent, "button")
@@ -80,18 +80,39 @@ function Preview:Build(parent)
     self.check = check
 end
 
--- Dress the model: your gear (or nothing), then each shown piece of the set.
-function Preview:Apply()
-    local m = self.model
-    if not m then return end
-    if ns.db.onlySet then m:Undress() else m:Dress() end
-    local set = self.set
-    if not set then return end
+-- Put each shown piece of the set on the model.
+function Preview:TryOnPieces()
+    local m, set = self.model, self.set
+    if not (m and set) then return end
     for _, p in ipairs(set.pieces) do
         if not self.hidden[p.itemID] then
             m:TryOn(p.sourceID or ("item:" .. p.itemID))
         end
     end
+end
+
+-- Dress the model: your gear (or nothing), then each shown piece of the set.
+-- Dress() reloads the model and may fire OnModelLoaded inside the call; the
+-- flag stops that from coming back here (it used to recurse until C stack overflow).
+function Preview:Apply()
+    local m = self.model
+    if not m then return end
+    self.applying = true
+    if ns.db.onlySet then m:Undress() else m:Dress() end
+    self.applying = nil
+    self:TryOnPieces()
+end
+
+-- The model finished (re)loading (after SetUnit or Dress, now or a frame later).
+-- Never call Dress/SetUnit here: they reload the model and fire this again.
+function Preview:OnModelLoaded()
+    if self.applying then return end    -- inside our own Dress: Apply tries the pieces on next
+    if ns.db.onlySet then
+        self.applying = true
+        self.model:Undress()
+        self.applying = nil
+    end
+    self:TryOnPieces()
 end
 
 function Preview:ShowSet(set)

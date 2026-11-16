@@ -2,8 +2,12 @@
 ## Title: Gear Set
 ## Notes: Browse armor sets, see them on your character, and track which pieces you have or still need. /gs or /gearset
 ## Author: Gettic
-## Version: 0.0.1-beta.1
+## Version: 0.0.1-beta.2
 ## SavedVariables: GearSetDB
+## IconTexture: Interface\Icons\INV_Chest_Plate16
+## AddonCompartmentFunc: GearSet_OnAddonCompartmentClick
+## AddonCompartmentFuncOnEnter: GearSet_OnAddonCompartmentEnter
+## AddonCompartmentFuncOnLeave: GearSet_OnAddonCompartmentLeave
 
 Core.lua
 Theme.lua
@@ -14,3 +18,4 @@ UI\Main.lua
 UI\SetList.lua
 UI\Preview.lua
 UI\PieceList.lua
+UI\Minimap.lua

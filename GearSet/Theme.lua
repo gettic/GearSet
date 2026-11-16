@@ -22,6 +22,14 @@ Theme.art = {
     rowSelect    = { atlas = "PetList-ButtonSelect",    file = "Interface\\QuestFrame\\UI-QuestTitleHighlight" },
     modelBgAtlas = "dressingroom-background-%s",       -- %s = class file name, lower case
     modelBgColor = { 0.05, 0.05, 0.06, 1 },
+    -- Minimap button icon: first file that loads. INV_Chest_Plate16 = FileDataID 132751
+    -- (plate chest, warcraft.wiki.gg); question mark (134400) as the fallback.
+    minimapIcon  = { "Interface\\Icons\\INV_Chest_Plate16", "Interface\\Icons\\INV_Misc_QuestionMark" },
+    minimapButton = {
+        border     = "Interface\\Minimap\\MiniMap-TrackingBorder",
+        background = "Interface\\Minimap\\UI-Minimap-Background",
+        highlight  = "Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight",
+    },
 }
 
 Theme.fonts = {

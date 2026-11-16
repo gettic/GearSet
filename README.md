@@ -4,7 +4,7 @@ Keeps track of all known armor sets in the game, in one window with three parts:
 
 A World of Warcraft addon for **WoW Forever**.
 
-> **Beta:** this is the first beta (v0.0.1-beta.1). It has not been fully tested in the game yet, so things may not work as they should. Please tell us what you find.
+> **Beta:** this is a beta (v0.0.1-beta.2). It has not been fully tested in the game yet, so things may not work as they should. Please tell us what you find.
 
 ## Install
 
@@ -15,7 +15,17 @@ A World of Warcraft addon for **WoW Forever**.
 
 ## How to use
 
-Type `/gs` (or `/gearset`) to open or close the window. Esc closes it too. You can drag the window to move it.
+Type `/gs` (or `/gearset`) to open or close the window. You can also click the minimap button, or pick **Gear Set** in the Addon Compartment (the addons button by the minimap). Esc closes the window. You can drag the window to move it.
+
+### Minimap button
+
+| What | How |
+|---|---|
+| Open or close the window | Click the button (a plate chest icon), or pick **Gear Set** in the Addon Compartment |
+| Move it | Drag it around the minimap |
+| Hide or show it | `/gs minimap` |
+
+It also works with minimap-button collector addons such as Mini Map. If one of them holds the button, it moves the button, not Gear Set.
 
 ### Sets (left)
 
@@ -57,6 +67,7 @@ The set's pieces, with "Have x / y" at the top. Each piece shows where it is: Eq
 |---|---|
 | `/gs` or `/gearset` | Open or close the window |
 | `/gs reset` | Put the window back in the middle of the screen |
+| `/gs minimap` | Show or hide the minimap button |
 | `/gs check` | Check the built-in set list against the game and print any problems |
 
 ## Where the sets come from
@@ -78,6 +89,7 @@ The addon is in the `GearSet` folder (`GearSet_Forever.toc`, interface 16001). S
 | `UI\SetList.lua` | The set list, search and filter |
 | `UI\Preview.lua` | The character preview |
 | `UI\PieceList.lua` | The list of pieces |
+| `UI\Minimap.lua` | The minimap button and the Addon Compartment entry |
 
 ## License
 

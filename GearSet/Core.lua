@@ -30,8 +30,12 @@ ns.L = {
     STATE_need = "Need",
     ALL_CLASSES = "All classes",
     UNKNOWN_SET = "Set %d",
-    HELP = "/gs - open or close the window. /gs reset - put the window back in the middle. /gs check - check the built-in set list.",
+    HELP = "/gs - open or close the window. /gs reset - put the window back in the middle. /gs minimap - show or hide the minimap button. /gs check - check the built-in set list.",
     POS_RESET = "Window position reset.",
+    MINIMAP_TIP_CLICK = "Click: open or close the window.",
+    MINIMAP_TIP_DRAG = "Drag: move it around the minimap.",
+    MINIMAP_SHOWN = "Minimap button shown.",
+    MINIMAP_HIDDEN = "Minimap button hidden. Type /gs minimap to show it again.",
 }
 
 local defaults = {
@@ -46,6 +50,10 @@ local defaults = {
     search = "",
     lastSet = nil,
     onlySet = true,
+    minimap = {
+        angle = 200,             -- degrees around the minimap, 0 = right, 90 = top
+        hide = false,
+    },
 }
 
 -- Fill missing or wrong-typed keys from defaults; never removes the user's data.
@@ -85,6 +93,7 @@ events:SetScript("OnEvent", function(self, event, name)
     if event == "ADDON_LOADED" and name == ADDON then
         ns.InitDB()
         if ns.Owned and ns.Owned.Init then ns.Owned:Init() end
+        if ns.MinimapButton then ns.MinimapButton:Init() end
         self:UnregisterEvent("ADDON_LOADED")
     end
 end)
@@ -97,6 +106,9 @@ local function HandleSlash(msg)
         ns.db.point = nil
         ns.UI:ResetPosition()
         ns.Print(ns.L.POS_RESET)
+    elseif msg == "minimap" then
+        local shown = ns.MinimapButton:ToggleShown()
+        ns.Print(shown and ns.L.MINIMAP_SHOWN or ns.L.MINIMAP_HIDDEN)
     elseif msg == "check" then
         ns.Data:CheckClassic()
     else
