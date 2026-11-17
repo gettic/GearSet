@@ -135,6 +135,59 @@ function W.PanelButton(parent, text, tip, onClick)
     return b
 end
 
+-- Esc: the window has one slot in UISpecialFrames ("GearSetFrame", Main.lua). Frames
+-- shown over it (guide page, help) push their own name: the slot then holds the top
+-- name, so Esc (Blizzard's CloseSpecialWindows) closes only that one. The name is
+-- swapped at the same index, so a running CloseSpecialWindows loop is not disturbed
+-- and one Esc never closes two of ours. Only our own names are ever written.
+local WINDOW_NAME = "GearSetFrame"
+local escStack = {}           -- pushed names, last = top
+local escSlot = WINDOW_NAME   -- name our slot holds now
+
+local function EscTop()
+    return escStack[#escStack] or WINDOW_NAME
+end
+
+local function SyncEsc()
+    if type(UISpecialFrames) ~= "table" then return end
+    local want = EscTop()
+    for i, name in ipairs(UISpecialFrames) do
+        if name == escSlot then
+            UISpecialFrames[i] = want
+            escSlot = want
+            return
+        end
+    end
+    -- Our slot is missing (window not built yet): add the top name if it isn't the window's.
+    if want ~= WINDOW_NAME then
+        tinsert(UISpecialFrames, want)
+        escSlot = want
+    end
+end
+
+function W.PushEsc(name)
+    if type(name) ~= "string" then return end
+    for i = #escStack, 1, -1 do
+        if escStack[i] == name then table.remove(escStack, i) end
+    end
+    escStack[#escStack + 1] = name
+    SyncEsc()
+end
+
+-- Removes the name wherever it is in the stack (a frame under the top may close first,
+-- e.g. with the window); the slot then holds the new top.
+function W.PopEsc(name)
+    local found
+    for i = #escStack, 1, -1 do
+        if escStack[i] == name then table.remove(escStack, i); found = true end
+    end
+    if found then SyncEsc() end
+end
+
+function W.EscTop()
+    return EscTop()
+end
+
 -- Quality frame over an item icon (hidden until FillItem shows it).
 function W.IconBorder(parent, icon)
     local border = parent:CreateTexture(nil, "OVERLAY")

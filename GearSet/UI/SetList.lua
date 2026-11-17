@@ -7,6 +7,60 @@ ns.SetList = SetList
 
 local ROW_H = 22
 local COUNT_W = 32      -- fixed width of "have/total", so the faction icons line up
+local MAX_REASONS = 4   -- effort reasons shown in a set row's tooltip
+
+-- Text with an English fallback (keys part A adds to ns.L at the merge).
+local function T(key, fallback) return L[key] or fallback end
+
+-- Calls into Data (part A); nil-guarded so the list works without them.
+local function IsHidden(set)
+    local D = ns.Data
+    return D and D.IsHidden and D.IsHidden(set) and true or false
+end
+
+local function TierName(tag)
+    local D = ns.Data
+    if D and D.TierName then return D.TierName(tag) end
+    return L["TIER_" .. tag] or tag
+end
+
+-- Effort table for a set or nil (nothing needed, or Data has no effort yet).
+function SetList.GetEffort(set)
+    local D = ns.Data
+    if not (set and D and D.GetEffort) then return nil end
+    local ok, e = pcall(D.GetEffort, D, set)
+    if ok and type(e) == "table" then return e end
+end
+
+local EFFORT_WORDS = { [0] = "Done", "Low", "Medium", "High", "Very high" }
+
+-- Effort word ("High") and colour r, g, b (Theme.effortColor: Blizzard's con colours).
+function SetList.EffortWord(e)
+    local level = e and tonumber(e.level) or 0
+    return e and e.word or L["EFFORT_" .. level] or EFFORT_WORDS[level] or tostring(level)
+end
+
+function SetList.EffortRGB(e)
+    local level = e and tonumber(e.level) or 0
+    local c = Theme.effortColor and (Theme.effortColor[level] or Theme.effortColor[0])
+    if c and c.GetRGB then return c:GetRGB() end
+    return 0.5, 0.5, 0.5
+end
+
+-- "Effort: High" (coloured) + up to `max` reasons in a tooltip; nothing while nothing is needed.
+function SetList.AddEffortLines(tip, set, max)
+    local e = SetList.GetEffort(set)
+    if not e or (tonumber(e.level) or 0) == 0 then return false end
+    local r, g, b = SetList.EffortRGB(e)
+    tip:AddLine(T("EFFORT", "Effort: %s"):format(SetList.EffortWord(e)), r, g, b)
+    local reasons = type(e.reasons) == "table" and e.reasons or {}
+    local sr, sg, sb = Theme.colors.text:GetRGB()
+    for i, text in ipairs(reasons) do
+        if max and i > max then break end
+        tip:AddLine("  " .. tostring(text), sr, sg, sb, true)
+    end
+    return true
+end
 
 -- Class line for a set: class names in class colours; hinted sets (Dungeon Set 1/2)
 -- add "(any class can wear it)"; nil = all classes. Also used by the right panel header.
@@ -56,29 +110,72 @@ local function SetTooltip(row)
     end
     local faction = ns.Data.FactionName(set.faction)
     if faction then GameTooltip:AddLine(faction, Theme.colors.subtle:GetRGB()) end
+    if type(set.tier) == "string" and set.tier ~= "" then
+        GameTooltip:AddLine(T("TIER_LINE", "Tier: %s"):format(TierName(set.tier)), Theme.colors.subtle:GetRGB())
+    end
     local have, total = ns.Owned:SetCount(set)
     GameTooltip:AddLine(L.HAVE_COUNT:format(have, total), Theme.CountColor(have, total))
+    SetList.AddEffortLines(GameTooltip, set, MAX_REASONS)
     if set.removed then
         local r, g, b = Theme.colors.removed:GetRGB()
         GameTooltip:AddLine(L.REMOVED_TIP, r, g, b, true)
     end
     SetList.AddFlagLines(GameTooltip, set)
+    if IsHidden(set) then
+        Theme.AddHint(GameTooltip, T("HIDDEN_TIP", "Hidden: right-click to show it again."))
+    elseif ns.Data and ns.Data.SetHidden then
+        Theme.AddHint(GameTooltip, T("HIDE_HINT", "Right-click: hide this set"))
+    end
     GameTooltip:Show()
 end
 
+-- Hide or show a set (right-click menu), then redraw the list and the settings page.
+function SetList.ToggleHidden(set)
+    local D = ns.Data
+    if not (set and D and D.SetHidden) then return end
+    D.SetHidden(set, not IsHidden(set))
+    if GameTooltip and GameTooltip.Hide then GameTooltip:Hide() end
+    SetList:Refresh()
+    if ns.Settings and ns.Settings.Refresh then ns.Settings:Refresh() end
+end
+
+-- Row right-click: Blizzard's context menu with the set name and Hide / Show this set.
+local function RowMenu(row)
+    local set = row.set
+    if not (set and ns.Data and ns.Data.SetHidden) then return end
+    if not (MenuUtil and MenuUtil.CreateContextMenu) then return end
+    local hidden = IsHidden(set)
+    MenuUtil.CreateContextMenu(row, function(_, root)
+        if root.CreateTitle then root:CreateTitle(set.name) end
+        local text = hidden and T("SHOW_SET", "Show this set") or T("HIDE_SET", "Hide this set")
+        root:CreateButton(text, function() SetList.ToggleHidden(set) end)
+    end)
+end
+
 -- Faction mark on a row (PvP / Arathi Basin sets); the name ends left of it.
-local function SetFactionIcon(row, faction)
+local function SetFactionIcon(row, faction, hidden)
     local art = Theme.art.faction
     local entry = faction and art and art[faction]
     row.label:ClearAllPoints()
     row.label:SetPoint("LEFT", 8, 0)
+    row.tag:ClearAllPoints()
+    local anchor, gap
     if entry then
         Theme.SetArt(row.faction, entry)
         row.faction:Show()
-        row.label:SetPoint("RIGHT", row.faction, "LEFT", -4, 0)
+        anchor, gap = row.faction, -4
     else
         row.faction:Hide()
-        row.label:SetPoint("RIGHT", row.count, "LEFT", -6, 0)
+        anchor, gap = row.count, -6
+    end
+    -- A hidden set's "hidden" tag sits left of the icon / count; the name is cut, not the tag.
+    if hidden then
+        row.tag:SetPoint("RIGHT", anchor, "LEFT", gap, 0)
+        row.tag:Show()
+        row.label:SetPoint("RIGHT", row.tag, "LEFT", -4, 0)
+    else
+        row.tag:Hide()
+        row.label:SetPoint("RIGHT", anchor, "LEFT", gap, 0)
     end
 end
 
@@ -108,8 +205,16 @@ local function InitRow(row, set)
         row.faction:SetSize(size, size)
         row.faction:SetPoint("RIGHT", row.count, "LEFT", -4, 0)
         row.faction:Hide()
-        row:SetScript("OnClick", function(self)
-            if self.set then
+        row.tag = row:CreateFontString(nil, "OVERLAY")
+        Theme.Font(row.tag, "disabled")
+        row.tag:SetJustifyH("RIGHT")
+        row.tag:SetWordWrap(false)
+        row.tag:Hide()
+        row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        row:SetScript("OnClick", function(self, button)
+            if button == "RightButton" then
+                RowMenu(self)
+            elseif self.set then
                 PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
                 ns.UI:SelectSet(self.set.key)
             end
@@ -119,17 +224,23 @@ local function InitRow(row, set)
     end
     row.set = set
     local selected = set.key == ns.db.lastSet
+    -- Hidden sets (listed only with "Show hidden sets"), removed and not-yet-released
+    -- sets are grey; on the selected bar a lighter grey so the name stays readable.
+    local hidden = IsHidden(set)
     row.label:SetText(set.name)
-    -- Removed and not-yet-released sets are grey; on the selected bar a lighter grey so
-    -- the name stays readable.
     local nameColor = Theme.colors.text
-    if set.removed then
+    if hidden then
+        local c = Theme.colors
+        nameColor = selected and (c.hiddenSelected or c.removedSelected) or (c.hidden or c.removed)
+        row.tag:SetText(T("HIDDEN_TAG", "hidden"))
+        row.tag:SetTextColor(nameColor:GetRGB())
+    elseif set.removed then
         nameColor = selected and Theme.colors.removedSelected or Theme.colors.removed
     elseif set.unreleased then
         nameColor = selected and Theme.colors.laterSelected or Theme.colors.later
     end
     row.label:SetTextColor(nameColor:GetRGB())
-    SetFactionIcon(row, set.faction)
+    SetFactionIcon(row, set.faction, hidden)
     local have, total = ns.Owned:SetCount(set)
     row.count:SetText(("%d/%d"):format(have, total))
     if set.unreleased then row.count:SetTextColor(Theme.colors.later:GetRGB())
@@ -140,18 +251,25 @@ end
 -- Filter defaults: Core.lua's defaults.filters (ns.FILTER_DEFAULTS). "Only my class"
 -- and "Only my faction" are on by default, so they only count as changed when off.
 local FALLBACK_DEFAULTS = { class = 0, armor = 0, usable = true, hideComplete = false,
-    showRemoved = false, kind = "", myFaction = true }
+    showRemoved = false, kind = "", myFaction = true, showHidden = false }
 local function Defaults() return ns.FILTER_DEFAULTS or FALLBACK_DEFAULTS end
+-- Filters this file knows even before Core's defaults list them (DB v2).
+local EXTRA_DEFAULTS = { showHidden = false }
+
+local function DiffersFrom(f, k, v)
+    if type(v) == "boolean" then return (not f[k]) ~= (not v) end
+    return f[k] ~= v and f[k] ~= nil
+end
 
 -- True when filter table f differs from the defaults in any key (booleans compared
 -- as booleans, so a missing key reads as false).
 local function FiltersDiffer(f)
-    for k, v in pairs(Defaults()) do
-        if type(v) == "boolean" then
-            if (not f[k]) ~= (not v) then return true end
-        elseif f[k] ~= v and f[k] ~= nil then
-            return true
-        end
+    local d = Defaults()
+    for k, v in pairs(d) do
+        if DiffersFrom(f, k, v) then return true end
+    end
+    for k, v in pairs(EXTRA_DEFAULTS) do
+        if d[k] == nil and DiffersFrom(f, k, v) then return true end
     end
     return false
 end
@@ -165,7 +283,11 @@ end
 -- button, empty-list button). The sort order is not a filter and stays. Doesn't refresh; callers do.
 local function ResetFilters()
     local f = ns.db.filters
-    for k, v in pairs(Defaults()) do f[k] = v end
+    local d = Defaults()
+    for k, v in pairs(d) do f[k] = v end
+    for k, v in pairs(EXTRA_DEFAULTS) do
+        if d[k] == nil then f[k] = v end
+    end
 end
 
 -- Content filter entries (set kinds) in menu order (Core.lua, also used to check saved values).
@@ -173,7 +295,10 @@ local KINDS = ns.SET_KINDS or { "d", "r", "p", "c", "w", "f" }
 local function KindName(k) return L["KIND_" .. k:upper()] end
 
 -- Sort orders in menu order; unknown saved values sort like "owned".
-local SORTS = { { "owned", "SORT_OWNED" }, { "closest", "SORT_CLOSEST" }, { "name", "SORT_NAME" } }
+-- Third field: English fallback for keys part A adds later.
+local SORTS = { { "owned", "SORT_OWNED" }, { "closest", "SORT_CLOSEST" }, { "name", "SORT_NAME" },
+    { "effort", "SORT_EFFORT", "Least effort" } }
+local function SortLabel(s) return L[s[2]] or s[3] or s[1] end
 
 -- Menu entry label with the current choice after it: "Sort: Name" (choice in grey).
 local function ChoiceLabel(label, choice)
@@ -185,7 +310,7 @@ end
 -- Names of the current choices (pure; nil = nothing to name).
 function SetList.SortChoiceName()
     for _, s in ipairs(SORTS) do
-        if s[1] == SetList.SortMode() then return L[s[2]] end
+        if s[1] == SetList.SortMode() then return SortLabel(s) end
     end
 end
 
@@ -224,6 +349,15 @@ local function Changed()
     SetList:Refresh()
     local filter = SetList.filter
     if filter and filter.ValidateResetState then filter:ValidateResetState() end
+    -- The settings page shows "Show hidden sets" too (a reset may change it).
+    if ns.Settings and ns.Settings.Refresh then ns.Settings:Refresh() end
+end
+
+-- "Show hidden sets" (filter menu; the settings page has the same check box).
+function SetList.ToggleShowHidden(f)
+    f = f or ns.db.filters
+    f.showHidden = not f.showHidden
+    Changed()
 end
 
 -- Filter menu (Blizzard Menu API). Falls back to a plain button + context menu.
@@ -233,7 +367,7 @@ local function SetupMenu(owner, root)
     -- Submenu labels show the current choice; the menu is built again each time it opens.
     local sortMenu = root:CreateButton(ChoiceLabel(L.SORT, SetList.SortChoiceName()))
     for _, s in ipairs(SORTS) do
-        sortMenu:CreateRadio(L[s[2]], function() return SetList.SortMode() == s[1] end,
+        sortMenu:CreateRadio(SortLabel(s), function() return SetList.SortMode() == s[1] end,
             function() ns.db.sort = s[1]; Changed() end)
     end
     root:CreateDivider()
@@ -263,6 +397,10 @@ local function SetupMenu(owner, root)
     root:CreateCheckbox(L.MY_FACTION, function() return f.myFaction end, function() f.myFaction = not f.myFaction; Changed() end)
     root:CreateCheckbox(L.HIDE_COMPLETE, function() return f.hideComplete end, function() f.hideComplete = not f.hideComplete; Changed() end)
     root:CreateCheckbox(L.SHOW_REMOVED, function() return f.showRemoved end, function() f.showRemoved = not f.showRemoved; Changed() end)
+    if ns.Data and ns.Data.IsHidden then
+        root:CreateCheckbox(T("SHOW_HIDDEN", "Show hidden sets"), function() return f.showHidden end,
+            function() SetList.ToggleShowHidden(f) end)
+    end
     root:CreateDivider()
     root:CreateButton(L.RESET_FILTERS, function() ResetFilters(); Changed() end)
 end
@@ -271,7 +409,8 @@ end
 -- Returns lines, searchOn, filtersOn (pure: no frames, so it can be tested offline).
 -- filtersOn = some filter differs from its default (so "Reset filters" would change it);
 -- "Only my class" / "Only my faction" are named when on (they hide sets) but, being
--- defaults, don't set it. "Show removed sets" shows more, so it isn't named.
+-- defaults, don't set it. "Show removed sets" / "Show hidden sets" show more, so they
+-- aren't named (but do set filtersOn, so "Reset filters" offers to turn them off).
 function SetList.EmptyReason(search, f)
     local lines = {}
     local searchOn = type(search) == "string" and search:match("%S") ~= nil
@@ -314,6 +453,7 @@ function SetList:ClearAll()
         self:Refresh()
     end
     if self.filter and self.filter.ValidateResetState then self.filter:ValidateResetState() end
+    if ns.Settings and ns.Settings.Refresh then ns.Settings:Refresh() end
 end
 
 local function BuildEmpty(self, parent, box)
@@ -483,7 +623,28 @@ local function SortName(list)
     return list
 end
 
-local SORTERS = { owned = SortOwnedFirst, closest = SortClosest, name = SortName }
+-- Least effort first (Data:EffortRank: points for the pieces still needed, complete
+-- sets last), then name. Without the effort data it sorts by name.
+local rEffort = {}
+
+local function EffortLess(a, b)
+    if rEffort[a] ~= rEffort[b] then return rEffort[a] < rEffort[b] end
+    return ByName(a, b)
+end
+
+local function SortEffort(list)
+    local D = ns.Data
+    if not (D and D.EffortRank) then return SortName(list) end
+    for _, s in ipairs(list) do
+        local ok, rank = pcall(D.EffortRank, D, s)
+        rank = ok and tonumber(rank)
+        rEffort[s] = (rank and rank == rank) and rank or math.huge   -- NaN would break table.sort
+    end
+    table.sort(list, EffortLess)
+    return list
+end
+
+local SORTERS = { owned = SortOwnedFirst, closest = SortClosest, name = SortName, effort = SortEffort }
 
 -- The saved sort order ("owned" when missing or unknown).
 function SetList.SortMode()

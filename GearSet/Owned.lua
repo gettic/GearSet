@@ -90,6 +90,7 @@ function Owned:Invalidate()
     wipe(stateCache)
     wipe(countCache)
     equipped = nil
+    if ns.Data and ns.Data.ClearEffort then ns.Data:ClearEffort() end   -- effort counts needed pieces
 end
 
 -- Something changed: clear the cache, refresh the window once (coalesced).

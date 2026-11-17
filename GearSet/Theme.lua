@@ -17,6 +17,10 @@ Theme.templates = {
     scrollBar = { "MinimalScrollBar" },
     -- Guide page: scrolling text (modern template, then the classic one; plain ScrollFrame + wheel if neither).
     scrollFrame = { "ScrollFrameTemplate", "UIPanelScrollFrameTemplate" },
+    -- First-time help: "?" on the portrait (Blizzard's tutorial button; "?" link text if
+    -- missing) and the note boxes (help-tip glow box, else a tooltip box, else a dark box).
+    helpButton = { "MainHelpPlateButton" },
+    helpNote   = { "GlowBoxTemplate", "TooltipBackdropTemplate" },
 }
 
 Theme.art = {
@@ -74,6 +78,10 @@ Theme.art = {
         H = { atlas = "MountJournalIcons-Horde",    file = "Interface\\Icons\\INV_BannerPVP_01" },
         size = 14,
     },
+    -- Gear button left of the window's close button (opens the settings).
+    settingsIcon = { atlas = "GM-icon-settings", file = "Interface\\Buttons\\UI-OptionsButton", size = 20 },
+    -- First-time help: line from the "4. Settings" note up to the gear button.
+    helpLineWidth = 2,
 }
 
 Theme.sizes = {
@@ -128,7 +136,39 @@ Theme.colors = {
     flagLater   = Color("ORANGE_FONT_COLOR", 1, 0.5, 0.25),      -- "Not yet released on WoW Forever"
     later       = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),       -- names/counts of sets and pieces not out yet
     laterSelected = Color("LIGHTGRAY_FONT_COLOR", 0.8, 0.8, 0.8), -- a not-out-yet set's name on the selected bar
+    -- Hidden sets (listed only with "Show hidden sets")
+    hidden         = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),
+    hiddenSelected = Color("LIGHTGRAY_FONT_COLOR", 0.8, 0.8, 0.8),
+    -- Stats tooltip: can your class wear it
+    fitYes = Color("GREEN_FONT_COLOR", 0.1, 1, 0.1),
+    fitNo  = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),
+    -- First-time help
+    helpDim    = CreateColor(0, 0, 0, 0.6),                       -- over the three panels (GetRGBA)
+    helpHead   = Color("NORMAL_FONT_COLOR", 1, 0.82, 0),          -- note headings (gold)
+    helpText   = Color("HIGHLIGHT_FONT_COLOR", 1, 1, 1),          -- note text (white)
+    helpLine   = Color("NORMAL_FONT_COLOR", 1, 0.82, 0),          -- line to the gear button
+    helpNoteBg = CreateColor(0.05, 0.05, 0.05, 0.92),             -- note box when no template exists
+    -- Settings panel: grey data line
+    settingsData = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),
 }
+
+-- Effort word colours (Data:GetEffort level): 0 Done grey, 1 Low green, 2 Medium gold,
+-- 3 High orange, 4 Very high red.
+-- Blizzard's quest-difficulty ("con") colours when the client has them, else these values.
+local CON_NAMES = { [0] = "trivial", "standard", "difficult", "verydifficult", "impossible" }
+local EFFORT_FALLBACK = {
+    [0] = { 0.5, 0.5, 0.5 }, { 0.25, 0.75, 0.25 }, { 1, 1, 0 }, { 1, 0.5, 0.25 }, { 1, 0.1, 0.1 },
+}
+Theme.effortColor = {}
+for level = 0, 4 do
+    local con = type(QuestDifficultyColors) == "table" and QuestDifficultyColors[CON_NAMES[level]]
+    local f = EFFORT_FALLBACK[level]
+    if type(con) == "table" and tonumber(con.r) and tonumber(con.g) and tonumber(con.b) then
+        Theme.effortColor[level] = CreateColor(con.r, con.g, con.b, 1)
+    else
+        Theme.effortColor[level] = CreateColor(f[1], f[2], f[3], 1)
+    end
+end
 
 -- Colour per piece state.
 Theme.stateColor = {

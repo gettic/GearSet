@@ -4,7 +4,7 @@ Keeps track of all known armor sets in the game, in one window with three parts:
 
 A World of Warcraft addon for **WoW Forever**.
 
-> **Beta:** this is a beta (v1.0.0-beta.1). It has not been fully tested in the game yet, so things may not work as they should. Please tell us what you find.
+> **Beta:** this is a beta (v1.0.0-beta.2). It has not been fully tested in the game yet, so things may not work as they should. Please tell us what you find.
 
 ## Install
 
@@ -15,7 +15,7 @@ A World of Warcraft addon for **WoW Forever**.
 
 ## How to use
 
-Type `/gs` (or `/gearset`) to open or close the window. You can also click the minimap button, or pick **Gear Set** in the Addon Compartment (the addons button by the minimap). Esc closes the window. You can drag the window to move it. The window is large (1060x620); on a small screen or at a large UI scale, it shrinks to fit. You can also set a key in Key Bindings > Gear Set > "Open/close Gear Set" (no key is set by default).
+Type `/gs` (or `/gearset`) to open or close the window. You can also click the minimap button, or pick **Gear Set** in the Addon Compartment (the addons button by the minimap). Esc closes the window (the X button also works in combat). The first time you open it, and after an update, four short notes explain the window; click **Got it**, click anywhere or press Esc to close them. Open them again with the **?** on the portrait or `/gs help`. You can drag the window to move it. The window is large (1060x620); on a small screen or at a large UI scale, it shrinks to fit. You can also set a key in Key Bindings > Gear Set > "Open/close Gear Set" (no key is set by default).
 
 ### Minimap button
 
@@ -23,24 +23,41 @@ Type `/gs` (or `/gearset`) to open or close the window. You can also click the m
 |---|---|
 | Open or close the window | Click the button (the transmog symbol), or pick **Gear Set** in the Addon Compartment |
 | Move it | Drag it around the minimap |
-| Hide it | Right-click the button |
-| Show or hide it | /gs minimap |
+| Open the settings | Right-click the button |
+| Show or hide it | The check box in the settings, or `/gs minimap` |
 
 It also works with minimap-button collector addons such as Mini Map. If one of them holds the button, it moves the button, not Gear Set.
+
+### Settings
+
+Open them with the gear button at the top right of the window, a right-click on the minimap button, `/gs config`, or Esc > Options > AddOns > Gear Set. In combat they can't open (Blizzard's rule for addons): Gear Set says so and opens them when the fight ends.
+
+| Setting | What it does |
+|---|---|
+| Show the minimap button | Shows or hides the button |
+| Show help the next time I open Gear Set | Shows the first-time help again |
+| Reset window position | Puts the window back in the middle |
+| Show hidden sets in the list | Same as "Show hidden sets" in the filter menu |
+| Show all | Un-hides every hidden set |
+| Show help now | Opens the help |
+| Report a problem | Shows one line to copy for a bug report: addon and data version, game build, and the set and piece you looked at. No character name, realm or guild. Nothing is sent anywhere |
+| Data version | Shown at the bottom |
 
 ### Sets (left)
 
 | What | How |
 |---|---|
-| Find a set | Type in the search box |
-| Filter | The filter menu shows your current choice for Sort, Class, Armor type and Content. Choices: Class, Armor type, Content (Dungeon, Raid, PvP, Crafted, World, WoW Forever), "Only my class" (on by default for new installs), "Only my faction" (on by default), "Hide complete sets", "Show removed sets", "Reset filters" (puts every filter back to its default; the sort stays) |
+| Find a set | Type in the search box. A tier tag works too: "t2" or "tier 2" finds the Tier 2 sets |
+| Filter | The filter menu shows your current choice for Sort, Class, Armor type and Content. Choices: Class, Armor type, Content (Dungeon, Raid, PvP, Crafted, World, WoW Forever), "Only my class" (on by default for new installs), "Only my faction" (on by default), "Hide complete sets", "Show removed sets", "Show hidden sets", "Reset filters" (puts every filter back to its default; the sort stays) |
 | Only my class | Picking a class turns this off, and turning it on sets Class back to All, so the two never hide every set. It keeps sets your class can wear. Dungeon Set 1 and 2 are matched to the classes they were made for. Other sets for all classes show only if your class can wear their armor type |
 | Removed sets | Sets taken out of the game in patch 1.11 (old PvP rare sets) are hidden. "Show removed sets" shows them with a grey name |
 | Faction | PvP and Arathi Basin sets show a small faction icon. "Only my faction" hides the other faction's sets |
 | No match | The list says which search and filters are on, with a button to clear them |
 | Count | Each set shows how many of its pieces you have |
-| Sort | In the filter menu: "Most owned first" (default), "Closest to finishing" or "Name" |
-| Order | "Most owned first": complete sets first, then sets you have some pieces of, then the rest. In each group, the sets you own most of come first, then A-Z. "Closest to finishing": sets missing the fewest pieces first, complete sets last. The chosen set stays in view when the order changes |
+| Hide a set | Right-click it and pick "Hide this set". "Show hidden sets" in the filter menu lists hidden sets again in grey with a "hidden" tag; right-click one and pick "Show this set". "Reset filters" turns "Show hidden sets" off. Hidden sets are kept through `/reload` and updates |
+| Tier | The set tooltip shows the tier tag (Dungeon Set 1/2, Tier 1-3, Zul'Gurub, Ruins / Temple of Ahn'Qiraj, PvP), for example "Tier: Tier 2" |
+| Sort | In the filter menu: "Most owned first" (default), "Closest to finishing", "Least effort" or "Name" |
+| Order | "Most owned first": complete sets first, then sets you have some pieces of, then the rest. In each group, the sets you own most of come first, then A-Z. "Closest to finishing": sets missing the fewest pieces first, complete sets last. "Least effort": sets that need the least work for the pieces you still need first, complete sets last. The chosen set stays in view when the order changes |
 
 ### Preview (middle)
 
@@ -57,6 +74,11 @@ Your character wearing the chosen set.
 ### Pieces (right)
 
 The set's pieces. At the top: the set name (arrows beside it go to the previous or next set), its armor type and classes, and "Have x / y". Hover "Have x / y" to see how many pieces are equipped, in your bags, in the bank, or only collected as an appearance. Next to it, "Set bonuses (2/3)" shows the bonuses in effect out of all (grey when the set has none). Only pieces you wear count. Hover it to see "Set name (worn/total)" and each bonus; a bonus is green when you wear enough pieces. Each piece shows where it is: Equipped, In bags, In bank, Appearance or Need.
+
+Next to "Set bonuses" are two more hovers:
+
+- **Stats:** whether your class can wear the set, and the stats of all its pieces added up from the game's own item tooltips. It is read only for the set you look at, and only out of combat.
+- **Effort:** Low, Medium, High or Very high, worked out from Gear Set's own data for the pieces you still need (dungeons and raids to run, with 40-player raids counting more; quests inside dungeons; reputation; gold; quest chains; crafting; world drops; special events). Hover it to see the reasons.
 
 | What | How |
 |---|---|
@@ -116,6 +138,8 @@ Most of the data is classic data, not yet checked on WoW Forever. The guide page
 | `/gs` or `/gearset` | Open or close the window |
 | `/gs reset` | Put the window back in the middle of the screen |
 | `/gs minimap` | Show or hide the minimap button |
+| `/gs config` | Open the settings |
+| `/gs help` | List the commands in chat and show the help on the window |
 | `/gs check` | Show the data version, last-checked date, WoW Forever build, data sources and how many sets and sources are checked on Forever, then check the built-in set list against the game and print any problems |
 | `/gs probe` | List which game features this client has (waypoints, current map, tooltips, lockouts, reputation, keyring, account bank, journals, art) and put the result in a copy box to paste into a bug report |
 
@@ -131,6 +155,7 @@ The addon is in the `GearSet` folder (`GearSet_Forever.toc`, interface 16001). S
 |---|---|
 | `Core.lua` | Text, saved settings, slash commands |
 | `Theme.lua` | Every look choice (Blizzard templates, atlases, fonts, colours) in one place |
+| `Entries.lua` | Typed keys ("set:<id>") and providers for what the addon tracks |
 | `SetsData.lua` | The built-in list of classic sets |
 | `SourcesData.lua` | The built-in list of where each piece comes from |
 | `GuideData.lua` | The built-in guide data (bosses, NPCs, quests, items, quest chains) |
@@ -143,6 +168,8 @@ The addon is in the `GearSet` folder (`GearSet_Forever.toc`, interface 16001). S
 | `UI\Preview.lua` | The character preview |
 | `UI\PieceList.lua` | The list of pieces |
 | `UI\GuidePage.lua` | The guide page for one piece |
+| `UI\Settings.lua` | The settings page |
+| `UI\Help.lua` | The first-time help |
 | `UI\Minimap.lua` | The minimap button and the Addon Compartment entry |
 
 ## Credits

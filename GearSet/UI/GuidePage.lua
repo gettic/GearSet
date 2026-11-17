@@ -16,7 +16,6 @@ local GuidePage = {}
 ns.GuidePage = GuidePage
 
 local PAGE_NAME = "GearSetGuidePage"
-local WINDOW_NAME = "GearSetFrame"
 local HEADER_TOP = -36
 local STATE_Y = HEADER_TOP - 54   -- centre of the state line (icon top -48, small font)
 local DIVIDER_TOP = -104
@@ -48,15 +47,8 @@ local function ArrowTip(text)
     end
 end
 
--- Esc: swap the window's UISpecialFrames entry for the page's (same index, so a
--- running CloseSpecialWindows loop is not disturbed), and back again.
-local function SwapSpecial(from, to)
-    if type(UISpecialFrames) ~= "table" then return end
-    for i, name in ipairs(UISpecialFrames) do
-        if name == from then UISpecialFrames[i] = to; return end
-    end
-    if to == PAGE_NAME then tinsert(UISpecialFrames, to) end
-end
+-- Esc: W.PushEsc / W.PopEsc (Widgets.lua) put the page's name in the window's
+-- UISpecialFrames slot while it is open (the help can stack on top of it).
 
 -- Re-anchor the modern scroll bar like the piece list's (inside the panel's right edge).
 local function PlaceScrollBar(scroll, tmpl)
@@ -684,7 +676,7 @@ function GuidePage:Open(piece, set)
     if set ~= self.set then self.openFolds = {} end
     self.piece, self.set = piece, set
     if not self.page:IsShown() then
-        SwapSpecial(WINDOW_NAME, PAGE_NAME)
+        W.PushEsc(PAGE_NAME)
         self.page:Show()
     end
     self:FillHeader()
@@ -734,7 +726,7 @@ function GuidePage:OnHidden()
     self:HideCopyText()
     if self.page:IsShown() then self.page:Hide() end
     self.hiding = nil
-    SwapSpecial(PAGE_NAME, WINDOW_NAME)
+    W.PopEsc(PAGE_NAME)
     self.renderToken = nil
     if ns.PieceList and ns.PieceList.OnGuideClosed then ns.PieceList:OnGuideClosed() end
 end

@@ -45,6 +45,80 @@ local function FitToScreen(frame)
     end
 end
 
+local function T(key, fallback)
+    local v = L[key]
+    if v == nil then return fallback end
+    return v
+end
+
+-- Gear button left of the close button: opens Gear Set's page in Blizzard's settings.
+local function MakeGearButton(f)
+    local art = Theme.art.settingsIcon
+    local b = CreateFrame("Button", nil, f)
+    b:SetSize(art.size or 20, art.size or 20)
+    local close = f.CloseButton
+    if close then
+        b:SetPoint("RIGHT", close, "LEFT", -2, 0)
+    else
+        b:SetPoint("TOPRIGHT", f, "TOPRIGHT", -30, -4)
+    end
+    b:SetFrameLevel(f:GetFrameLevel() + 10)
+    local icon = b:CreateTexture(nil, "ARTWORK")
+    icon:SetAllPoints()
+    Theme.SetArt(icon, art)
+    b.icon = icon
+    local hl = b:CreateTexture(nil, "HIGHLIGHT")
+    hl:SetAllPoints()
+    Theme.SetArt(hl, art)
+    hl:SetBlendMode("ADD")
+    hl:SetAlpha(0.5)
+    b:SetScript("OnMouseDown", function() icon:SetPoint("TOPLEFT", 1, -1); icon:SetPoint("BOTTOMRIGHT", 1, -1) end)
+    b:SetScript("OnMouseUp", function() icon:ClearAllPoints(); icon:SetAllPoints() end)
+    b:SetScript("OnClick", function()
+        PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+        if not (ns.Settings and ns.Settings.Open and ns.Settings:Open()) then
+            ns.Print(T("SETTINGS_MISSING", "Settings aren't available in this game version. Use /gs minimap and /gs reset."))
+        end
+    end)
+    b:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+        GameTooltip:SetText(T("SETTINGS", "Settings"), Theme.colors.title:GetRGB())
+        Theme.AddHint(GameTooltip, T("SETTINGS_TIP_HINT", "Also: /gs config"))
+        GameTooltip:Show()
+    end)
+    b:SetScript("OnLeave", GameTooltip_Hide)
+    return b
+end
+
+-- "?" on the portrait: Blizzard's tutorial button (MainHelpPlateButton), else a "?" link.
+-- Its own scripts are replaced on our child button only (no Blizzard function touched).
+local function MakeHelpButton(f)
+    local function OnClick()
+        if ns.Help and ns.Help.Show then ns.Help:Show() end
+    end
+    local function OnEnter(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText(T("HELP_BUTTON_TIP", "Show help"), Theme.colors.title:GetRGB())
+        GameTooltip:Show()
+    end
+    local anchor = f.PortraitContainer or f.portrait or f
+    local b, tmpl = Theme.CreateFrame("Button", nil, f, "helpButton")
+    if b and tmpl then
+        b:SetScale(0.6)
+        b:ClearAllPoints()
+        b:SetPoint("CENTER", anchor, "BOTTOMRIGHT", -2, 4)
+        b:SetScript("OnClick", OnClick)
+        b:SetScript("OnEnter", OnEnter)
+        b:SetScript("OnLeave", GameTooltip_Hide)
+    else
+        if b then b:Hide() end
+        b = ns.Widgets.LinkButton(f, "?", OnEnter, OnClick, "link")
+        b:SetPoint("CENTER", anchor, "BOTTOMRIGHT", -6, 6)
+    end
+    b:SetFrameLevel(f:GetFrameLevel() + 10)
+    return b
+end
+
 local function MakeInset(parent, x1, x2)
     local inset = Theme.CreateFrame("Frame", nil, parent, "inset")
     inset:SetPoint("TOPLEFT", parent, "TOPLEFT", x1, TOP)
@@ -83,6 +157,9 @@ function UI:Build()
         f:SetPortraitToUnit("player")
     end
     if f.Inset then f.Inset:Hide() end  -- we use our own three insets
+    -- The template's X calls HideUIPanel, which Blizzard blocks for addons in combat:
+    -- hide our own window directly (like Blizzard's floating frames' close buttons).
+    if f.CloseButton then f.CloseButton:SetScript("OnClick", function() f:Hide() end) end
 
     tinsert(UISpecialFrames, "GearSetFrame")  -- Esc closes it
 
@@ -94,11 +171,15 @@ function UI:Build()
     ns.Preview:Build(self.mid, f)  -- its Reset / "Only the set" go in the window's bottom bar
     ns.PieceList:Build(self.right)
 
+    self.gear = MakeGearButton(f)
+    self.helpButton = MakeHelpButton(f)
+
     f:SetScript("OnShow", function()
         FitToScreen(f)
         if f.SetPortraitToUnit then f:SetPortraitToUnit("player") end
         ns.Owned:Invalidate()
         UI:RefreshAll()
+        if ns.Help and ns.Help.MaybeShowFirstTime then ns.Help:MaybeShowFirstTime() end
     end)
     f:SetScript("OnHide", function()
         PlaySound(SOUNDKIT.IG_CHARACTER_INFO_CLOSE)

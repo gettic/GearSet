@@ -16,7 +16,8 @@ local PLANNED_ATLASES = {
 }
 local PLANNED_TEMPLATES = {
     "PanelTabButtonTemplate", "MapCanvasPinTemplate", "MaximizeMinimizeButtonFrameTemplate",
-    "MainHelpPlateButton", "WowStyle1DropdownTemplate",
+    "MainHelpPlateButton", "WowStyle1DropdownTemplate", "GlowBoxTemplate", "UIPanelButtonTemplate",
+    "TooltipBackdropTemplate",
 }
 local PLANNED_FONTS = { "ObjectiveTrackerLineFont", "GameFontHighlightSmall" }
 
@@ -204,6 +205,34 @@ local CHECKS = {
     end },
     { "Secrets", function()
         return Has({ "issecretvalue", "canaccessvalue" })
+    end },
+    -- beta.2: can we read an item's tooltip text (fit facts)? Item 16827 = a Tier 1 piece.
+    { "Tooltip data", function()
+        local s = "in combat " .. YesNo(InCombatLockdown and InCombatLockdown())
+        local ok, data = Call("C_TooltipInfo.GetItemByID", 16827)
+        if not ok then
+            s = s .. ", GetItemByID " .. (IsFunc(Get(_G, "C_TooltipInfo.GetItemByID")) and "error" or "no")
+        elseif Safe(data) == "secret" then
+            s = s .. ", item data secret"
+        elseif type(data) == "table" and type(data.lines) == "table" then
+            local first = data.lines[1]
+            s = s .. ", item lines " .. #data.lines .. ", first " .. Safe(first and first.leftText)
+        else
+            s = s .. ", item data " .. Safe(data)
+        end
+        local D = ns.Data
+        if D and D.GetItemTooltipLines then
+            local okL, lines = pcall(D.GetItemTooltipLines, D, 16827)
+            s = s .. ", our read " .. (okL and (type(lines) == "table" and (#lines .. " lines") or "none") or "error")
+        end
+        return s
+    end },
+    -- beta.2: Blizzard Settings panel pieces (UI\Settings.lua).
+    { "Settings", function()
+        return Has({ "Settings.RegisterVerticalLayoutCategory", "Settings.RegisterAddOnCategory",
+            "Settings.RegisterAddOnSetting", "Settings.RegisterProxySetting", "Settings.CreateCheckbox",
+            "Settings.OpenToCategory", "CreateSettingsButtonInitializer",
+            "CreateSettingsListSectionHeaderInitializer" })
     end },
     { "Lockouts", function()
         return Has({ "GetSavedInstanceInfo", "RequestRaidInfo" }) .. ", " .. Val("GetNumSavedInstances")

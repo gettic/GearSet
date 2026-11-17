@@ -69,7 +69,7 @@ local function ShowTooltip(owner, anchor)
     Theme.AddHint(GameTooltip, L.MINIMAP_TIP_CLICK)
     if owner == MB.button then
         Theme.AddHint(GameTooltip, L.MINIMAP_TIP_DRAG)
-        Theme.AddHint(GameTooltip, L.MINIMAP_TIP_HIDE)
+        Theme.AddHint(GameTooltip, L.MINIMAP_TIP_SETTINGS or "Right-click: settings.")
     end
     GameTooltip:Show()
 end
@@ -133,7 +133,12 @@ function MB:Build()
 
     btn:SetScript("OnClick", function(_, mouse)
         if mouse == "RightButton" then
-            MB:Hide()
+            -- Settings page (out of combat; in combat it opens afterwards); no settings
+            -- page on this client: the window instead.
+            GameTooltip:Hide()
+            if not (ns.Settings and ns.Settings.Open and ns.Settings:Open()) then
+                ns.UI:Toggle()
+            end
         else
             ns.UI:Toggle()
         end
@@ -154,6 +159,7 @@ function MB:Build()
 end
 
 function MB:Refresh()
+    if ns.Settings and ns.Settings.Refresh then ns.Settings:Refresh() end   -- check box follows /gs minimap
     if ns.db.minimap.hide then
         if self.button then self.button:Hide() end
     else
@@ -176,12 +182,12 @@ function MB:ToggleShown()
     return not ns.db.minimap.hide
 end
 
--- Right-click on the button: hide it and say in chat how to bring it back (/gs minimap).
+-- Hide the button (kept for /gs minimap; quiet: the command prints its own line).
+-- Right-click opens the settings now, where a check box shows / hides the button.
 function MB:Hide()
     GameTooltip:Hide()
     ns.db.minimap.hide = true
     self:Refresh()
-    ns.Print(L.MINIMAP_HIDDEN)
 end
 
 -- Addon Compartment (named in the .toc). Globals because the .toc refers to them.

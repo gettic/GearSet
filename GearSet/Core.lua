@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.DB_VERSION = 1
+ns.DB_VERSION = 2
 
 -- All user-facing text in one place (ready for translations later).
 ns.L = {
@@ -72,7 +72,7 @@ ns.L = {
     BONUS_ACTIVE = "Set: %s",
     BONUS_NONE = "No set bonus.",
     -- One command per line (HandleSlash prints each line on its own).
-    HELP = "/gs - open or close the window\n/gs reset - move the window back to the middle\n/gs minimap - show or hide the minimap button\n/gs check - show the data version and test the set list (for bug reports)\n/gs probe - test what this game client supports (for bug reports)",
+    HELP = "/gs - open or close the window\n/gs reset - move the window back to the middle\n/gs minimap - show or hide the minimap button\n/gs check - show the data version and test the set list (for bug reports)\n/gs probe - test what this game client supports (for bug reports)\n/gs config - open the settings\n/gs help - show this list and the help on the window",
     POS_RESET = "Window moved back to the middle.",
     MINIMAP_TIP_CLICK = "Click: open or close the window.",
     MINIMAP_TIP_DRAG = "Drag: move this button.",
@@ -187,6 +187,91 @@ ns.L = {
     PROBE_HEAD = "Probe, Gear Set %s",
     PROBE_COPY = "The probe text is in the copy box: press Ctrl+C and paste it into your bug report.",
     PROBE_POPUP = "Press Ctrl+C to copy the probe results, then paste them into your bug report.",
+    -- beta.2: settings panel (UI\Settings.lua)
+    SETTINGS = "Settings",
+    SETTINGS_TIP_HINT = "Also: /gs config",
+    SETTINGS_COMBAT = "The settings open after combat.",
+    SETTINGS_MISSING ="Settings aren't available in this game version. Use /gs minimap and /gs reset.",
+    S_WINDOW = "Window",
+    S_LIST = "Set list",
+    S_HELP = "Help",
+    S_MINIMAP = "Show the minimap button",
+    S_MINIMAP_TIP = "Also /gs minimap.",
+    S_HELP_NEXT = "Show help the next time I open Gear Set",
+    S_POS_LABEL = "Window position",
+    S_RESET_POS = "Reset",
+    S_RESET_POS_TIP = "Moves the window back to the middle of the screen.",
+    S_SHOW_HIDDEN = "Show hidden sets in the list",
+    S_HIDDEN_LABEL = "Hidden sets",
+    S_UNHIDE_ALL = "Show all (%d)",
+    S_HELP_LABEL = "First-time help",
+    S_HELP_NOW = "Show now",
+    S_REPORT_LABEL = "Found a bug?",
+    S_REPORT = "Report a problem",
+    S_REPORT_TIP = "Shows a line about your game and the set you looked at, ready to copy.",
+    S_DATA = "Data version %s, checked %s, WoW Forever %s",
+    REPORT_POPUP = "Copy this line (Ctrl+C) and send it with your bug report, then say what went wrong:",
+    -- First-time help (UI\Help.lua)
+    HELP_TITLE = "Gear Set",
+    HELP_GOT_IT = "Got it",
+    HELP_BUTTON_TIP = "Show help",
+    HELP_SETS_H = "1. Sets",
+    HELP_SETS = "Pick a set here. The menu filters and sorts; right-click a set to hide it.",
+    HELP_MODEL_H = "2. The look",
+    HELP_MODEL = "Drag to turn, wheel to zoom. Untick a piece to hide it on the model.",
+    HELP_PIECES_H = "3. Pieces",
+    HELP_PIECES = "What you have and what you still need. Click a piece to see how to get it, step by step.",
+    HELP_SETTINGS_H = "4. Settings",
+    HELP_SETTINGS = "The gear button: minimap button, hidden sets, Report a problem. Reopen this help with ? or /gs help.",
+    MINIMAP_TIP_SETTINGS = "Right-click: settings.",
+    -- Hidden sets
+    HIDE_SET = "Hide this set",
+    SHOW_SET = "Show this set",
+    SHOW_HIDDEN = "Show hidden sets",
+    HIDDEN_SUFFIX = " (hidden)",
+    HIDDEN_TIP = "Hidden: right-click to show it again.",
+    HIDDEN_TAG = "hidden",                   -- small tag on a hidden set's row
+    HIDE_HINT = "Right-click: hide this set",
+    SORT_EFFORT = "Least effort",
+    -- Tier tags (SetsData t = ...)
+    TIER_LINE = "Tier: %s",
+    TIER_D1 = "Dungeon Set 1",
+    TIER_D2 = "Dungeon Set 2",
+    TIER_T1 = "Tier 1",
+    TIER_T2 = "Tier 2",
+    TIER_T3 = "Tier 3",
+    TIER_ZG = "Zul'Gurub",
+    TIER_AQ20 = "Ruins of Ahn'Qiraj",
+    TIER_AQ40 = "Temple of Ahn'Qiraj",
+    TIER_PvP = "PvP",
+    -- Effort score (Data:GetEffort)
+    EFFORT = "Effort: %s",
+    EFFORT_0 = "Done",
+    EFFORT_1 = "Low",
+    EFFORT_2 = "Medium",
+    EFFORT_3 = "High",
+    EFFORT_4 = "Very high",
+    EFFORT_TITLE = "Effort for the %d pieces you still need: %s",
+    EFFORT_RAID = "Raid: %s, %d players",
+    EFFORT_RAID_NOSIZE = "Raid: %s",
+    EFFORT_QUEST_RUNS = "Quests inside dungeons or raids: %d",
+    EFFORT_SPECIAL = "Special: %s",
+    EFFORT_PLACES = "Places to run: %d (%s)",
+    EFFORT_REP = "Reputation: %s",
+    EFFORT_GOLD = "About %d gold",
+    EFFORT_CHAIN = "Quest chain: %d steps",
+    EFFORT_CRAFT = "Crafted",
+    EFFORT_WORLD = "Random world drop",
+    EFFORT_HINT = "Click a piece to see how to get it.",
+    -- Fit facts (Data:GetSetStats)
+    STATS = "Stats",
+    STATS_TITLE = "%s: stats",
+    STATS_ALL = "All %d pieces together:",
+    STATS_SOURCE = "From the item tooltips in this game.",
+    STATS_NONE = "No stats found.",
+    STATS_COMBAT = "Stats are read after combat.",
+    FIT_YES = "You can wear it (%s).",
+    FIT_NO = "Your class can't wear this armor (%s).",
 }
 
 -- Key Bindings menu texts (Bindings.xml, loaded by the game from the addon folder).
@@ -211,14 +296,22 @@ local defaults = {
         showRemoved = false,     -- sets removed in patch 1.11 stay hidden
         kind = "",               -- content: "" = all, else "d"/"r"/"p"/"c"/"w"/"f"
         myFaction = true,        -- hide the other faction's PvP / Arathi Basin sets
+        showHidden = false,      -- DB v2: list hidden sets too (greyed)
     },
-    sort = "owned",              -- set list order: "owned", "closest", "name"
+    sort = "owned",              -- set list order: "owned", "closest", "name", "effort" (v2)
     search = "",
     lastSet = nil,
     onlySet = false,
     minimap = {
         angle = 200,             -- degrees around the minimap, 0 = right, 90 = top
         hide = false,
+    },
+    -- DB v2 (additive): hidden["set:<itemSetID>"] = true (Entries keys); help.seen = first-time
+    -- help shown. Beta.3 adds chars["Name-Realm"] = { class, faction, seen, items = "id,id,..." }
+    -- for this account's own characters only (never other players' data).
+    hidden = {},
+    help = {
+        seen = false,
     },
 }
 
@@ -239,7 +332,7 @@ end
 
 -- Content filter values (set kinds), in menu order; "" = all.
 ns.SET_KINDS = { "d", "r", "p", "c", "w", "f" }
-local SORT_MODES = { owned = true, closest = true, name = true }
+local SORT_MODES = { owned = true, closest = true, name = true, effort = true }
 local ANCHORS = { TOPLEFT = true, TOP = true, TOPRIGHT = true, LEFT = true, CENTER = true,
     RIGHT = true, BOTTOMLEFT = true, BOTTOM = true, BOTTOMRIGHT = true }
 
@@ -289,8 +382,11 @@ function ns.InitDB()
     if type(GearSetDB) ~= "table" then GearSetDB = {} end
     ApplyDefaults(GearSetDB, defaults)
     ValidateDB(GearSetDB)
-    -- Future migrations go here (compare GearSetDB.version).
-    GearSetDB.version = ns.DB_VERSION
+    -- Migrations (compare GearSetDB.version). v1 -> v2 only adds keys (ApplyDefaults above),
+    -- so there is nothing to convert. A newer version number is never lowered, so an older
+    -- build opening newer data doesn't mark it as old.
+    local v = tonumber(GearSetDB.version) or 0
+    if v < ns.DB_VERSION then GearSetDB.version = ns.DB_VERSION end
     ns.db = GearSetDB
 end
 
@@ -354,10 +450,12 @@ local function CopyDialog(text)
     }
 end
 
-local COPY_DIALOG = { name = "GEARSET_COPYNAME", wiki = "GEARSET_WIKI", probe = "GEARSET_PROBE" }
+local COPY_DIALOG = { name = "GEARSET_COPYNAME", wiki = "GEARSET_WIKI", probe = "GEARSET_PROBE",
+    report = "GEARSET_REPORT" }
 
 StaticPopupDialogs.GEARSET_WIKI = CopyDialog(ns.L.WIKI_POPUP)
 StaticPopupDialogs.GEARSET_PROBE = CopyDialog(ns.L.PROBE_POPUP)   -- /gs probe results
+StaticPopupDialogs.GEARSET_REPORT = CopyDialog(ns.L.REPORT_POPUP) -- Settings: Report a problem
 
 local nameDialog = CopyDialog(ns.L.COPY_POPUP)
 nameDialog.button2 = ns.L.WIKI_LINK
@@ -375,7 +473,46 @@ nameDialog.OnCancel = SwapToAlt          -- older dialog code
 nameDialog.OnButton2 = SwapToAlt         -- newer code may call this one instead
 StaticPopupDialogs.GEARSET_COPYNAME = nameDialog
 
--- ns.ShowCopyBox(kind, text, alt): kind "name" or "wiki"; alt = the "Wiki link" text for "name".
+-- "Report a problem" line: addon, data and game versions, the set shown and the last piece
+-- looked at. Never the character's name, realm or guild, and no web address (user's choice).
+-- Every part is guarded; missing parts are left out, so it never errors.
+local function ReportParts()
+    local parts = {}
+    local getMeta = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
+    local ok, ver = pcall(getMeta, ADDON, "Version")
+    parts[#parts + 1] = ns.L.TITLE .. " " .. ((ok and type(ver) == "string" and ver ~= "") and ver or "?")
+    if ns.Data and ns.Data.DataInfo then
+        local d = ns.Data.DataInfo()
+        parts[#parts + 1] = ("data %s (%s, Forever %s)"):format(tostring(d.version), d.checked, d.game)
+    end
+    if GetBuildInfo then
+        local okB, v, build = pcall(GetBuildInfo)
+        if okB and v then parts[#parts + 1] = ("game %s (%s)"):format(tostring(v), tostring(build or "?")) end
+    end
+    local key = ns.db and ns.db.lastSet
+    local okS, set = pcall(function() return key and ns.Data:GetSet(key) end)
+    if okS and set then parts[#parts + 1] = ("set: %s (%s)"):format(set.name or "?", set.key) end
+    local piece
+    if ns.GuidePage and ns.GuidePage.IsOpen and ns.GuidePage:IsOpen() then piece = ns.GuidePage.piece end
+    local itemID = (piece and piece.itemID) or (ns.PieceList and ns.PieceList.lastItem)
+    if type(itemID) == "number" then
+        local name
+        if C_Item and C_Item.GetItemNameByID then
+            local okN, n = pcall(C_Item.GetItemNameByID, itemID)
+            if okN then name = n end
+        end
+        parts[#parts + 1] = ("piece: %s (%d)"):format((type(name) == "string" and name ~= "") and name or "?", itemID)
+    end
+    return table.concat(parts, " | ")
+end
+
+function ns.ReportText()
+    local ok, text = pcall(ReportParts)
+    if ok and type(text) == "string" then return text end
+    return ns.L.TITLE .. " ?"
+end
+
+-- ns.ShowCopyBox(kind, text, alt): kind "name", "wiki", "probe" or "report"; alt = the "Wiki link" text for "name".
 function ns.ShowCopyBox(kind, text, alt)
     if not text or text == "" then return end
     local which = COPY_DIALOG[kind] or COPY_DIALOG.wiki
@@ -396,6 +533,7 @@ events:SetScript("OnEvent", function(self, event, name)
         ns.InitDB()
         if ns.Owned and ns.Owned.Init then ns.Owned:Init() end
         if ns.MinimapButton then ns.MinimapButton:Init() end
+        if ns.Settings and ns.Settings.Init then pcall(ns.Settings.Init, ns.Settings) end
         self:UnregisterEvent("ADDON_LOADED")
     end
 end)
@@ -416,8 +554,14 @@ local function HandleSlash(msg)
         ns.Data:CheckClassic()
     elseif msg == "probe" then
         if ns.Probe then ns.Probe:Run() end
+    elseif msg == "config" or msg == "settings" or msg == "options" then
+        -- Settings:Open() handles combat itself; the "missing" line only when the panel can't exist.
+        local S = ns.Settings
+        local opened = S and S.Open and S:Open()
+        if not opened and not (S and S.IsAvailable and S:IsAvailable()) then ns.Print(ns.L.SETTINGS_MISSING) end
     else
         for line in ns.L.HELP:gmatch("[^\n]+") do ns.Print(line) end
+        if msg == "help" and ns.Help and ns.Help.Show then ns.Help:Show() end
     end
 end
 

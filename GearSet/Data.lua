@@ -1,7 +1,7 @@
 -- Gear Set: set data layer. Turns the bundled table (SetsData.lua) into one shape:
 --   set = { key, id, name, classMask, armor, pieces = { { itemID, slot, order, sourceID } },
 --           hint (class mask, 0 = none), kind ("d"/"r"/"p"/"c"/"w"/"f" or nil),
---           faction ("A"/"H" or nil = both), removed (true or nil),
+--           faction ("A"/"H" or nil = both), removed (true or nil), tier ("T2", "D1", ... or nil),
 --           checked (true = checked on WoW Forever), unreleased (true = whole set not out on Forever),
 --           later = { pieces of a released set that are not out yet }, shown = pieces + later }
 --   A piece not out yet has piece.later = true. set.pieces holds the pieces that count (have/total,
@@ -244,6 +244,7 @@ local function BuildClassic(out)
                     -- optional fields (missing = old behaviour)
                     hint = tonumber(entry.h) or 0,
                     kind = (type(entry.k) == "string" and entry.k ~= "") and entry.k or nil,
+                    tier = (type(entry.t) == "string" and entry.t ~= "") and entry.t or nil,
                     faction = (entry.f == "A" or entry.f == "H") and entry.f or nil,
                     removed = IsOn(entry.r) or nil,
                     checked = IsOn(entry.fc) or nil,
@@ -370,7 +371,12 @@ function Data:Filter(search, f)
     for _, s in ipairs(self:GetSets()) do
         local ok = true
         if s.removed and not f.showRemoved then ok = false end
-        if ok and search ~= "" and not s.name:lower():find(search, 1, true) then ok = false end
+        if ok and not f.showHidden and Data.IsHidden(s) then ok = false end
+        if ok and search ~= "" and not s.name:lower():find(search, 1, true)
+            and not (s.tier and (s.tier:lower():find(search, 1, true)
+                or Data.TierName(s.tier):lower():find(search, 1, true))) then
+            ok = false
+        end
         if ok and f.class ~= 0 and not Data.SetForClass(s, f.class) then ok = false end
         if ok and f.armor ~= 0 and s.armor ~= f.armor then ok = false end
         if ok and kind and s.kind ~= kind then ok = false end
@@ -442,18 +448,28 @@ local function StripCodes(s)
 end
 Data.StripCodes = StripCodes
 
+-- Midnight "secret" values (probe: issecretvalue exists): never read or change them.
+local function IsSecret(v)
+    if issecretvalue then
+        local ok, s = pcall(issecretvalue, v)
+        return not ok or s == true
+    end
+    return false
+end
+Data.IsSecret = IsSecret
+
 local function LinesFromTooltipInfo(itemID)
     local ok, data = pcall(C_TooltipInfo.GetItemByID, itemID)
-    if not ok or type(data) ~= "table" or type(data.lines) ~= "table" then return nil end
+    if not ok or type(data) ~= "table" or IsSecret(data.lines) or type(data.lines) ~= "table" then return nil end
     local out = {}
     for _, line in ipairs(data.lines) do
         if line.leftText == nil and TooltipUtil and TooltipUtil.SurfaceArgs then
             pcall(TooltipUtil.SurfaceArgs, line)   -- older 10.0 data had the fields nested
         end
-        local text = StripCodes(line.leftText)
+        local text = not IsSecret(line.leftText) and StripCodes(line.leftText) or nil
         if text and text ~= "" then
             local c = line.leftColor
-            out[#out + 1] = { text = text, right = StripCodes(line.rightText),
+            out[#out + 1] = { text = text, right = not IsSecret(line.rightText) and StripCodes(line.rightText) or nil,
                 r = c and c.r or 1, g = c and c.g or 1, b = c and c.b or 1 }
         end
     end
@@ -476,10 +492,12 @@ local function LinesFromHiddenTooltip(itemID)
         for i = 1, tip:NumLines() or 0 do
             local left = _G["GearSetScanTooltipTextLeft" .. i]
             local right = _G["GearSetScanTooltipTextRight" .. i]
-            local text = left and StripCodes(left:GetText())
+            local raw = left and left:GetText()
+            local text = not IsSecret(raw) and StripCodes(raw) or nil
             if text and text ~= "" then
                 local r, g, b = left:GetTextColor()
-                local rt = right and right:IsShown() and StripCodes(right:GetText()) or nil
+                local rraw = right and right:IsShown() and right:GetText()
+                local rt = rraw and not IsSecret(rraw) and StripCodes(rraw) or nil
                 out[#out + 1] = { text = text, right = rt, r = r or 1, g = g or 1, b = b or 1 }
             end
         end
@@ -1198,4 +1216,386 @@ function Data:CheckClassic()
             Finish()
         end)
     end
+end
+
+-- ---------------------------------------------------------------------------
+-- beta.2: tiers, hidden sets, fit facts, effort score (plans\v1.0.0\beta2-interface.md).
+
+-- "T2" -> "Tier 2" (ns.L TIER_<tag>, else the tag itself).
+function Data.TierName(tag)
+    if type(tag) ~= "string" then return nil end
+    return (ns.L and ns.L["TIER_" .. tag]) or tag
+end
+
+-- Hidden sets: ns.db.hidden["set:<id>"] = true. Unknown keys and values are left alone.
+local function HiddenKey(set)
+    if ns.Entries and ns.Entries.SetKey then return ns.Entries.SetKey(set) end
+    return "set:" .. tostring(set.id)
+end
+
+local function HiddenTable()
+    local db = ns.db
+    if type(db) ~= "table" then return nil end
+    if type(db.hidden) ~= "table" then db.hidden = {} end
+    return db.hidden
+end
+
+function Data.IsHidden(set)
+    local h = set and HiddenTable()
+    return h ~= nil and h[HiddenKey(set)] == true
+end
+
+function Data.SetHidden(set, hidden)
+    local h = set and HiddenTable()
+    if not h then return end
+    h[HiddenKey(set)] = hidden and true or nil
+end
+
+-- Number of hidden sets (only "set:" keys set to true).
+function Data.HiddenCount()
+    local h, n = HiddenTable(), 0
+    for k, v in pairs(h or {}) do
+        if v == true and type(k) == "string" and k:find("^set:") then n = n + 1 end
+    end
+    return n
+end
+
+-- Show every hidden set again (removes only the set flags).
+function Data.ShowAllHidden()
+    local h = HiddenTable()
+    if not h then return end
+    local keys = {}
+    for k in pairs(h) do
+        if type(k) == "string" and k:find("^set:") then keys[#keys + 1] = k end
+    end
+    for _, k in ipairs(keys) do h[k] = nil end
+end
+
+-- Can the player's class wear this set's armor? true / false, nil if unknown.
+-- (Class-limited sets: the class mask; else the heaviest armor the class can wear.)
+function Data.CanWear(set)
+    if not set then return nil end
+    local classID = UnitClass and select(3, UnitClass("player"))
+    if not classID then return nil end
+    if set.classMask and set.classMask ~= 0 then return band(set.classMask, Data.ClassBit(classID)) ~= 0 end
+    local max = CLASS_MAX_ARMOR[classID]
+    if not max or not set.armor or set.armor == 0 then return true end
+    return set.armor <= max
+end
+
+-- Effort score: from our own data only (SourcesData + GuideData), for the pieces still
+-- needed. Points: dungeon or zone-boss place 1, raid place 3 (+1 at 40 players), quest done
+-- in a dungeon 1 / raid 3, special source (x note) 2, world drop 3, crafted 1, reputation 2
+-- each, gold 100+ 1 / 500+ 2, quest chain steps / 3 (rounded up). Per piece the source with
+-- the fewest points counts; places, quests, reps and chains count once per set.
+local effortCache, factCache = {}, {}
+local EFFORT_LEVELS = { 3, 7, 12 }       -- Low <= 3, Medium <= 7, High <= 12, else Very high
+
+-- Facts of one GuideData record (own small parse, does not touch the guide caches):
+-- { kind, size, gold, reps = { "Faction Standing" }, chain, steps }.
+local function RecordFacts(tname, key, mine)
+    if not Has(key) then return nil end
+    local g = ns.GuideData
+    local t = type(g) == "table" and g[tname]
+    local raw = type(t) == "table" and t[key]
+    if type(raw) ~= "string" then return nil end
+    local ck = tname .. "\31" .. key .. "\31" .. (mine or "")
+    local hit = factCache[ck]
+    if hit ~= nil then return hit or nil end
+    local f = { gold = 0, reps = {}, steps = 0 }
+    for part in raw:gmatch("[^;]+") do
+        local r, fac = SplitTagged(part)
+        if not fac or not mine or fac == mine then
+            local k, a, b = r[1], r[2], r[3]
+            if k == "kind" and Has(a) then f.kind = a
+            elseif k == "size" then f.size = tonumber(a)
+            elseif k == "type" and Has(a) then f.qtype = a:lower()
+            elseif k == "gold" then f.gold = f.gold + (tonumber(a) or 0)
+            elseif k == "rep" and Has(a) then f.reps[#f.reps + 1] = Has(b) and (a .. " " .. b) or a
+            elseif k == "chain" and Has(a) then f.chain = a
+            elseif k == "s" then f.steps = f.steps + 1 end
+        end
+    end
+    factCache[ck] = f
+    return f
+end
+
+local function GoldPoints(g)
+    if g >= 500 then return 2 elseif g >= 100 then return 1 end
+    return 0
+end
+
+-- One source as a small plan: places { name = { raid, size } }, world, craft, gold, reps, chains,
+-- quests { name = "dungeon"|"raid" } (quests done inside an instance), special { note = true }.
+local function SourcePlan(e, itemID, mine)
+    local p = { places = {}, gold = 0, reps = {}, chains = {}, quests = {}, special = {} }
+    local function AddRec(rec)
+        if not rec then return end
+        p.gold = p.gold + rec.gold
+        for _, r in ipairs(rec.reps) do p.reps[r] = true end
+        if rec.chain then p.chains[rec.chain] = true end
+    end
+    local function AddPlaceFacts(name)
+        if not Has(name) then return end
+        local rec = RecordFacts("place", name, mine)
+        local kind = rec and rec.kind
+        if kind == "city" or kind == "bg" then return end
+        -- zone: a named boss or rare out in the world, one place to go like a dungeon
+        p.places[name] = { raid = kind == "raid", size = rec and rec.size }
+        AddRec(rec)
+    end
+    local k = e.kind
+    if k == "b" then AddPlaceFacts(e.b)
+    elseif k == "z" then AddPlaceFacts(e.a)
+    elseif k == "w" then p.world = true
+    elseif k == "c" then p.craft = true
+    elseif k == "v" then AddRec(RecordFacts("npc", e.a, mine))
+    elseif k == "q" then
+        local q = RecordFacts("quest", e.a, mine)
+        AddRec(q)
+        local qt = q and q.qtype
+        if Has(e.a) and (qt == "dungeon" or qt == "raid") then p.quests[e.a] = qt end
+    elseif k == "x" and Has(e.a) then p.special[e.a] = true end
+    AddRec(RecordFacts("item", itemID, mine))
+    return p
+end
+
+local function ChainSteps(key, mine)
+    local rec = RecordFacts("chain", key, mine)
+    return rec and rec.steps or 0
+end
+
+local function PlanPoints(p, mine)
+    local pts = 0
+    for _, pl in pairs(p.places) do
+        pts = pts + (pl.raid and (3 + ((pl.size or 0) >= 40 and 1 or 0)) or 1)
+    end
+    for _, qt in pairs(p.quests) do pts = pts + (qt == "raid" and 3 or 1) end
+    for _ in pairs(p.special) do pts = pts + 2 end
+    if p.world then pts = pts + 3 end
+    if p.craft then pts = pts + 1 end
+    for _ in pairs(p.reps) do pts = pts + 2 end
+    local steps = 0
+    for c in pairs(p.chains) do steps = steps + ChainSteps(c, mine) end
+    pts = pts + math.ceil(steps / 3) + GoldPoints(p.gold)
+    return pts, steps
+end
+
+local function SortedKeys(t)
+    local out = {}
+    for k in pairs(t) do out[#out + 1] = k end
+    table.sort(out)
+    return out
+end
+
+-- { level 0..4, word, points, reasons = { text }, need } for a set, cached until
+-- Owned:Invalidate (Data:ClearEffort). level 0 = nothing left to get.
+function Data:GetEffort(set)
+    if not set or not set.pieces then return nil end
+    local hit = effortCache[set.key]
+    if hit then return hit end
+    local L, mine = ns.L, Data.PlayerFaction()
+    local total = { places = {}, gold = 0, reps = {}, chains = {}, quests = {}, special = {} }
+    local need = 0
+    for _, piece in ipairs(set.pieces) do
+        if not (ns.Owned and ns.Owned:IsHave(piece)) then
+            need = need + 1
+            -- The easiest way among this piece's sources (other faction's and not-out-yet ones skipped).
+            local best, bestPts
+            for _, e in ipairs(SourceEntries(piece.itemID)) do
+                if (not e.fac or not mine or e.fac == mine) and not e.later then
+                    local p = SourcePlan(e, piece.itemID, mine)
+                    local pts = PlanPoints(p, mine)
+                    if not bestPts or pts < bestPts then best, bestPts = p, pts end
+                end
+            end
+            if best then
+                for name, pl in pairs(best.places) do total.places[name] = pl end
+                total.world = total.world or best.world
+                total.craft = total.craft or best.craft
+                total.gold = total.gold + best.gold
+                for r in pairs(best.reps) do total.reps[r] = true end
+                for c in pairs(best.chains) do total.chains[c] = true end
+                for q, qt in pairs(best.quests) do total.quests[q] = qt end
+                for x in pairs(best.special) do total.special[x] = true end
+            end
+        end
+    end
+    local points, steps = PlanPoints(total, mine)
+    local level = 0
+    if need > 0 then
+        level = 4
+        for i, max in ipairs(EFFORT_LEVELS) do
+            if points <= max then level = i; break end
+        end
+    end
+    local reasons, dungeons = {}, {}
+    for _, name in ipairs(SortedKeys(total.places)) do
+        local pl = total.places[name]
+        if pl.raid then
+            reasons[#reasons + 1] = pl.size and L.EFFORT_RAID:format(name, pl.size)
+                or (L.EFFORT_RAID_NOSIZE or "Raid: %s"):format(name)
+        else
+            dungeons[#dungeons + 1] = name
+        end
+    end
+    if #dungeons > 0 then
+        reasons[#reasons + 1] = L.EFFORT_PLACES:format(#dungeons, table.concat(dungeons, ", "))
+    end
+    local nq = #SortedKeys(total.quests)
+    if nq > 0 then reasons[#reasons + 1] = (L.EFFORT_QUEST_RUNS or "Quests inside dungeons or raids: %d"):format(nq) end
+    for _, x in ipairs(SortedKeys(total.special)) do
+        reasons[#reasons + 1] = (L.EFFORT_SPECIAL or "Special: %s"):format(x)
+    end
+    for _, r in ipairs(SortedKeys(total.reps)) do reasons[#reasons + 1] = L.EFFORT_REP:format(r) end
+    if total.gold > 0 then reasons[#reasons + 1] = L.EFFORT_GOLD:format(math.floor(total.gold + 0.5)) end
+    if steps > 0 then reasons[#reasons + 1] = L.EFFORT_CHAIN:format(steps) end
+    if total.craft then reasons[#reasons + 1] = L.EFFORT_CRAFT end
+    if total.world then reasons[#reasons + 1] = L.EFFORT_WORLD end
+    local out = { level = level, word = L["EFFORT_" .. level], points = points, reasons = reasons, need = need }
+    effortCache[set.key] = out
+    return out
+end
+
+function Data:ClearEffort()
+    wipe(effortCache)
+end
+
+-- Sort key for "Least effort": lower first; complete sets last, sets not out yet before them.
+function Data:EffortRank(set)
+    local e = self:GetEffort(set)
+    if not e or e.need == 0 then return 1e9 end
+    if set.unreleased then return 1e8 + e.points end
+    return e.points + e.need * 0.01
+end
+
+-- Fit facts: stats added up from the live item tooltips of one set's pieces (the shown set
+-- only, never all sets). Never read in combat (secret values): returns nil, "combat" and
+-- calls onReady once after combat. Items not loaded: nil, one ContinueOnItemLoad each, then
+-- onReady(set, stats). No timers, no repeated retries.
+local statsCache, statsWaiting = {}, {}
+local combatWaiting, combatFrame = {}, nil
+
+local statPatterns
+local function StatPatterns()
+    if not statPatterns then
+        local equip = type(ITEM_SPELL_TRIGGER_ONEQUIP) == "string" and ITEM_SPELL_TRIGGER_ONEQUIP or "Equip:"
+        local use = type(ITEM_SPELL_TRIGGER_ONUSE) == "string" and ITEM_SPELL_TRIGGER_ONUSE or "Use:"
+        local armor = type(ARMOR_TEMPLATE) == "string" and ARMOR_TEMPLATE or "%s Armor"
+        statPatterns = { equip = equip, use = use, armor = FormatToPattern(armor),
+            armorName = type(ARMOR) == "string" and ARMOR or "Armor" }
+    end
+    return statPatterns
+end
+
+-- Pure parse (also used by the offline test): lines of several items -> stats table.
+function Data.SumStats(linesList)
+    local P = StatPatterns()
+    local bonus = BonusPatterns()
+    local sums, order, equip, equipOrder = {}, {}, {}, {}
+    local function AddStat(name, n)
+        if not sums[name] then sums[name] = 0; order[#order + 1] = name end
+        sums[name] = sums[name] + n
+    end
+    for _, lines in ipairs(linesList) do
+        for _, l in ipairs(lines) do
+            local text = l.text
+            if type(text) == "string" and not text:match(bonus.gray) and not text:match(bonus.active) then
+                local n, name = text:match("^%+(%d+) (.+)$")
+                if n then
+                    AddStat(name, tonumber(n))
+                elseif text:sub(1, #P.equip) == P.equip or text:sub(1, #P.use) == P.use then
+                    if not equip[text] then equip[text] = 0; equipOrder[#equipOrder + 1] = text end
+                    equip[text] = equip[text] + 1
+                else
+                    local a = text:match(P.armor)
+                    a = a and tonumber((a:gsub(",", "")))
+                    if a then AddStat(P.armorName, a) end
+                end
+            end
+        end
+    end
+    local stats = {}
+    for _, name in ipairs(order) do stats[#stats + 1] = { name = name, total = sums[name] } end
+    table.sort(stats, function(x, y)
+        if x.total ~= y.total then return x.total > y.total end
+        return x.name < y.name
+    end)
+    local eq = {}
+    for _, text in ipairs(equipOrder) do eq[#eq + 1] = { text = text, count = equip[text] } end
+    return { stats = stats, equip = eq, pieces = #linesList }
+end
+
+local function ReadStats(set)
+    local list = {}
+    for _, piece in ipairs(set.pieces) do
+        local lines = Data:GetItemTooltipLines(piece.itemID)
+        if not lines then return nil end          -- not ready: not cached, read again next time
+        list[#list + 1] = lines
+    end
+    local out = Data.SumStats(list)
+    statsCache[set.key] = out
+    return out
+end
+
+local function InCombat()
+    return InCombatLockdown and InCombatLockdown()
+end
+
+local function WaitForCombatEnd(set, onReady)
+    if not onReady then return end
+    combatWaiting[set.key] = { set, onReady }
+    if not combatFrame then
+        combatFrame = CreateFrame("Frame")
+        combatFrame:SetScript("OnEvent", function(self)
+            self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+            local list = combatWaiting
+            combatWaiting = {}
+            for _, w in pairs(list) do
+                local stats = Data:GetSetStats(w[1], w[2])
+                if stats then w[2](w[1], stats) end
+            end
+        end)
+    end
+    ns.SafeRegister(combatFrame, "PLAYER_REGEN_ENABLED")
+end
+
+function Data:GetSetStats(set, onReady)
+    if not set or not set.pieces then return nil end
+    local hit = statsCache[set.key]
+    if hit then return hit end
+    if InCombat() then
+        WaitForCombatEnd(set, onReady)
+        return nil, "combat"
+    end
+    if statsWaiting[set.key] then return nil end
+    local missing = {}
+    if Item and Item.CreateFromItemID then
+        for _, piece in ipairs(set.pieces) do
+            if not ItemName(piece.itemID) then missing[#missing + 1] = piece.itemID end
+        end
+    end
+    if #missing == 0 then return ReadStats(set) end
+    -- The one retry: when every missing item has loaded.
+    statsWaiting[set.key] = true
+    local left, sync, result = #missing, true, nil
+    for _, itemID in ipairs(missing) do
+        Item:CreateFromItemID(itemID):ContinueOnItemLoad(function()
+            left = left - 1
+            if left > 0 then return end
+            statsWaiting[set.key] = nil
+            if InCombat() then
+                if not sync then WaitForCombatEnd(set, onReady) end
+                return
+            end
+            result = ReadStats(set)
+            if not sync and onReady and result then onReady(set, result) end
+        end)
+    end
+    sync = false
+    return result
+end
+
+function Data:ClearSetStats()
+    wipe(statsCache)
 end

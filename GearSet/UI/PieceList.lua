@@ -1,6 +1,7 @@
 -- Gear Set: right panel - the set's pieces and whether you have or need each one.
 -- Header: set name (prev/next arrows), armor type + classes, "Have x / y" (tooltip
--- with the breakdown), "Set bonuses (x/y)" (tooltip).
+-- with the breakdown), "Set bonuses (x/y)", "Stats" (can you wear it + summed stats)
+-- and "Effort: High" (reasons), each with a tooltip.
 -- Each row: check box (piece shown on the preview), icon with quality frame, name
 -- (up to 2 lines), state, arrow. Clicking a row opens the piece's guide page
 -- (UI\GuidePage.lua) in place of the list; Back / Esc / right-click return here.
@@ -284,6 +285,106 @@ function PieceList:UpdateBonuses()
     end
 end
 
+-- Text with an English fallback (keys part A adds to ns.L at the merge).
+local function T(key, fallback) return L[key] or fallback end
+
+-- Fields of a stats row: { name, total } or { name = , total = } (same for equip lines).
+local function Pair(row, k1, k2)
+    if type(row) ~= "table" then return nil end
+    return row[k1] or row[1], row[k2] or row[2]
+end
+
+-- "Stats" tooltip: can you wear it, then the set's stats added up from the live item
+-- tooltips (Data:GetSetStats, cached per set; "Loading..." then a refill like the bonuses).
+local function StatsTooltip(self)
+    local set = PieceList.set
+    local D = ns.Data
+    if not (set and D and D.GetSetStats) then return end
+    local refilled = false
+    local ok, stats = pcall(D.GetSetStats, D, set, function(doneSet)
+        refilled = true
+        if PieceList.set == doneSet and GameTooltip:IsOwned(self) then StatsTooltip(self) end
+    end)
+    if refilled then return end
+    if not ok then stats = nil end
+    local c = Theme.colors
+    GameTooltip:SetOwner(self, "ANCHOR_BOTTOMLEFT")
+    GameTooltip:SetText(T("STATS_TITLE", "%s: stats"):format(set.name), c.bonusTitle:GetRGB())
+    -- Can you wear it (our data: class mask / hint / armor type)?
+    local armor = D.ArmorName and D.ArmorName(set.armor)
+    local fit = D.CanWear and D.CanWear(set)
+    if fit ~= nil and armor then
+        local col = fit and (c.fitYes or c.bonusOn) or (c.fitNo or c.bonusOff)
+        local text = fit and T("FIT_YES", "You can wear it (%s).")
+            or T("FIT_NO", "Your class can't wear this armor (%s).")
+        local r, g, b = col:GetRGB()
+        GameTooltip:AddLine(text:format(armor), r, g, b, true)
+    end
+    if not stats then
+        GameTooltip:AddLine(L.LOADING, c.loading:GetRGB())
+    else
+        local list = type(stats.stats) == "table" and stats.stats or {}
+        local equip = type(stats.equip) == "table" and stats.equip or {}
+        if #list == 0 and #equip == 0 then
+            GameTooltip:AddLine(T("STATS_NONE", "No stats found."), c.subtle:GetRGB())
+        else
+            local pieces = tonumber(stats.pieces) or #set.pieces
+            GameTooltip:AddLine(T("STATS_ALL", "All %d pieces together:"):format(pieces), c.text:GetRGB())
+            for _, s in ipairs(list) do
+                local name, total = Pair(s, "name", "total")
+                total = tonumber(total)
+                if name and total then
+                    GameTooltip:AddLine(("  %+d %s"):format(total, tostring(name)), c.text:GetRGB())
+                end
+            end
+            local r, g, b = c.bonusOn:GetRGB()
+            for _, e in ipairs(equip) do
+                local text, count = Pair(e, "text", "count")
+                count = tonumber(count) or 1
+                if text then
+                    local line = count > 1 and ("%dx %s"):format(count, tostring(text)) or tostring(text)
+                    GameTooltip:AddLine("  " .. line, r, g, b, true)
+                end
+            end
+        end
+        GameTooltip:AddLine(T("STATS_SOURCE", "From the item tooltips in this game."), c.none:GetRGB())
+    end
+    GameTooltip:Show()
+end
+
+-- "Effort: High" tooltip: the pieces still needed, the reasons, a hint.
+local function EffortTooltip(self)
+    local set = PieceList.set
+    local SL = ns.SetList
+    local e = set and SL and SL.GetEffort and SL.GetEffort(set)
+    if not e then return end
+    GameTooltip:SetOwner(self, "ANCHOR_BOTTOMLEFT")
+    local title = T("EFFORT_TITLE", "Effort for the %d pieces you still need: %s")
+    GameTooltip:SetText(title:format(tonumber(e.need) or 0, SL.EffortWord(e)), SL.EffortRGB(e))
+    local r, g, b = Theme.colors.text:GetRGB()
+    for _, text in ipairs(type(e.reasons) == "table" and e.reasons or {}) do
+        GameTooltip:AddLine("  " .. tostring(text), r, g, b, true)
+    end
+    Theme.AddHint(GameTooltip, T("EFFORT_HINT", "Click a piece to see how to get it."))
+    GameTooltip:Show()
+end
+
+-- "Effort: High" in its colour; hidden while nothing is needed or without the effort data.
+-- The label is gold like "Set bonuses"; only the word has the effort colour.
+function PieceList:UpdateEffort()
+    local b, set, SL = self.effort, self.set, ns.SetList
+    if not b then return end
+    local e = set and SL and SL.GetEffort and SL.GetEffort(set)
+    if not e or (tonumber(e.level) or 0) == 0 then
+        b:Hide()
+        return
+    end
+    -- "Effort:" stays the gold label colour; only the word is coloured.
+    local word = CreateColor(SL.EffortRGB(e)):WrapTextInColorCode(SL.EffortWord(e))
+    b:SetLinkText(T("EFFORT", "Effort: %s"):format(word))
+    b:Show()
+end
+
 local function TitleTooltip(self)
     local set = PieceList.set
     if not set then return end
@@ -375,6 +476,15 @@ function PieceList:Build(panel)
     bonuses:SetPoint("LEFT", count, "RIGHT", 12, 0)
     self.bonuses = bonuses
 
+    -- "Stats" and "Effort: High" right of it, same hover-only label style.
+    local stats = W.LinkButton(parent, T("STATS", "Stats"), StatsTooltip, nil, "label")
+    stats:SetPoint("LEFT", bonuses, "RIGHT", 12, 0)
+    self.stats = stats
+    local effort = W.LinkButton(parent, "", EffortTooltip, nil, "label")
+    effort:SetPoint("LEFT", stats, "RIGHT", 12, 0)
+    effort:Hide()
+    self.effort = effort
+
     local box = Theme.CreateFrame("Frame", nil, parent, "scrollBox")
     box:SetPoint("TOPLEFT", 4, LIST_TOP)
     box:SetPoint("BOTTOMRIGHT", -22, 4)
@@ -420,6 +530,8 @@ function PieceList:Refresh()
     local set = self.set
     local hasSet = set ~= nil
     self.bonuses:SetShown(hasSet)
+    self.stats:SetShown(hasSet and ns.Data and ns.Data.GetSetStats ~= nil)
+    self:UpdateEffort()          -- the effort cache is cleared via Owned:Invalidate
     self.prevB:SetEnabled(hasSet)
     self.nextB:SetEnabled(hasSet)
     if not hasSet then
