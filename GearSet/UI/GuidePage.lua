@@ -512,15 +512,19 @@ local function BuildCopyView(self)
     hint:SetPoint("TOPLEFT", 12, TEXT_TOP)
     hint:SetPoint("RIGHT", page, "RIGHT", -12, 0)
     hint:SetJustifyH("LEFT")
-    hint:SetText(L.G_COPY_HINT or "Ctrl+A selects all, Ctrl+C copies. Esc or Done goes back.")
+    hint:SetText(L.G_COPY_HINT or "Text is selected - press Ctrl+C to copy. Esc or Done goes back.")
     local scroll = ScrollArea(page, TEXT_TOP - 18)
     local box = CreateFrame("EditBox", nil, scroll)
     box:SetMultiLine(true)
     box:SetAutoFocus(false)
+    box:EnableMouse(true)
     box:SetFontObject(Theme.fonts.small)
     box:SetTextInsets(6, 6, 2, 2)
     box:SetMaxLetters(0)                                  -- 0 = no limit
     if box.SetMaxBytes then pcall(box.SetMaxBytes, box, 0) end
+    -- A box without a template may draw its selection invisibly: give it a colour.
+    local hl = Theme.colors.copyHighlight
+    if hl and box.SetHighlightColor then box:SetHighlightColor(hl:GetRGBA()) end
     box:SetWidth(400)
     box:SetHeight(100)
     box:SetScript("OnEscapePressed", function() GuidePage:HideCopyText() end)
@@ -530,10 +534,16 @@ local function BuildCopyView(self)
             eb:HighlightText()
         end
     end)
-    box:SetScript("OnMouseUp", function(_, button)
-        if button == "RightButton" then GuidePage:Back() end
+    box:SetScript("OnEditFocusGained", function(eb) eb:HighlightText() end)
+    box:SetScript("OnMouseUp", function(eb, button)
+        if button == "RightButton" then GuidePage:Back() return end
+        eb:HighlightText()                                -- a click selects all, ready for Ctrl+C
     end)
     scroll:SetScrollChild(box)
+    -- The box follows the area's real width (it can read 0 on the frame it's made).
+    scroll:HookScript("OnSizeChanged", function()
+        if GuidePage.copyMode then GuidePage:FillCopyText() end
+    end)
     -- Measures the text height for the box (the box itself may not grow on its own).
     local measure = page:CreateFontString(nil, "OVERLAY")
     Theme.Font(measure, "small")
@@ -547,8 +557,7 @@ function GuidePage:FillCopyText()
     if not (box and self.piece) then return end
     local text = self:PlainText()
     local width = self.copyScroll:GetWidth() or 0
-    if width < 100 then width = 434 end
-    box:SetWidth(width)
+    if width > 0 then box:SetWidth(width) else width = box:GetWidth() or 400 end
     box.gsText = text
     box:SetText(text)
     self.copyMeasure:SetWidth(width - 12)
@@ -572,10 +581,23 @@ function GuidePage:ShowCopyText()
     box:SetCursorPosition(0)
     box:SetFocus()
     box:HighlightText()
+    -- A multi-line box lays its text out again a frame later, which can drop the
+    -- selection: refill and select once more next frame (if still in the copy view).
+    local token = {}
+    self.copyToken = token
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, function()
+            if GuidePage.copyToken ~= token or not GuidePage.copyMode or not GuidePage:IsOpen() then return end
+            GuidePage:FillCopyText()
+            box:SetFocus()
+            box:HighlightText()
+        end)
+    end
 end
 
 -- Back to the normal guide; always lets go of the keyboard.
 function GuidePage:HideCopyText()
+    self.copyToken = nil                                  -- cancels a pending re-select
     local box = self.copyBox
     if box then
         box:ClearFocus()

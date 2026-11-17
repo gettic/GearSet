@@ -4,7 +4,7 @@ Keeps track of all known armor sets in the game, in one window with three parts:
 
 A World of Warcraft addon for **WoW Forever**.
 
-> **Beta:** this is a beta (v0.0.1-beta.9). It has not been fully tested in the game yet, so things may not work as they should. Please tell us what you find.
+> **Beta:** this is a beta (v0.0.1-beta.10). It has not been fully tested in the game yet, so things may not work as they should. Please tell us what you find.
 
 ## Install
 
@@ -78,7 +78,7 @@ Clicking a piece opens its guide page in the right panel.
 | Go back | "Back" button, Esc, or right-click |
 | Other pieces | The arrows go to the previous or next piece. Shift-click an arrow to jump to the next piece you still need |
 | Show on model | Tick "Show on model" (right of your state) to put the piece on the preview |
-| Copy text | "Copy text" shows the whole guide as plain text. Press Ctrl+A, then Ctrl+C. Esc or Done goes back |
+| Copy text | "Copy text" shows the whole guide as plain text. The text is already selected, so press Ctrl+C. A click in the box selects all again. Esc or Done goes back |
 | Look it up | "Copy name" and "Wiki link" are in the top bar |
 | More steps | Click a "Show ..." link to fold out more (the other faction's version, keys). Open ones stay open on the other pieces of the same set |
 
