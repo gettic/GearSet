@@ -64,7 +64,9 @@ local function BuildRow(row)
     end)
     check:SetScript("OnEnter", function(self)
         local p = row.piece
-        if p then W.SimpleTip(self, W.ShowsOnModel(p) and L.SHOW_PIECE_TIP or L.NO_MODEL_TIP) end
+        if not p then return end
+        if row.laterOff then W.SimpleTip(self, ns.Data.FlagText("FLAG_LATER"))
+        else W.SimpleTip(self, W.ShowsOnModel(p) and L.SHOW_PIECE_TIP or L.NO_MODEL_TIP) end
     end)
     check:SetScript("OnLeave", GameTooltip_Hide)
     row.check = check
@@ -128,9 +130,13 @@ InitRow = function(row, piece)
     local _, _, _, _, icon = ((C_Item and C_Item.GetItemInfoInstant) or GetItemInfoInstant)(itemID)
     row.icon:SetTexture(icon or 134400)  -- 134400 = question mark icon
     local hidden = ns.Preview:IsHidden(itemID)
-    row.icon:SetDesaturated(hidden)
+    -- Not out yet in a released set: greyed, not on the model, not counted (set.later).
+    local set = PieceList.set
+    local laterOff = piece.later and not (set and set.unreleased)
+    row.laterOff = laterOff
+    row.icon:SetDesaturated(hidden or laterOff)
 
-    if W.ShowsOnModel(piece) then
+    if W.ShowsOnModel(piece) and not laterOff then
         row.check:Enable()
         row.check:SetChecked(not hidden)
     else
@@ -139,10 +145,16 @@ InitRow = function(row, piece)
     end
 
     W.FillItem(row, itemID, OnRowItemLoaded)
+    row.name:SetAlpha(piece.later and 0.6 or 1)
 
     local state = ns.Owned:GetState(piece)
-    row.state:SetText(L["STATE_" .. state])
-    row.state:SetTextColor(W.StateColor(state):GetRGB())
+    if piece.later and not ns.Owned:IsHave(piece) then
+        row.state:SetText(ns.Data.FlagText("FLAG_LATER_SHORT"))
+        row.state:SetTextColor(Theme.colors.later:GetRGB())
+    else
+        row.state:SetText(L["STATE_" .. state])
+        row.state:SetTextColor(W.StateColor(state):GetRGB())
+    end
 
     row.sel:SetShown(PieceList.lastItem == itemID)
 end
@@ -169,7 +181,7 @@ function PieceList:OnGuideClosed()
     self.root:Show()
     self:Refresh()
     if p and self.set and self.box.ScrollToElementData then
-        for _, sp in ipairs(self.set.pieces) do
+        for _, sp in ipairs(self.set.shown or self.set.pieces) do
             if sp == p then
                 local align = ScrollBoxConstants and ScrollBoxConstants.AlignNearest
                 pcall(self.box.ScrollToElementData, self.box, sp, align)
@@ -302,6 +314,8 @@ local function CountTooltip(self)
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine(L.APPEARANCE_NOTE, Theme.colors.subtle:GetRGB())
     end
+    -- WoW Forever lines: pieces not out yet (not in "Have x / y"), checked / not confirmed.
+    if ns.SetList and ns.SetList.AddFlagLines then ns.SetList.AddFlagLines(GameTooltip, set) end
     GameTooltip:Show()
 end
 
@@ -422,6 +436,6 @@ function PieceList:Refresh()
     self.count:SetTextColor(Theme.CountColor(have, total))
     self:UpdateBonuses()
     local retain = ScrollBoxConstants and ScrollBoxConstants.RetainScrollPosition
-    self.box:SetDataProvider(CreateDataProvider(set.pieces), retain)
+    self.box:SetDataProvider(CreateDataProvider(set.shown or set.pieces), retain)
     if ns.GuidePage and ns.GuidePage:IsOpen() then ns.GuidePage:Refresh() end
 end

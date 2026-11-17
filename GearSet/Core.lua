@@ -72,7 +72,7 @@ ns.L = {
     BONUS_ACTIVE = "Set: %s",
     BONUS_NONE = "No set bonus.",
     -- One command per line (HandleSlash prints each line on its own).
-    HELP = "/gs - open or close the window\n/gs reset - move the window back to the middle\n/gs minimap - show or hide the minimap button\n/gs check - test the set list (for bug reports)",
+    HELP = "/gs - open or close the window\n/gs reset - move the window back to the middle\n/gs minimap - show or hide the minimap button\n/gs check - show the data version and test the set list (for bug reports)\n/gs probe - test what this game client supports (for bug reports)",
     POS_RESET = "Window moved back to the middle.",
     MINIMAP_TIP_CLICK = "Click: open or close the window.",
     MINIMAP_TIP_DRAG = "Drag: move this button.",
@@ -171,6 +171,22 @@ ns.L = {
     CHECK_SLOW = "%d items didn't load. Try /gs check again.",
     CHECK_DONE = "Check done: %d sets, %d items, %d problems%s.",
     CHECK_FIRST_40 = " (first 40 shown)",
+    DATA_VERSION = "Data version %s, last checked %s (WoW Forever %s).",
+    DATA_SOURCES = "Data sources: %s.",
+    DATA_SOURCES_LIST = "warcraft.wiki.gg (CC BY-SA) and checks in the WoW Forever game",
+    DATA_UNKNOWN = "unknown",
+    DATA_FLAGS = "Checked on WoW Forever: %d of %d sets, %d sets not out yet; %d of %d sources checked; %d pieces not out yet.",
+    DATA_BAD_FLAGS = "%d source flags don't match their sources (data error).",
+    -- Forever flags (UI files fall back to the same English text if a key is missing)
+    FLAG_CLASSIC = "Not confirmed on WoW Forever yet (classic data).",
+    FLAG_CHECKED = "Checked on WoW Forever.",
+    FLAG_LATER = "Not yet released on WoW Forever.",
+    FLAG_LATER_SHORT = "Not out yet",
+    FLAG_LATER_COUNT = "%d more not out yet",
+    -- /gs probe (Probe.lua)
+    PROBE_HEAD = "Probe, Gear Set %s",
+    PROBE_COPY = "The probe text is in the copy box: press Ctrl+C and paste it into your bug report.",
+    PROBE_POPUP = "Press Ctrl+C to copy the probe results, then paste them into your bug report.",
 }
 
 -- Key Bindings menu texts (Bindings.xml, loaded by the game from the addon folder).
@@ -292,7 +308,8 @@ end
 -- Copy box: Blizzard's own dialog with the text filled in and selected.
 -- The text can't be changed (typing puts it back), so Ctrl+C always copies all of it.
 -- Kinds: "wiki" (wiki search link) and "name" (item name, "Wiki link" swaps in the wiki search link).
-local COPY_MAX = 2000
+local COPY_MAX = 4000                   -- room for the /gs probe text (names and links are short)
+ns.COPY_MAX = COPY_MAX
 -- Newer dialog code has GetEditBox()/GetOwningDialog(); older uses .editBox and the parent.
 local function CopyBox(self)
     return (self.GetEditBox and self:GetEditBox()) or self.editBox or self.EditBox
@@ -337,9 +354,10 @@ local function CopyDialog(text)
     }
 end
 
-local COPY_DIALOG = { name = "GEARSET_COPYNAME", wiki = "GEARSET_WIKI" }
+local COPY_DIALOG = { name = "GEARSET_COPYNAME", wiki = "GEARSET_WIKI", probe = "GEARSET_PROBE" }
 
 StaticPopupDialogs.GEARSET_WIKI = CopyDialog(ns.L.WIKI_POPUP)
+StaticPopupDialogs.GEARSET_PROBE = CopyDialog(ns.L.PROBE_POPUP)   -- /gs probe results
 
 local nameDialog = CopyDialog(ns.L.COPY_POPUP)
 nameDialog.button2 = ns.L.WIKI_LINK
@@ -394,7 +412,10 @@ local function HandleSlash(msg)
         local shown = ns.MinimapButton:ToggleShown()
         ns.Print(shown and ns.L.MINIMAP_SHOWN or ns.L.MINIMAP_HIDDEN)
     elseif msg == "check" then
+        if ns.Probe then ns.Probe:PrintDataInfo() end
         ns.Data:CheckClassic()
+    elseif msg == "probe" then
+        if ns.Probe then ns.Probe:Run() end
     else
         for line in ns.L.HELP:gmatch("[^\n]+") do ns.Print(line) end
     end

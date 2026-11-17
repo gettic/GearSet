@@ -349,6 +349,10 @@ function GuidePage:LayBlocks(blocks, depth, y, width, path)
             y = y + math.max(h1, h2) + GAP_LINE
         elseif k == "text" then
             y = y + Text(self, "small", c.guideText, b.text, x0 + 8, y, w - 8) + GAP_LINE
+        elseif k == "flag" then
+            -- WoW Forever flag: "Not confirmed on WoW Forever yet", "Not yet released" ...
+            local col = (Theme.flagColor and Theme.flagColor[b.flag]) or c.guideNote
+            y = y + Text(self, "small", col, b.text, x0 + 8, y, w - 8) + GAP_LINE
         elseif k == "bullet" then
             -- "You bring" items sit in the value column; note bullets at the left.
             local bx = b.col and (x0 + 8 + LABEL_W) or (x0 + 18)
@@ -441,7 +445,7 @@ function GuidePage.PlainLines(blocks, depth, out)
             out[#out + 1] = ind .. text
         elseif k == "row" then
             out[#out + 1] = ind2 .. label .. ":" .. (text ~= "" and (" " .. text) or "")
-        elseif k == "text" then
+        elseif k == "text" or k == "flag" then
             out[#out + 1] = ind2 .. text
         elseif k == "bullet" then
             out[#out + 1] = ind2 .. (b.col and "  " or "") .. "- " .. text
@@ -631,14 +635,20 @@ function GuidePage:FillHeader()
     self.setLine:SetText(SetLine(self.set))
     self.setLine:SetTextColor(Theme.colors.subtle:GetRGB())
     local state = ns.Owned:GetState(p)
-    self.state:SetText(L["G_STATE_" .. state] or L["STATE_" .. state])
-    self.state:SetTextColor(W.StateColor(state):GetRGB())
+    if p.later and not ns.Owned:IsHave(p) then
+        self.state:SetText(ns.Data.FlagText("FLAG_LATER_SHORT"))
+        self.state:SetTextColor(Theme.colors.later:GetRGB())
+    else
+        self.state:SetText(L["G_STATE_" .. state] or L["STATE_" .. state])
+        self.state:SetTextColor(W.StateColor(state):GetRGB())
+    end
 
     if W.FillItem(self, itemID, OnItemLoaded) then FitName(self.name) else Theme.Font(self.name, "header") end
 
-    -- Show on model: like the row's check box (neck, rings, trinkets can't show).
+    -- Show on model: like the row's check box (neck, rings, trinkets can't show; nor a
+    -- piece not out yet in a released set: the model only wears set.pieces).
     local check = self.modelCheck
-    if W.ShowsOnModel(p) then
+    if W.ShowsOnModel(p) and not (p.later and self.set and not self.set.unreleased) then
         check:Enable()
         check:SetChecked(not ns.Preview:IsHidden(itemID))
         self.modelLabel:SetTextColor(Theme.colors.text:GetRGB())
@@ -648,10 +658,12 @@ function GuidePage:FillHeader()
         self.modelLabel:SetTextColor(Theme.colors.none:GetRGB())
     end
 
+    -- Counts over every listed piece, the ones not out yet included (set.shown).
     local n, total = 0, 0
     if self.set then
-        total = #self.set.pieces
-        for i, sp in ipairs(self.set.pieces) do if sp == p then n = i end end
+        local list = self.set.shown or self.set.pieces
+        total = #list
+        for i, sp in ipairs(list) do if sp == p then n = i end end
     end
     self.pos:SetText(total > 0 and L.G_PIECE_N:format(n, total) or "")
     self.prevB:SetEnabled(total > 1)
@@ -688,20 +700,23 @@ end
 
 -- Previous/next piece of the set (wraps at the ends). needOnly (Shift-click): the
 -- nearest piece in that direction you still need; if there is none, the plain step.
+-- Steps through set.shown (pieces not out yet included); "next needed" skips those.
 function GuidePage:Step(delta, needOnly)
     local set, p = self.set, self.piece
-    if not (set and p and #set.pieces > 0) then return end
-    local count = #set.pieces
+    local list = set and (set.shown or set.pieces)
+    if not (list and p and #list > 0) then return end
+    local count = #list
     local idx = 1
-    for i, sp in ipairs(set.pieces) do if sp == p then idx = i end end
+    for i, sp in ipairs(list) do if sp == p then idx = i end end
     local target = (idx - 1 + delta) % count + 1
     if needOnly then
         for s = 1, count - 1 do
             local i = (idx - 1 + delta * s) % count + 1
-            if not ns.Owned:IsHave(set.pieces[i]) then target = i; break end
+            local sp = list[i]
+            if not sp.later and not ns.Owned:IsHave(sp) then target = i; break end
         end
     end
-    self:Open(set.pieces[target], set)
+    self:Open(list[target], set)
 end
 
 -- Back to the piece list (button, Esc, right-click).

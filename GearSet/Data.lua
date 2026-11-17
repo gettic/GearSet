@@ -1,7 +1,12 @@
 -- Gear Set: set data layer. Turns the bundled table (SetsData.lua) into one shape:
 --   set = { key, id, name, classMask, armor, pieces = { { itemID, slot, order, sourceID } },
 --           hint (class mask, 0 = none), kind ("d"/"r"/"p"/"c"/"w"/"f" or nil),
---           faction ("A"/"H" or nil = both), removed (true or nil) }
+--           faction ("A"/"H" or nil = both), removed (true or nil),
+--           checked (true = checked on WoW Forever), unreleased (true = whole set not out on Forever),
+--           later = { pieces of a released set that are not out yet }, shown = pieces + later }
+--   A piece not out yet has piece.later = true. set.pieces holds the pieces that count (have/total,
+--   model, bonuses); a released set's later pieces are only in set.later / set.shown (greyed, not counted).
+--   Contract: plans\v1.0.0\beta1-interface.md.
 local _, ns = ...
 
 local Data = {}
@@ -117,24 +122,116 @@ local function SortPieces(pieces)
     end)
 end
 
+-- ---------------------------------------------------------------------------
+-- Data version and WoW Forever flags (contract: plans\v1.0.0\beta1-interface.md).
+-- ns.DataInfo (SetsData.lua); set fields fc / u / up; ns.SourceFlags (SourcesData.lua):
+-- [itemID] = "flags;flags", one part per source, f = checked on Forever, u = not out yet.
+
+local DATA_INFO_FALLBACK = { version = 0, checked = "?", game = "?" }
+
+-- { version, checked, game } of the bundled data; never nil, wrong types -> fallback values.
+function Data.DataInfo()
+    local d = ns.DataInfo
+    if type(d) ~= "table" then return DATA_INFO_FALLBACK end
+    return {
+        version = tonumber(d.version) or 0,
+        checked = (type(d.checked) == "string" and d.checked ~= "") and d.checked or "?",
+        game = (type(d.game) == "string" and d.game ~= "") and d.game or "?",
+    }
+end
+
+-- English fallbacks; Core.lua's ns.L wins when it has the key.
+local FLAG_TEXT = {
+    FLAG_CLASSIC = "Not confirmed on WoW Forever yet (classic data).",
+    FLAG_CHECKED = "Checked on WoW Forever.",
+    FLAG_LATER = "Not yet released on WoW Forever.",
+    FLAG_SRC_LATER = "This way is not out on WoW Forever yet.",
+    FLAG_LATER_SHORT = "Not out yet",
+    FLAG_LATER_COUNT = "%d more not out yet",
+}
+function Data.FlagText(key)
+    local L = ns.L
+    return (L and L[key]) or FLAG_TEXT[key] or key
+end
+
+local function IsOn(v) return v ~= nil and v ~= false and v ~= 0 end
+
+-- Number of sources an item has in SourcesData ("a;b;c" -> 3; empty parts don't count).
+local function NumSources(itemID)
+    local tbl = ns.SourcesData
+    local raw = type(tbl) == "table" and tbl[itemID]
+    if type(raw) ~= "string" then return 0 end
+    local n = 0
+    for _ in raw:gmatch("[^;]+") do n = n + 1 end
+    return n
+end
+
+-- Flag strings of an item's sources, one per source in SourcesData order ("" = none). Never nil.
+function Data.SourceFlags(itemID)
+    local tbl = ns.SourceFlags
+    local raw = type(tbl) == "table" and tbl[itemID]
+    local out = {}
+    if type(raw) ~= "string" then return out end
+    for part in (raw .. ";"):gmatch("([^;]*);") do out[#out + 1] = part end
+    return out
+end
+
+function Data.SourceChecked(itemID, index)
+    local f = Data.SourceFlags(itemID)[index]
+    return f ~= nil and f:find("f", 1, true) ~= nil
+end
+
+-- True when the item has sources and every one of them is flagged "not out yet".
+local function AllSourcesLater(itemID)
+    local tbl = ns.SourceFlags
+    if type(tbl) ~= "table" or tbl[itemID] == nil then return false end
+    local n = NumSources(itemID)
+    if n == 0 then return false end
+    local flags = Data.SourceFlags(itemID)
+    for i = 1, n do
+        if not (flags[i] and flags[i]:find("u", 1, true)) then return false end
+    end
+    return true
+end
+
 local function BuildClassic(out)
     local tbl = ClassicTable()
     if type(tbl) ~= "table" then return end
     for setID, entry in pairs(tbl) do
         if type(entry) == "table" and type(entry.i) == "table" then
-            local pieces = {}
+            local pieces, later = {}, {}
+            local whole = IsOn(entry.u)
+            local upSet
+            if type(entry.up) == "table" then
+                upSet = {}
+                for _, id in ipairs(entry.up) do upSet[id] = true end
+            end
             -- Most common armor type (cloth..plate) among body pieces; cloaks don't count.
             local count, best, bestN = {}, 0, 0
             for _, itemID in ipairs(entry.i) do
                 local p, armor = MakePiece(itemID)
-                if p then pieces[#pieces + 1] = p end
+                if p then
+                    if whole or (upSet and upSet[itemID]) or AllSourcesLater(itemID) then p.later = true end
+                    if p.later and not whole then later[#later + 1] = p else pieces[#pieces + 1] = p end
+                end
                 if armor then
                     count[armor] = (count[armor] or 0) + 1
                     if count[armor] > bestN then best, bestN = armor, count[armor] end
                 end
             end
+            -- Every piece not out yet: the whole set counts as not released.
+            if #pieces == 0 and #later > 0 then
+                whole, pieces, later = true, later, {}
+            end
             if #pieces > 0 then  -- sets whose items this client lacks are skipped
                 SortPieces(pieces)
+                local shown = pieces
+                if #later > 0 then
+                    SortPieces(later)
+                    shown = {}
+                    for _, p in ipairs(pieces) do shown[#shown + 1] = p end
+                    for _, p in ipairs(later) do shown[#shown + 1] = p end
+                end
                 local name = GetItemSetInfo and GetItemSetInfo(setID)
                 out[#out + 1] = {
                     key = "c" .. setID, id = setID,
@@ -142,11 +239,15 @@ local function BuildClassic(out)
                     classMask = tonumber(entry.c) or 0,
                     armor = best,
                     pieces = pieces,
+                    later = later,
+                    shown = shown,
                     -- optional fields (missing = old behaviour)
                     hint = tonumber(entry.h) or 0,
                     kind = (type(entry.k) == "string" and entry.k ~= "") and entry.k or nil,
                     faction = (entry.f == "A" or entry.f == "H") and entry.f or nil,
-                    removed = (entry.r ~= nil and entry.r ~= false and entry.r ~= 0) or nil,
+                    removed = IsOn(entry.r) or nil,
+                    checked = IsOn(entry.fc) or nil,
+                    unreleased = whole or nil,
                 }
             end
         end
@@ -170,6 +271,42 @@ end
 function Data:GetSet(key)
     self:GetSets()
     return key and self.byKey[key]
+end
+
+-- Flag totals for /gs check (no item loads). badFlags: SourceFlags entries that aren't strings,
+-- use letters other than f/u, or have more parts than the item has sources.
+function Data:FlagCounts()
+    local c = { sets = 0, setsChecked = 0, setsUnreleased = 0, pieces = 0, piecesLater = 0,
+        sources = 0, sourcesChecked = 0, sourcesLater = 0, badFlags = 0 }
+    for _, s in ipairs(self:GetSets()) do
+        c.sets = c.sets + 1
+        if s.checked then c.setsChecked = c.setsChecked + 1 end
+        if s.unreleased then c.setsUnreleased = c.setsUnreleased + 1 end
+        for _, p in ipairs(s.shown or s.pieces) do
+            c.pieces = c.pieces + 1
+            if p.later then c.piecesLater = c.piecesLater + 1 end
+        end
+    end
+    if type(ns.SourcesData) == "table" then
+        for itemID in pairs(ns.SourcesData) do
+            local n = NumSources(itemID)
+            c.sources = c.sources + n
+            local flags = Data.SourceFlags(itemID)
+            for i = 1, n do
+                local f = flags[i]
+                if f and f:find("f", 1, true) then c.sourcesChecked = c.sourcesChecked + 1 end
+                if f and f:find("u", 1, true) then c.sourcesLater = c.sourcesLater + 1 end
+            end
+        end
+    end
+    if type(ns.SourceFlags) == "table" then
+        for itemID, raw in pairs(ns.SourceFlags) do
+            if type(raw) ~= "string" or raw:find("[^fu;]") or #Data.SourceFlags(itemID) > NumSources(itemID) then
+                c.badFlags = c.badFlags + 1
+            end
+        end
+    end
+    return c
 end
 
 -- Classes that appear in any set (so the class filter lists only real ones).
@@ -757,16 +894,22 @@ function AddRows(out, rows, ctx)
     end
 end
 
--- SourcesData entries of an item: { kind, a, b, c, fac }.
+-- SourcesData entries of an item: { kind, a, b, c, fac, checked, later } (checked / later
+-- from ns.SourceFlags, same position as the source in the string).
 local function SourceEntries(itemID)
     local out = {}
     local tbl = ns.SourcesData
     local raw = type(tbl) == "table" and tbl[itemID]
     if type(raw) ~= "string" then return out end
+    local flags = Data.SourceFlags(itemID)
+    local i = 0
     for entry in raw:gmatch("[^;]+") do
+        i = i + 1
         local f, fac = SplitTagged(entry)
         if SOURCE_TYPES[f[1]] or f[1] == "x" then
-            out[#out + 1] = { kind = f[1], a = f[2], b = f[3], c = f[4], fac = fac }
+            local fl = flags[i] or ""
+            out[#out + 1] = { kind = f[1], a = f[2], b = f[3], c = f[4], fac = fac,
+                checked = fl:find("f", 1, true) ~= nil, later = fl:find("u", 1, true) ~= nil }
         end
     end
     return out
@@ -854,12 +997,42 @@ local function AddSource(out, e, itemID, ctx, state)
     end
 end
 
+-- WoW Forever flag line: { k = "flag", flag = "classic"/"checked"/"later"/"srcLater", text }.
+local FLAG_KEYS = { classic = "FLAG_CLASSIC", checked = "FLAG_CHECKED", later = "FLAG_LATER", srcLater = "FLAG_SRC_LATER" }
+local function FlagBlock(flag)
+    return { k = "flag", flag = flag, text = Data.FlagText(FLAG_KEYS[flag]) }
+end
+
+-- A list of sources with their Forever flags: one line on top when all of them agree
+-- (all checked / none checked), else a line under each source's heading. A source that
+-- is not out yet always says so (unless the whole piece already does).
+local function AddSources(out, list, itemID, ctx, state, pieceLater)
+    local nChecked = 0
+    for _, e in ipairs(list) do if e.checked then nChecked = nChecked + 1 end end
+    local perSource = nChecked > 0 and nChecked < #list
+    if #list > 0 and not perSource then
+        out[#out + 1] = FlagBlock(nChecked > 0 and "checked" or "classic")
+    end
+    for _, e in ipairs(list) do
+        local n0 = #out
+        AddSource(out, e, itemID, ctx, state)
+        local flag
+        if e.later and not pieceLater then flag = "srcLater"
+        elseif perSource then flag = e.checked and "checked" or "classic" end
+        if flag then
+            local at = (out[n0 + 1] and out[n0 + 1].k == "sub") and n0 + 2 or n0 + 1
+            table.insert(out, math.min(at, #out + 1), FlagBlock(flag))
+        end
+    end
+end
+
 -- Blocks for the guide page of one piece (cached; see the format above).
 function Data:GetGuide(piece)
     local L = ns.L
     local itemID = piece and piece.itemID
     if not itemID then return {} end
-    local hit = guideCache[itemID]
+    local cacheKey = piece.later and (itemID .. "L") or itemID   -- same item, other set's flag
+    local hit = guideCache[cacheKey]
     if hit then return hit end
     -- Only the page on screen is kept: a new piece drops the old blocks and parsed
     -- records (building one costs ~0.02 ms; keeping all could reach ~2 MB).
@@ -884,8 +1057,9 @@ function Data:GetGuide(piece)
 
     local out = {}
     Add(out, "head", L.G_HOW)
+    if piece.later then out[#out + 1] = FlagBlock("later") end
     if #own == 0 then Add(out, "text", L.SRC_UNKNOWN) end
-    for _, e in ipairs(own) do AddSource(out, e, itemID, ctx, state) end
+    AddSources(out, own, itemID, ctx, state, piece.later)
     if not state.itemDone then AddRows(out, Data.GuideRecord("item", itemID), ctx) end
 
     -- Before you go: keys and attunements of the places above, all the same way:
@@ -940,12 +1114,12 @@ function Data:GetGuide(piece)
             local saved = ctx.mine
             ctx.mine = fac
             local s2 = { needs = {}, needSeen = {}, itemDone = true }
-            for _, e in ipairs(rest) do AddSource(sub, e, itemID, ctx, s2) end
+            AddSources(sub, rest, itemID, ctx, s2, piece.later)
             ctx.mine = saved
         end)
     end
 
-    if cacheable then guideCache[itemID] = out end
+    if cacheable then guideCache[cacheKey] = out end
     return out
 end
 

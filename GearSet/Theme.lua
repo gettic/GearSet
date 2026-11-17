@@ -122,6 +122,12 @@ Theme.colors = {
     guideNote  = Color("LIGHTGRAY_FONT_COLOR", 0.8, 0.8, 0.8),   -- grey line under a bullet ("Drops from: ...")
     guideHint  = Color("NORMAL_FONT_COLOR", 1, 0.82, 0),         -- copy view: "Text is selected ..."
     copyHighlight = CreateColor(0.3, 0.55, 1, 0.5),              -- copy view: selected text (GetRGBA)
+    -- WoW Forever flags (guide lines, list rows, tooltips)
+    flagClassic = Color("LIGHTGRAY_FONT_COLOR", 0.8, 0.8, 0.8),  -- "Not confirmed on WoW Forever yet"
+    flagChecked = Color("GREEN_FONT_COLOR", 0.1, 1, 0.1),        -- "Checked on WoW Forever"
+    flagLater   = Color("ORANGE_FONT_COLOR", 1, 0.5, 0.25),      -- "Not yet released on WoW Forever"
+    later       = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),       -- names/counts of sets and pieces not out yet
+    laterSelected = Color("LIGHTGRAY_FONT_COLOR", 0.8, 0.8, 0.8), -- a not-out-yet set's name on the selected bar
 }
 
 -- Colour per piece state.
@@ -131,6 +137,14 @@ Theme.stateColor = {
     bank     = Theme.colors.have,
     look     = Theme.colors.look,
     need     = Theme.colors.need,
+}
+
+-- Colour per WoW Forever flag line (Data's guide blocks k = "flag").
+Theme.flagColor = {
+    classic  = Theme.colors.flagClassic,
+    checked  = Theme.colors.flagChecked,
+    later    = Theme.colors.flagLater,
+    srcLater = Theme.colors.flagLater,
 }
 
 function Theme.TemplateExists(name)

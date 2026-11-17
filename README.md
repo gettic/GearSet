@@ -4,7 +4,7 @@ Keeps track of all known armor sets in the game, in one window with three parts:
 
 A World of Warcraft addon for **WoW Forever**.
 
-> **Beta:** this is a beta (v0.0.1-beta.11). It has not been fully tested in the game yet, so things may not work as they should. Please tell us what you find.
+> **Beta:** this is a beta (v1.0.0-beta.1). It has not been fully tested in the game yet, so things may not work as they should. Please tell us what you find.
 
 ## Install
 
@@ -90,6 +90,16 @@ The guide covers:
 
 Anything the addon doesn't know says "not known". Guide text is in English only.
 
+### Checked on WoW Forever
+
+Most of the data is classic data, not yet checked on WoW Forever. The guide page and set tooltips say which:
+
+| Text | Meaning |
+|---|---|
+| Checked on WoW Forever | The set and its sources were checked on Forever (the Dungeon Set 1 sets and the 4 WoW Forever sets) |
+| Not confirmed on WoW Forever yet (classic data) | Classic data, not checked on Forever yet |
+| Not yet released / Not out yet | Not out on Forever yet. The set or piece is greyed and left out of "Have x / y". Right now: the raid sets (Tier 1-3, Zul'Gurub, Ahn'Qiraj, Onyxia), Dungeon Set 2, the PvP rank and Arathi Basin sets, and the Zul'Gurub crafted sets |
+
 ## Colours
 
 | Colour | Pieces (right) | Sets (left) and "Have x / y" |
@@ -106,7 +116,8 @@ Anything the addon doesn't know says "not known". Guide text is in English only.
 | `/gs` or `/gearset` | Open or close the window |
 | `/gs reset` | Put the window back in the middle of the screen |
 | `/gs minimap` | Show or hide the minimap button |
-| `/gs check` | Check the built-in set list against the game and print any problems |
+| `/gs check` | Show the data version, last-checked date, WoW Forever build, data sources and how many sets and sources are checked on Forever, then check the built-in set list against the game and print any problems |
+| `/gs probe` | List which game features this client has (waypoints, current map, tooltips, lockouts, reputation, keyring, account bank, journals, art) and put the result in a copy box to paste into a bug report |
 
 ## Where the sets come from
 
@@ -124,6 +135,7 @@ The addon is in the `GearSet` folder (`GearSet_Forever.toc`, interface 16001). S
 | `SourcesData.lua` | The built-in list of where each piece comes from |
 | `GuideData.lua` | The built-in guide data (bosses, NPCs, quests, items, quest chains) |
 | `Data.lua` | Builds, sorts and filters the sets; source lines and wiki search link; `/gs check` |
+| `Probe.lua` | `/gs probe` and the data info shown by `/gs check` |
 | `Owned.lua` | Works out whether you have each piece |
 | `UI\Widgets.lua` | Shared UI helpers (buttons, tooltips, item names) |
 | `UI\Main.lua` | The main window |
@@ -139,4 +151,4 @@ Set, item and source data, and the how-to-get guide text, gathered from Warcraft
 
 ## License
 
-Copyright (c) 2026 gettic. All rights reserved. See `LICENSE`.
+Code: all rights reserved. Wiki-derived data files: CC BY-SA 4.0. See `LICENSE`.

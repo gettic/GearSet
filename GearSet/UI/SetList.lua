@@ -22,11 +22,28 @@ function SetList.ClassText(set)
     return text
 end
 
+-- WoW Forever lines for a set's tooltips (set list rows, the piece list's "Have x / y"):
+-- the whole set or some pieces not out yet (those aren't counted), then checked / not confirmed.
+function SetList.AddFlagLines(tip, set)
+    local c, D = Theme.colors, ns.Data
+    local nLater = set.later and #set.later or 0
+    if set.unreleased then
+        local r, g, b = c.flagLater:GetRGB()
+        tip:AddLine(D.FlagText("FLAG_LATER"), r, g, b, true)
+    elseif nLater > 0 then
+        local r, g, b = c.flagLater:GetRGB()
+        tip:AddLine(D.FlagText("FLAG_LATER_COUNT"):format(nLater), r, g, b, true)
+    end
+    local r, g, b = (set.checked and c.flagChecked or c.flagClassic):GetRGB()
+    tip:AddLine(D.FlagText(set.checked and "FLAG_CHECKED" or "FLAG_CLASSIC"), r, g, b, true)
+end
+
 local function SetTooltip(row)
     local set = row.set
     if not set then return end
     GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
-    local tr, tg, tb = (set.removed and Theme.colors.removed or Theme.colors.title):GetRGB()
+    local dim = set.removed or set.unreleased
+    local tr, tg, tb = (dim and Theme.colors.removed or Theme.colors.title):GetRGB()
     GameTooltip:SetText(set.name, tr, tg, tb)
     local armor = ns.Data.ArmorName(set.armor)
     if armor then GameTooltip:AddLine(armor, Theme.colors.armorLine:GetRGB()) end
@@ -45,6 +62,7 @@ local function SetTooltip(row)
         local r, g, b = Theme.colors.removed:GetRGB()
         GameTooltip:AddLine(L.REMOVED_TIP, r, g, b, true)
     end
+    SetList.AddFlagLines(GameTooltip, set)
     GameTooltip:Show()
 end
 
@@ -102,16 +120,20 @@ local function InitRow(row, set)
     row.set = set
     local selected = set.key == ns.db.lastSet
     row.label:SetText(set.name)
-    -- Removed sets are grey; on the selected bar a lighter grey so the name stays readable.
+    -- Removed and not-yet-released sets are grey; on the selected bar a lighter grey so
+    -- the name stays readable.
     local nameColor = Theme.colors.text
     if set.removed then
         nameColor = selected and Theme.colors.removedSelected or Theme.colors.removed
+    elseif set.unreleased then
+        nameColor = selected and Theme.colors.laterSelected or Theme.colors.later
     end
     row.label:SetTextColor(nameColor:GetRGB())
     SetFactionIcon(row, set.faction)
     local have, total = ns.Owned:SetCount(set)
     row.count:SetText(("%d/%d"):format(have, total))
-    row.count:SetTextColor(Theme.CountColor(have, total))
+    if set.unreleased then row.count:SetTextColor(Theme.colors.later:GetRGB())
+    else row.count:SetTextColor(Theme.CountColor(have, total)) end
     row.sel:SetShown(selected)
 end
 
