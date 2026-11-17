@@ -4,7 +4,7 @@ Keeps track of all known armor sets in the game, in one window with three parts:
 
 A World of Warcraft addon for **WoW Forever**.
 
-> **Beta:** this is a beta (v0.0.1-beta.10). It has not been fully tested in the game yet, so things may not work as they should. Please tell us what you find.
+> **Beta:** this is a beta (v0.0.1-beta.11). It has not been fully tested in the game yet, so things may not work as they should. Please tell us what you find.
 
 ## Install
 
@@ -56,7 +56,7 @@ Your character wearing the chosen set.
 
 ### Pieces (right)
 
-The set's pieces. At the top: the set name (arrows beside it go to the previous or next set), its armor type and classes, "Have x / y", and "Report wrong source". Hover "Have x / y" to see how many pieces are equipped, in your bags, in the bank, or only collected as an appearance. Next to it, "Set bonuses (2/3)" shows the bonuses in effect out of all (grey when the set has none). Only pieces you wear count. Hover it to see "Set name (worn/total)" and each bonus; a bonus is green when you wear enough pieces. Each piece shows where it is: Equipped, In bags, In bank, Appearance or Need.
+The set's pieces. At the top: the set name (arrows beside it go to the previous or next set), its armor type and classes, and "Have x / y". Hover "Have x / y" to see how many pieces are equipped, in your bags, in the bank, or only collected as an appearance. Next to it, "Set bonuses (2/3)" shows the bonuses in effect out of all (grey when the set has none). Only pieces you wear count. Hover it to see "Set name (worn/total)" and each bonus; a bonus is green when you wear enough pieces. Each piece shows where it is: Equipped, In bags, In bank, Appearance or Need.
 
 | What | How |
 |---|---|
@@ -66,7 +66,6 @@ The set's pieces. At the top: the set name (arrows beside it go to the previous 
 | Link in chat | Shift-click a piece |
 | Try it on | Ctrl-click a piece to open the dressing room |
 | No source | "Source unknown" means the addon has no entry for that piece |
-| Wrong source | Click "Report wrong source" next to "Have x / y", or at the bottom of a guide page |
 
 ### Piece guide
 
@@ -90,10 +89,6 @@ The guide covers:
 - Crafting: the skill, the materials, any Leatherworking specialisation and its trainer, and where the recipe comes from or drops.
 
 Anything the addon doesn't know says "not known". Guide text is in English only.
-
-### Report wrong source
-
-One link for the whole set, in the piece list header and at the bottom of each guide page. A box appears with a ready link, already selected. Press Ctrl+C, then paste the link into your browser. It opens a pre-filled GitHub issue (you need a GitHub account) that lists every piece of the set and what the addon shows for it, with both factions' lines. Add what is right and submit. Fixes come in the next update.
 
 ## Colours
 
@@ -128,7 +123,7 @@ The addon is in the `GearSet` folder (`GearSet_Forever.toc`, interface 16001). S
 | `SetsData.lua` | The built-in list of classic sets |
 | `SourcesData.lua` | The built-in list of where each piece comes from |
 | `GuideData.lua` | The built-in guide data (bosses, NPCs, quests, items, quest chains) |
-| `Data.lua` | Builds, sorts and filters the sets; source lines and report link; `/gs check` |
+| `Data.lua` | Builds, sorts and filters the sets; source lines and wiki search link; `/gs check` |
 | `Owned.lua` | Works out whether you have each piece |
 | `UI\Widgets.lua` | Shared UI helpers (buttons, tooltips, item names) |
 | `UI\Main.lua` | The main window |
@@ -140,7 +135,7 @@ The addon is in the `GearSet` folder (`GearSet_Forever.toc`, interface 16001). S
 
 ## Credits
 
-Set, item and source data gathered from Warcraft Wiki (https://warcraft.wiki.gg), whose text is available under CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). World of Warcraft and its content are trademarks and property of Blizzard Entertainment.
+Set, item and source data, and the how-to-get guide text, gathered from Warcraft Wiki (https://warcraft.wiki.gg), whose text is available under CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). World of Warcraft and its content are trademarks and property of Blizzard Entertainment.
 
 ## License
 

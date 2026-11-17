@@ -1,6 +1,6 @@
 -- Gear Set: right panel - the set's pieces and whether you have or need each one.
 -- Header: set name (prev/next arrows), armor type + classes, "Have x / y" (tooltip
--- with the breakdown), "Set bonuses (x/y)" (tooltip) and one "Report wrong source" link.
+-- with the breakdown), "Set bonuses (x/y)" (tooltip).
 -- Each row: check box (piece shown on the preview), icon with quality frame, name
 -- (up to 2 lines), state, arrow. Clicking a row opens the piece's guide page
 -- (UI\GuidePage.lua) in place of the list; Back / Esc / right-click return here.
@@ -361,15 +361,6 @@ function PieceList:Build(panel)
     bonuses:SetPoint("LEFT", count, "RIGHT", 12, 0)
     self.bonuses = bonuses
 
-    local report = W.LinkButton(parent, L.REPORT, L.REPORT_TIP, function()
-        local set = PieceList.set
-        if not set then return end
-        PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
-        W.ShowCopy("report", ns.Data:SetReportURL(set))
-    end)
-    report:SetPoint("TOPRIGHT", -12, COUNT_TOP)
-    self.report = report
-
     local box = Theme.CreateFrame("Frame", nil, parent, "scrollBox")
     box:SetPoint("TOPLEFT", 4, LIST_TOP)
     box:SetPoint("BOTTOMRIGHT", -22, 4)
@@ -414,7 +405,6 @@ function PieceList:Refresh()
     if not self.box then return end
     local set = self.set
     local hasSet = set ~= nil
-    self.report:SetShown(hasSet)
     self.bonuses:SetShown(hasSet)
     self.prevB:SetEnabled(hasSet)
     self.nextB:SetEnabled(hasSet)

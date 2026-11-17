@@ -34,9 +34,6 @@ ns.L = {
     SRC_PROFESSION = "Profession",
     SRC_DROP = "Drop",               -- z: trash or several bosses in one place
     SRC_UNKNOWN = "Source unknown",
-    REPORT = "Report wrong source",
-    REPORT_TIP = "Shows a link to tell us the right source.",
-    REPORT_POPUP = "Press Ctrl+C to copy the link, then paste it into your browser.\nYou need a GitHub account to send the report.",
     STATE_equipped = "Equipped",
     STATE_bags = "In bags",
     STATE_bank = "In bank",
@@ -74,7 +71,6 @@ ns.L = {
     BONUS_LINE = "(%d) Set: %s",
     BONUS_ACTIVE = "Set: %s",
     BONUS_NONE = "No set bonus.",
-    SRC_FROM = "from %s",            -- quest giver
     -- One command per line (HandleSlash prints each line on its own).
     HELP = "/gs - open or close the window\n/gs reset - move the window back to the middle\n/gs minimap - show or hide the minimap button\n/gs check - test the set list (for bug reports)",
     POS_RESET = "Window moved back to the middle.",
@@ -117,7 +113,6 @@ ns.L = {
     G_TRAINER = "Taught by a trainer.",
     G_NOT_KNOWN = "not known",
     G_HERE = "(this piece's quest)",
-    G_FOOTER = "From Warcraft Wiki (CC BY-SA). Something wrong? Tell us:",
     G_INSTANCE = "Instance",
     G_PLACE = "Place",
     G_WHERE = "Where",
@@ -296,10 +291,10 @@ end
 
 -- Copy box: Blizzard's own dialog with the text filled in and selected.
 -- The text can't be changed (typing puts it back), so Ctrl+C always copies all of it.
--- Kinds: "report" (GitHub link) and "name" (item name, "Wiki link" swaps in the wiki search link).
-local REPORT_MAX = 2000
+-- Kinds: "wiki" (wiki search link) and "name" (item name, "Wiki link" swaps in the wiki search link).
+local COPY_MAX = 2000
 -- Newer dialog code has GetEditBox()/GetOwningDialog(); older uses .editBox and the parent.
-local function ReportBox(self)
+local function CopyBox(self)
     return (self.GetEditBox and self:GetEditBox()) or self.editBox or self.EditBox
 end
 local function BoxDialog(box)
@@ -311,9 +306,9 @@ local function KeepLink(box, data)
 end
 
 local function FillBox(dialog, text)
-    local box = ReportBox(dialog)
+    local box = CopyBox(dialog)
     if not box then return end
-    if box.SetMaxLetters then box:SetMaxLetters(REPORT_MAX) end
+    if box.SetMaxLetters then box:SetMaxLetters(COPY_MAX) end
     box:SetText(text or "")
     box:SetCursorPosition(0)
     box:HighlightText()
@@ -326,7 +321,7 @@ local function CopyDialog(text)
         button1 = CLOSE or "Close",
         hasEditBox = true,
         editBoxWidth = 360,
-        maxLetters = REPORT_MAX,
+        maxLetters = COPY_MAX,
         OnShow = function(self, data) FillBox(self, data or self.data) end,
         EditBoxOnTextChanged = function(box, data)
             local d = BoxDialog(box)
@@ -342,9 +337,8 @@ local function CopyDialog(text)
     }
 end
 
-local COPY_DIALOG = { report = "GEARSET_REPORT", name = "GEARSET_COPYNAME", wiki = "GEARSET_WIKI" }
+local COPY_DIALOG = { name = "GEARSET_COPYNAME", wiki = "GEARSET_WIKI" }
 
-StaticPopupDialogs.GEARSET_REPORT = CopyDialog(ns.L.REPORT_POPUP)
 StaticPopupDialogs.GEARSET_WIKI = CopyDialog(ns.L.WIKI_POPUP)
 
 local nameDialog = CopyDialog(ns.L.COPY_POPUP)
@@ -363,10 +357,10 @@ nameDialog.OnCancel = SwapToAlt          -- older dialog code
 nameDialog.OnButton2 = SwapToAlt         -- newer code may call this one instead
 StaticPopupDialogs.GEARSET_COPYNAME = nameDialog
 
--- ns.ShowCopyBox(kind, text, alt): kind "report", "name" or "wiki"; alt = the "Wiki link" text for "name".
+-- ns.ShowCopyBox(kind, text, alt): kind "name" or "wiki"; alt = the "Wiki link" text for "name".
 function ns.ShowCopyBox(kind, text, alt)
     if not text or text == "" then return end
-    local which = COPY_DIALOG[kind] or COPY_DIALOG.report
+    local which = COPY_DIALOG[kind] or COPY_DIALOG.wiki
     for _, other in pairs(COPY_DIALOG) do
         if other ~= which then StaticPopup_Hide(other) end
     end

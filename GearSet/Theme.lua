@@ -105,7 +105,7 @@ Theme.colors = {
     subtle    = Color("LIGHTGRAY_FONT_COLOR", 0.8, 0.8, 0.8),    -- secondary lines
     loading   = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),         -- "Loading..."
     hint      = Color("GREEN_FONT_COLOR", 0.1, 1, 0.1),          -- "Click: ..." lines
-    link      = Color("LINK_FONT_COLOR", 0.4, 0.73, 1),          -- "Report a mistake"
+    link      = Color("LINK_FONT_COLOR", 0.4, 0.73, 1),          -- link buttons ("Copy name", "Wiki link")
     linkHover = Color("HIGHLIGHT_FONT_COLOR", 1, 1, 1),
     removed   = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),         -- names of sets removed from the game
     removedSelected = Color("LIGHTGRAY_FONT_COLOR", 0.8, 0.8, 0.8), -- removed set's name on the selected bar
@@ -120,7 +120,6 @@ Theme.colors = {
     guideText  = Color("HIGHLIGHT_FONT_COLOR", 1, 1, 1),         -- values and paragraphs
     guideHere  = Color("GREEN_FONT_COLOR", 0.1, 1, 0.1),         -- the chain step for this piece
     guideNote  = Color("LIGHTGRAY_FONT_COLOR", 0.8, 0.8, 0.8),   -- grey line under a bullet ("Drops from: ...")
-    guideFoot  = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),        -- footer (source credit)
     guideHint  = Color("NORMAL_FONT_COLOR", 1, 0.82, 0),         -- copy view: "Text is selected ..."
     copyHighlight = CreateColor(0.3, 0.55, 1, 0.5),              -- copy view: selected text (GetRGBA)
 }

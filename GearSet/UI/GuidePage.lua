@@ -3,7 +3,7 @@
 -- (Shift-click: the next piece you still need), the item (icon, name in quality colour,
 -- slot and armor, set and classes, your state, "Show on model", "Copy text"; hover =
 -- the normal item tooltip), then the scrolling guide built by Data:GetGuide (blocks:
--- head, sub, row, text, bullet, step, fold) and a footer with the report link.
+-- head, sub, row, text, bullet, step, fold).
 -- "Copy text" swaps the guide for the same text in a read-only edit box (copy view).
 -- Esc: while the page is open its frame stands in for the window in UISpecialFrames,
 -- so the game's own Esc handling closes the page first. The only keyboard focus is the
@@ -229,15 +229,6 @@ function GuidePage:Build(parent)
     scroll:SetScrollChild(content)
     self.scroll, self.content = scroll, content
 
-    -- Footer link: report a wrong source for this set (same link as in the piece list).
-    local report = W.LinkButton(content, L.REPORT, L.REPORT_TIP, function()
-        local set = GuidePage.set
-        if not set then return end
-        PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
-        W.ShowCopy("report", ns.Data:SetReportURL(set))
-    end)
-    self.report = report
-
     self.fsPool, self.foldPool, self.linePool = {}, {}, {}
     self.openFolds = {}
 end
@@ -414,13 +405,6 @@ function GuidePage:Render()
     self.content:SetWidth(width)
     local blocks = ns.Data:GetGuide(self.piece)
     local y = self:LayBlocks(blocks, 0, 4, width, "")
-    y = y + GAP_HEAD
-    y = y + Text(self, "small", Theme.colors.guideFoot, L.G_FOOTER, 12, y, width - 16) + 4
-    local report = self.report
-    report:ClearAllPoints()
-    report:SetPoint("TOPLEFT", 12, -y)
-    report:SetShown(self.set ~= nil)
-    if self.set then y = y + 16 end
     y = y + 6
     for i = self.fsUsed + 1, #self.fsPool do self.fsPool[i]:Hide() end
     for i = self.foldUsed + 1, #self.foldPool do self.foldPool[i]:Hide() end
@@ -499,8 +483,6 @@ function GuidePage:PlainText()
     if #parts > 0 then out[#out + 1] = table.concat(parts, " - ") end
     out[#out + 1] = ns.Data:WikiSearchURL(p)
     GuidePage.PlainLines(ns.Data:GetGuide(p), 0, out)
-    out[#out + 1] = ""
-    out[#out + 1] = Plain(L.G_FOOTER)
     return table.concat(out, "\n")
 end
 

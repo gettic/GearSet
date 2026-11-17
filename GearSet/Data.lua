@@ -251,12 +251,11 @@ end
 -- ---------------------------------------------------------------------------
 -- Where a piece comes from: ns.SourcesData (SourcesData.lua) holds
 --   [itemID] = "type|field|field" with ";" between several sources.
--- Parsed only when needed (report link, guide page), then cached per item.
+-- Parsed only when needed (guide page), then cached per item.
 local SOURCE_TYPES = {      -- letter -> Blizzard's TRANSMOG_SOURCE_n, own text key
     b = { 1, "SRC_BOSS" }, z = { nil, "SRC_DROP" }, q = { 2, "SRC_QUEST" },
     v = { 3, "SRC_VENDOR" }, w = { 4, "SRC_WORLD" }, c = { 6, "SRC_PROFESSION" },
 }
-local sourceCache = {}
 
 local function Trim(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
 
@@ -289,58 +288,6 @@ local function TypeWord(letter)
 end
 
 local function Has(s) return s and s ~= "" end
-
--- One source entry -> one shown line (nil if it can't be read), and its faction
--- ("A"/"H" from a last field "@A"/"@H", nil = both). Fields past the ones read here
--- are kept for later readers and ignored.
-local function SourceLine(entry)
-    local f, faction = SplitTagged(entry)
-    local kind, a, b, c = f[1], f[2], f[3], f[4]
-    if kind == "x" then return Has(a) and a or nil, faction end
-    if not SOURCE_TYPES[kind] then return nil end
-    local word = TypeWord(kind)
-    local text
-    if kind == "c" then
-        if not Has(a) then return word, faction end
-        text = Has(b) and ("%s (%s)"):format(a, b) or a
-    elseif kind == "w" then
-        text = Has(a) and a or nil
-    else
-        if Has(a) and Has(b) then text = a .. " - " .. b
-        else text = Has(a) and a or (Has(b) and b or nil) end
-        if text and kind == "v" and Has(c) then text = ("%s (%s)"):format(text, c) end
-        if kind == "q" and Has(c) then
-            local from = ns.L.SRC_FROM:format(c)
-            text = text and ("%s (%s)"):format(text, from) or from
-        end
-    end
-    return text and (word .. ": " .. text) or word, faction
-end
-
--- Returns every source line of the piece (tagged ones marked with the faction name;
--- used by the report link), or { "Source unknown" }, and whether the source is known.
-function Data:GetSourceLines(piece)
-    local itemID = piece and piece.itemID
-    if not itemID then return { ns.L.SRC_UNKNOWN }, false end
-    local hit = sourceCache[itemID]
-    if not hit then
-        hit = {}
-        local tbl = ns.SourcesData
-        local raw = type(tbl) == "table" and tbl[itemID]
-        if type(raw) == "string" then
-            for entry in raw:gmatch("[^;]+") do
-                local line, faction = SourceLine(entry)
-                if line then
-                    local fname = faction and Data.FactionName(faction)
-                    hit[#hit + 1] = fname and ("%s (%s)"):format(line, fname) or line
-                end
-            end
-        end
-        sourceCache[itemID] = hit
-    end
-    if #hit == 0 then return { ns.L.SRC_UNKNOWN }, false end
-    return hit, true
-end
 
 -- ---------------------------------------------------------------------------
 -- Item tooltip text, read on demand (never at login, in OnUpdate or over all sets).
@@ -1003,23 +950,13 @@ function Data:GetGuide(piece)
 end
 
 -- ---------------------------------------------------------------------------
--- "Report wrong source" link (one per set): a new GitHub issue with title and body
--- filled in. Never holds the character's name or realm.
-local REPORT_BASE = "https://github.com/gettic/GearSet/issues/new"
-local REPORT_MAX_URL = 1900
+-- Looking a piece up online: its name and a Warcraft Wiki search link.
 local WIKI_SEARCH = "https://warcraft.wiki.gg/wiki/Special:Search?search="
 
 local function UrlEncode(s)
     return (tostring(s):gsub("[^A-Za-z0-9%-_%.~]", function(ch)
         return ("%%%02X"):format(ch:byte())
     end))
-end
-Data.UrlEncode = UrlEncode
-
-local function AddonVersion()
-    local get = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
-    local v = get and get(ns.ADDON or "GearSet", "Version")
-    return v or "?"
 end
 
 -- Text to search for a piece online: its name (item ID until the name has loaded).
@@ -1030,70 +967,6 @@ end
 -- Warcraft Wiki search for the piece (the site the source data comes from).
 function Data:WikiSearchURL(piece)
     return WIKI_SEARCH .. UrlEncode(self:SearchText(piece))
-end
-
--- One body line per piece. mode 1: name + shown lines, 2: ID + shown lines,
--- 3: ID + the short data code (e.g. "b|Onyxia|Onyxia's Lair").
-local function PieceReportLine(piece, mode)
-    local id = piece.itemID
-    local src
-    if mode == 3 then
-        local tbl = ns.SourcesData
-        src = (type(tbl) == "table" and tbl[id]) or "?"
-    else
-        src = table.concat((Data:GetSourceLines(piece)), "; ")
-    end
-    local name = mode == 1 and ItemName(id)
-    if name then return ("- %s (%d): %s"):format(name, id, src) end
-    return ("- %d: %s"):format(id, src)
-end
-
--- Link for a whole set: every piece with its sources, addon version, client, language.
--- Shortened step by step to stay under REPORT_MAX_URL (non-Latin names grow a lot
--- when encoded): names -> item IDs -> data codes -> cut the list with "...".
-function Data:SetReportURL(set)
-    local version, build = "?", "?"
-    if GetBuildInfo then version, build = GetBuildInfo() end
-    local locale = GetLocale and GetLocale() or "?"
-    local setName = set.name or "?"
-    local title
-
-    local function Build(lines, cut)
-        title = UrlEncode(("Wrong source: %s (set %s)"):format(setName, tostring(set.id)))
-        local body = { ("Set: %s (%s)"):format(setName, tostring(set.id)) }
-        for _, l in ipairs(lines) do body[#body + 1] = l end
-        if cut then body[#body + 1] = "..." end
-        body[#body + 1] = "Addon: " .. AddonVersion()
-        body[#body + 1] = ("Client: %s (%s) %s"):format(tostring(version), tostring(build), locale)
-        body[#body + 1] = ""
-        body[#body + 1] = "What is wrong:"
-        body[#body + 1] = ""
-        return ("%s?title=%s&body=%s&labels=wrong-source"):format(REPORT_BASE,
-            title, UrlEncode(table.concat(body, "\n")))
-    end
-
-    local url, lines
-    for mode = 1, 3 do
-        lines = {}
-        for _, p in ipairs(set.pieces) do lines[#lines + 1] = PieceReportLine(p, mode) end
-        url = Build(lines)
-        if #url <= REPORT_MAX_URL then return url end
-    end
-    while #lines > 0 and #url > REPORT_MAX_URL do
-        lines[#lines] = nil
-        url = Build(lines, true)
-    end
-    -- Still too long (a very long or non-Latin set name): shorten the name itself,
-    -- whole UTF-8 characters only.
-    local chars = {}
-    for ch in setName:gmatch("[%z\1-\127\194-\244][\128-\191]*") do chars[#chars + 1] = ch end
-    local n = #chars
-    while #url > REPORT_MAX_URL and n > 1 do
-        n = math.max(1, n - math.max(1, math.floor(n / 8)))
-        setName = table.concat(chars, "", 1, n) .. "..."
-        url = Build(lines, #lines < #set.pieces)
-    end
-    return url
 end
 
 -- /gs check: verify the bundled table against the game's own item data.
