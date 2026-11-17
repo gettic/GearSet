@@ -4,7 +4,7 @@ Keeps track of all known armor sets in the game, in one window with three parts:
 
 A World of Warcraft addon for **WoW Forever**.
 
-> **Beta:** this is a beta (v0.0.1-beta.8). It has not been fully tested in the game yet, so things may not work as they should. Please tell us what you find.
+> **Beta:** this is a beta (v0.0.1-beta.9). It has not been fully tested in the game yet, so things may not work as they should. Please tell us what you find.
 
 ## Install
 
@@ -33,8 +33,8 @@ It also works with minimap-button collector addons such as Mini Map. If one of t
 | What | How |
 |---|---|
 | Find a set | Type in the search box |
-| Filter | Class, Armor type, Content (Dungeon, Raid, PvP, Crafted, World, WoW Forever), "Only my class" (on by default for new installs), "Only my faction" (on by default), "Hide complete sets", "Show removed sets", "Reset filters" (puts every filter back to its default; the sort stays) |
-| Only my class | Keeps sets your class can wear. Dungeon Set 1 and 2 are matched to the classes they were made for. Other sets for all classes show only if your class can wear their armor type |
+| Filter | The filter menu shows your current choice for Sort, Class, Armor type and Content. Choices: Class, Armor type, Content (Dungeon, Raid, PvP, Crafted, World, WoW Forever), "Only my class" (on by default for new installs), "Only my faction" (on by default), "Hide complete sets", "Show removed sets", "Reset filters" (puts every filter back to its default; the sort stays) |
+| Only my class | Picking a class turns this off, and turning it on sets Class back to All, so the two never hide every set. It keeps sets your class can wear. Dungeon Set 1 and 2 are matched to the classes they were made for. Other sets for all classes show only if your class can wear their armor type |
 | Removed sets | Sets taken out of the game in patch 1.11 (old PvP rare sets) are hidden. "Show removed sets" shows them with a grey name |
 | Faction | PvP and Arathi Basin sets show a small faction icon. "Only my faction" hides the other faction's sets |
 | No match | The list says which search and filters are on, with a button to clear them |
@@ -56,17 +56,17 @@ Your character wearing the chosen set.
 
 ### Pieces (right)
 
-The set's pieces. At the top: the set name (arrows beside it go to the previous or next set), its armor type and classes, "Have x / y", and "Report wrong source". Hover "Have x / y" to see how many pieces are equipped, in your bags, in the bank, or only collected as an appearance. Hover "Set bonuses" (next to it) to see the set's bonuses; a bonus is green when you have enough pieces or it is in effect. Each piece shows where it is: Equipped, In bags, In bank, Appearance or Need.
+The set's pieces. At the top: the set name (arrows beside it go to the previous or next set), its armor type and classes, "Have x / y", and "Report wrong source". Hover "Have x / y" to see how many pieces are equipped, in your bags, in the bank, or only collected as an appearance. Next to it, "Set bonuses (2/3)" shows the bonuses in effect out of all (grey when the set has none). Only pieces you wear count. Hover it to see "Set name (worn/total)" and each bonus; a bonus is green when you wear enough pieces. Each piece shows where it is: Equipped, In bags, In bank, Appearance or Need.
 
 | What | How |
 |---|---|
 | Show on the preview | Tick the box by the piece. Untick it to take the piece off. Necklaces, rings and trinkets don't show on the model, so their box is greyed out |
 | See how to get it | Click the piece to open its guide page (see below) |
-| Look it up | On the guide page, click "Copy name", then press Ctrl+C. "Wiki link" gives a Warcraft Wiki search link |
+| Look it up | On the guide page, "Copy name" (then Ctrl+C) and "Wiki link" (a Warcraft Wiki search link) are in the top bar |
 | Link in chat | Shift-click a piece |
 | Try it on | Ctrl-click a piece to open the dressing room |
 | No source | "Source unknown" means the addon has no entry for that piece |
-| Wrong source | Click "Report wrong source" next to "Have x / y" |
+| Wrong source | Click "Report wrong source" next to "Have x / y", or at the bottom of a guide page |
 
 ### Piece guide
 
@@ -76,22 +76,24 @@ Clicking a piece opens its guide page in the right panel.
 |---|---|
 | The page | The item (hover it for the normal tooltip), whether you have it, and a full guide on how to get it |
 | Go back | "Back" button, Esc, or right-click |
-| Other pieces | The arrows go to the previous or next piece |
-| Look it up | "Copy name" and "Wiki link" are on the page |
-| More steps | Click a "Show ..." link to fold out more (the other faction's version, keys) |
+| Other pieces | The arrows go to the previous or next piece. Shift-click an arrow to jump to the next piece you still need |
+| Show on model | Tick "Show on model" (right of your state) to put the piece on the preview |
+| Copy text | "Copy text" shows the whole guide as plain text. Press Ctrl+A, then Ctrl+C. Esc or Done goes back |
+| Look it up | "Copy name" and "Wiki link" are in the top bar |
+| More steps | Click a "Show ..." link to fold out more (the other faction's version, keys). Open ones stay open on the other pieces of the same set |
 
 The guide covers:
 
-- Boss drops: the boss, the instance, where it is, and any attunement or key.
-- Quests: the steps, the giver for each faction, and what to bring.
+- Boss drops: the boss, the instance, where it is, and any attunement or key (all under "Before you go").
+- Quests: the steps, the giver for each faction, and what to bring. Hand-in items (Naxxramas tokens, Ahn'Qiraj tokens, idols, scarabs, Primal Hakkari items) say which boss drops them.
 - Vendors: who sells it, and the PvP rank if one is needed.
-- Crafting: the skill, the materials, and where the recipe comes from.
+- Crafting: the skill, the materials, any Leatherworking specialisation and its trainer, and where the recipe comes from or drops.
 
 Anything the addon doesn't know says "not known". Guide text is in English only.
 
 ### Report wrong source
 
-One link for the whole set. A box appears with a ready link, already selected. Press Ctrl+C, then paste the link into your browser. It opens a pre-filled GitHub issue (you need a GitHub account) that lists every piece of the set and what the addon shows for it, with both factions' lines. Add what is right and submit. Fixes come in the next update.
+One link for the whole set, in the piece list header and at the bottom of each guide page. A box appears with a ready link, already selected. Press Ctrl+C, then paste the link into your browser. It opens a pre-filled GitHub issue (you need a GitHub account) that lists every piece of the set and what the addon shows for it, with both factions' lines. Add what is right and submit. Fixes come in the next update.
 
 ## Colours
 
@@ -117,7 +119,7 @@ The classic armor sets come from a list built into the addon. Set names come fro
 
 ## For developers
 
-The addon is in the `GearSet` folder (`GearSet_Forever.toc`, interface 16001). Settings are saved account-wide in `GearSetDB`.
+The addon is in the `GearSet` folder (`GearSet_Forever.toc`, interface 16001). Settings are saved account-wide in `GearSetDB`. Broken or hand-edited settings go back to their defaults at login.
 
 | File | What it does |
 |---|---|
@@ -128,6 +130,7 @@ The addon is in the `GearSet` folder (`GearSet_Forever.toc`, interface 16001). S
 | `GuideData.lua` | The built-in guide data (bosses, NPCs, quests, items, quest chains) |
 | `Data.lua` | Builds, sorts and filters the sets; source lines and report link; `/gs check` |
 | `Owned.lua` | Works out whether you have each piece |
+| `UI\Widgets.lua` | Shared UI helpers (buttons, tooltips, item names) |
 | `UI\Main.lua` | The main window |
 | `UI\SetList.lua` | The set list, search and filter |
 | `UI\Preview.lua` | The character preview |

@@ -34,7 +34,6 @@ ns.L = {
     SRC_PROFESSION = "Profession",
     SRC_DROP = "Drop",               -- z: trash or several bosses in one place
     SRC_UNKNOWN = "Source unknown",
-    SRC_MORE = "+%d more",
     REPORT = "Report wrong source",
     REPORT_TIP = "Shows a link to tell us the right source.",
     REPORT_POPUP = "Press Ctrl+C to copy the link, then paste it into your browser.\nYou need a GitHub account to send the report.",
@@ -65,10 +64,15 @@ ns.L = {
     MY_FACTION = "Only my faction",
     ALLIANCE = "Alliance",           -- fallbacks; the game's FACTION_ALLIANCE / FACTION_HORDE come first
     HORDE = "Horde",
+    -- Filter menu: "Sort: Name", "Class: All" (label, current choice)
+    MENU_CHOICE = "%s: %s",
     -- Set bonuses (right panel header)
     BONUSES = "Set bonuses",
-    BONUS_LINE = "(%d) %s",
-    BONUS_ACTIVE = "Active: %s",
+    BONUSES_N = "Set bonuses (%d/%d)",       -- bonuses in effect from worn pieces / all
+    BONUS_TITLE = "%s (%d/%d)",              -- set name (pieces worn / pieces in the set)
+    BONUS_WEARING = "Only pieces you wear count: you wear %d of %d.",
+    BONUS_LINE = "(%d) Set: %s",
+    BONUS_ACTIVE = "Set: %s",
     BONUS_NONE = "No set bonus.",
     SRC_FROM = "from %s",            -- quest giver
     -- One command per line (HandleSlash prints each line on its own).
@@ -107,27 +111,27 @@ ns.L = {
     G_BEFORE = "Before you go",
     G_NEED_TEXT = "To get in you need the %s.",
     G_OTHER_VERSION = "Show the %s version",
-    G_RECIPE = "The recipe",
+    G_RECIPE = "Recipe",
     G_NOT_CRAFTER = "Can't make it yourself?",
-    G_BOE_TIP = "It binds when equipped: buy it on the Auction House, or ask a crafter to make it (you bring the materials).",
+    G_BOE_TIP = "It can be traded: buy it on the Auction House, or ask a crafter to make it with your materials.",
     G_TRAINER = "Taught by a trainer.",
     G_NOT_KNOWN = "not known",
-    G_HERE = "(you are here)",
-    G_FOOTER = "Facts from Warcraft Wiki (CC BY-SA). Something wrong? Use \"Report wrong source\" on the set.",
+    G_HERE = "(this piece's quest)",
+    G_FOOTER = "From Warcraft Wiki (CC BY-SA). Something wrong? Tell us:",
     G_INSTANCE = "Instance",
     G_PLACE = "Place",
     G_WHERE = "Where",
     G_CHANCE = "Drop chance",
     G_LEVEL = "Level",
-    G_MIN = "needs level %s",
-    G_GIVER = "Giver",
+    G_MIN = "start at %s",
+    G_GIVER = "Quest giver",
     G_BRING = "You bring",
     G_GOLD = "%s gold",
     G_NEEDS = "Needs",
     G_RANK = "PvP rank %s: %s",
     G_RANK_N = "PvP rank %s",
     G_COST = "Cost",
-    G_ALSO = "Also",
+    G_ALSO = "Reward",
     G_SKILL = "Skill",
     G_SKILL_ORANGE = "orange",
     G_SKILL_YELLOW = "yellow",
@@ -136,11 +140,22 @@ ns.L = {
     G_MATS = "Materials",
     G_TOOLS = "Tools",
     G_QUEST = "Quest",
-    G_FROM = "From",
-    G_DROP = "Drop",
+    G_FROM = "Sold by",
+    G_DROP = "Dropped by",
     G_NOTE = "Note",
     G_SIZE = "%s players",
     G_LEVEL_N = "level %s",
+    -- Guide page: copy view, show on model, step hint, new data rows
+    G_COPY_TEXT = "Copy text",
+    G_COPY_TIP = "Shows this guide as text you can select and copy.",
+    G_COPY_DONE = "Done",
+    G_COPY_HINT = "Ctrl+A selects all, Ctrl+C copies. Esc or Done goes back.",
+    G_SHOW_MODEL = "Show on model",
+    G_NEED_STEP = "Shift-click: the next piece you still need.",
+    G_DROPS_FROM = "Drops from: %s",
+    G_SPEC_TRAINER = "(trainer: %s)",
+    G_TAUGHT_BY = "Taught by",
+    G_AMOUNT_UNKNOWN = "%s (amount not known)",
     G_KIND_raid = "raid",
     G_KIND_dungeon = "dungeon",
     G_KIND_zone = "zone",
@@ -211,9 +226,58 @@ local function ApplyDefaults(db, def)
     end
 end
 
+-- Content filter values (set kinds), in menu order; "" = all.
+ns.SET_KINDS = { "d", "r", "p", "c", "w", "f" }
+local SORT_MODES = { owned = true, closest = true, name = true }
+local ANCHORS = { TOPLEFT = true, TOP = true, TOPRIGHT = true, LEFT = true, CENTER = true,
+    RIGHT = true, BOTTOMLEFT = true, BOTTOM = true, BOTTOMRIGHT = true }
+
+local function Finite(n)
+    n = tonumber(n)
+    return n ~= nil and n == n and n ~= math.huge and n ~= -math.huge
+end
+
+local function WholeIn(n, lo, hi)
+    return type(n) == "number" and n == math.floor(n) and n >= lo and n <= hi
+end
+
+-- Saved window point { point, relPoint, x, y } that SetPoint can take.
+function ns.ValidPoint(p)
+    if type(p) ~= "table" or not ANCHORS[p[1]] then return false end
+    if p[2] ~= nil and not ANCHORS[p[2]] then return false end
+    if p[3] ~= nil and not Finite(p[3]) then return false end
+    if p[4] ~= nil and not Finite(p[4]) then return false end
+    return true
+end
+
+-- Values of the right type but unknown (hand-edited or broken SavedVariables) go back
+-- to their defaults one by one, so the list never comes up empty with no menu choice ticked.
+local function ValidateDB(db)
+    if db.point ~= nil and not ns.ValidPoint(db.point) then db.point = nil end
+    local f, d = db.filters, defaults.filters
+    if not WholeIn(f.class, 0, 99) then
+        f.class = d.class
+    elseif f.class ~= 0 and C_CreatureInfo and C_CreatureInfo.GetClassInfo
+        and not C_CreatureInfo.GetClassInfo(f.class) then
+        f.class = d.class
+    end
+    if not WholeIn(f.armor, 0, 4) then f.armor = d.armor end
+    local kindOK = f.kind == ""
+    for _, k in ipairs(ns.SET_KINDS) do
+        if f.kind == k then kindOK = true end
+    end
+    if not kindOK then f.kind = d.kind end
+    -- A class picked in the Class menu and "Only my class" can't both apply (empty list
+    -- for any other class); the picked class wins, like in the menu.
+    if f.class ~= 0 and f.usable then f.usable = false end
+    if not SORT_MODES[db.sort] then db.sort = defaults.sort end
+    if not Finite(db.minimap.angle) then db.minimap.angle = defaults.minimap.angle end
+end
+
 function ns.InitDB()
     if type(GearSetDB) ~= "table" then GearSetDB = {} end
     ApplyDefaults(GearSetDB, defaults)
+    ValidateDB(GearSetDB)
     -- Future migrations go here (compare GearSetDB.version).
     GearSetDB.version = ns.DB_VERSION
     ns.db = GearSetDB
@@ -312,10 +376,6 @@ function ns.ShowCopyBox(kind, text, alt)
     return dialog
 end
 
--- Old name, kept so nothing that still calls it breaks.
-function ns.ShowReport(url)
-    return ns.ShowCopyBox("report", url)
-end
 
 local events = CreateFrame("Frame")
 events:RegisterEvent("ADDON_LOADED")

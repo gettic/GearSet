@@ -251,8 +251,7 @@ end
 -- ---------------------------------------------------------------------------
 -- Where a piece comes from: ns.SourcesData (SourcesData.lua) holds
 --   [itemID] = "type|field|field" with ";" between several sources.
--- Parsed only when a row is opened, then cached per item (nothing at load).
-local SOURCE_MAX_LINES = 3
+-- Parsed only when needed (report link, guide page), then cached per item.
 local SOURCE_TYPES = {      -- letter -> Blizzard's TRANSMOG_SOURCE_n, own text key
     b = { 1, "SRC_BOSS" }, z = { nil, "SRC_DROP" }, q = { 2, "SRC_QUEST" },
     v = { 3, "SRC_VENDOR" }, w = { 4, "SRC_WORLD" }, c = { 6, "SRC_PROFESSION" },
@@ -268,6 +267,20 @@ local function SplitFields(s)
     return out
 end
 
+-- "a|b|@H" -> { "a", "b" }, "H": fields, and the faction of a last "@A"/"@H" field
+-- (always last; nil = both factions). Used by sources and guide records alike.
+local function SplitTagged(s)
+    local f = SplitFields(s)
+    local fac
+    local last = f[#f]
+    if #f > 1 and last and last:sub(1, 1) == "@" then
+        local letter = last:sub(2, 2)
+        if letter == "A" or letter == "H" then fac = letter end
+        f[#f] = nil
+    end
+    return f, fac
+end
+
 local function TypeWord(letter)
     local t = SOURCE_TYPES[letter]
     local g = t[1] and _G["TRANSMOG_SOURCE_" .. t[1]]   -- z (trash/several bosses) has none
@@ -281,14 +294,7 @@ local function Has(s) return s and s ~= "" end
 -- ("A"/"H" from a last field "@A"/"@H", nil = both). Fields past the ones read here
 -- are kept for later readers and ignored.
 local function SourceLine(entry)
-    local f = SplitFields(entry)
-    local faction
-    local last = f[#f]
-    if #f > 1 and last and last:sub(1, 1) == "@" then
-        local letter = last:sub(2, 2)
-        if letter == "A" or letter == "H" then faction = letter end
-        f[#f] = nil
-    end
+    local f, faction = SplitTagged(entry)
     local kind, a, b, c = f[1], f[2], f[3], f[4]
     if kind == "x" then return Has(a) and a or nil, faction end
     if not SOURCE_TYPES[kind] then return nil end
@@ -311,47 +317,29 @@ local function SourceLine(entry)
     return text and (word .. ": " .. text) or word, faction
 end
 
--- Returns shown lines (max 3 + "+N more"), all lines, and whether the source is known.
--- Shown: when the item has lines for the player's faction, lines tagged for the other
--- faction are left out (untagged lines always show). All: every line, tagged ones
--- marked with the faction name (for the report link).
+-- Returns every source line of the piece (tagged ones marked with the faction name;
+-- used by the report link), or { "Source unknown" }, and whether the source is known.
 function Data:GetSourceLines(piece)
     local itemID = piece and piece.itemID
-    if not itemID then return { ns.L.SRC_UNKNOWN }, {}, false end
+    if not itemID then return { ns.L.SRC_UNKNOWN }, false end
     local hit = sourceCache[itemID]
     if not hit then
-        local parsed, all = {}, {}
-        local mine, hasMine = Data.PlayerFaction(), false
+        hit = {}
         local tbl = ns.SourcesData
         local raw = type(tbl) == "table" and tbl[itemID]
         if type(raw) == "string" then
             for entry in raw:gmatch("[^;]+") do
                 local line, faction = SourceLine(entry)
                 if line then
-                    parsed[#parsed + 1] = { line, faction }
-                    if faction and faction == mine then hasMine = true end
                     local fname = faction and Data.FactionName(faction)
-                    all[#all + 1] = fname and ("%s (%s)"):format(line, fname) or line
+                    hit[#hit + 1] = fname and ("%s (%s)"):format(line, fname) or line
                 end
             end
         end
-        local lines = {}
-        for _, p in ipairs(parsed) do
-            if not (hasMine and p[2] and p[2] ~= mine) then lines[#lines + 1] = p[1] end
-        end
-        local shown = {}
-        if #lines == 0 then
-            shown[1] = ns.L.SRC_UNKNOWN
-        else
-            for i = 1, math.min(#lines, SOURCE_MAX_LINES) do shown[i] = lines[i] end
-            if #lines > SOURCE_MAX_LINES then
-                shown[#shown + 1] = ns.L.SRC_MORE:format(#lines - SOURCE_MAX_LINES)
-            end
-        end
-        hit = { shown = shown, all = all }
         sourceCache[itemID] = hit
     end
-    return hit.shown, hit.all, #hit.all > 0
+    if #hit == 0 then return { ns.L.SRC_UNKNOWN }, false end
+    return hit, true
 end
 
 -- ---------------------------------------------------------------------------
@@ -360,10 +348,15 @@ end
 -- reused hidden GameTooltip that is cleared and hidden right after reading.
 -- Returns { { text = left, right = right or nil, r, g, b }, ... } or nil.
 local scanTip
+-- Plain text from UI text: colour codes, textures (|T...|t), links (|H...|h[x]|h -> x)
+-- and |n newlines. Also used by the guide page's copy view.
 local function StripCodes(s)
     if type(s) ~= "string" then return nil end
-    return (s:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""))
+    s = s:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+    s = s:gsub("|H.-|h%[?(.-)%]?|h", "%1"):gsub("|T.-|t", ""):gsub("|n", "\n")
+    return s
 end
+Data.StripCodes = StripCodes
 
 local function LinesFromTooltipInfo(itemID)
     local ok, data = pcall(C_TooltipInfo.GetItemByID, itemID)
@@ -457,15 +450,26 @@ function Data.ParseSetBonuses(lines)
     return out
 end
 
--- Set bonuses of a set, from the item tooltip of its first piece. Cached per set
--- (an empty list = "no bonus" is cached too). If the item isn't loaded yet, returns
--- nil and tries once more when it has loaded, then calls onReady(set, bonuses).
+-- Set bonuses of a set, from the item tooltip of its first piece. Cached per set.
+-- An empty list ("no bonus") is cached only when the item has no set ID; else the
+-- tooltip may just not have its set lines yet, so the next hover reads it again.
+-- If the item isn't loaded yet, returns nil and tries once more when it has loaded,
+-- then calls onReady(set, bonuses) (not when the load answered at once: the result
+-- is returned instead). The cache is cleared when your equipment changes, because
+-- the game writes bonuses in effect as "Set: ..." without the piece count.
 local bonusCache, bonusWaiting = {}, {}
 
 local function ReadBonuses(set)
     local piece = set.pieces and set.pieces[1]
     local lines = piece and Data:GetItemTooltipLines(piece.itemID)
-    return Data.ParseSetBonuses(lines)
+    local out = Data.ParseSetBonuses(lines)
+    if #out == 0 and piece then
+        local get = (C_Item and C_Item.GetItemInfo) or GetItemInfo
+        local setID = get and select(16, get(piece.itemID))
+        if setID and setID ~= 0 then return out end   -- not cached: set lines may come later
+    end
+    bonusCache[set.key] = out
+    return out
 end
 
 function Data:GetSetBonuses(set, onReady)
@@ -476,19 +480,28 @@ function Data:GetSetBonuses(set, onReady)
     local piece = set.pieces and set.pieces[1]
     if not piece then bonusCache[set.key] = {}; return bonusCache[set.key] end
     if ItemName(piece.itemID) or not (Item and Item.CreateFromItemID) then
-        hit = ReadBonuses(set)
-        bonusCache[set.key] = hit
-        return hit
+        return ReadBonuses(set)
     end
     -- Not loaded: the one retry, when the item data arrives.
     bonusWaiting[set.key] = true
+    local sync, result = true, nil
     Item:CreateFromItemID(piece.itemID):ContinueOnItemLoad(function()
         bonusWaiting[set.key] = nil
-        local result = ReadBonuses(set)
-        bonusCache[set.key] = result
-        if onReady then onReady(set, result) end
+        result = ReadBonuses(set)
+        if not sync and onReady then onReady(set, result) end
     end)
-    return nil
+    sync = false
+    return result
+end
+
+function Data:ClearSetBonuses()
+    wipe(bonusCache)
+end
+
+do
+    local f = CreateFrame("Frame")
+    ns.SafeRegister(f, "PLAYER_EQUIPMENT_CHANGED")   -- also used by Owned.lua
+    f:SetScript("OnEvent", function() Data:ClearSetBonuses() end)
 end
 
 -- ---------------------------------------------------------------------------
@@ -497,6 +510,7 @@ end
 -- Every GuideData record is optional: without one the page shows what SourcesData
 -- has and "not known". Result: a list of blocks for UI\GuidePage.lua:
 --   { k = "head"|"sub"|"row"|"text"|"bullet"|"step"|"fold", text, label, here, blocks }
+-- bullets may have col (value column) and sub (a grey line under it: where it drops).
 local guideCache, recordCache = {}, {}
 local GUIDE_MAX_DEPTH = 4
 local BIND_ON_EQUIP = (Enum and Enum.ItemBind and Enum.ItemBind.OnEquip) or 2
@@ -505,16 +519,9 @@ local BIND_ON_EQUIP = (Enum and Enum.ItemBind and Enum.ItemBind.OnEquip) or 2
 local function ParseRecord(raw)
     local rows = {}
     for part in raw:gmatch("[^;]+") do
-        local f = SplitFields(part)
-        local fac
-        local last = f[#f]
-        if #f > 1 and last:sub(1, 1) == "@" then
-            local letter = last:sub(2, 2)
-            if letter == "A" or letter == "H" then fac = letter end
-            f[#f] = nil
-        end
+        local f, fac = SplitTagged(part)
         if Has(f[1]) then
-            rows[#rows + 1] = { key = f[1], f[2], f[3], f[4], f[5], fac = fac }
+            rows[#rows + 1] = { key = f[1], f[2], f[3], f[4], f[5], f[6], fac = fac }
         end
     end
     return rows
@@ -630,6 +637,31 @@ local function SkillText(r)
     return table.concat(parts, ", ")
 end
 
+-- Where a hand-in item drops ("You bring" line): "Drops from: Thaddius (Naxxramas)".
+-- Key = the bring text without a leading count ("15 Wartorn Leather Scrap"); nil if
+-- the drop table has nothing for it.
+local function DropText(bring)
+    local name = bring:gsub("^%d+%s+", "")
+    local rec = Data.GuideRecord("drop", name)
+    if not rec then return nil end
+    local parts = {}
+    for _, r in ipairs(rec) do
+        if r.key == "src" and Has(r[1]) then
+            parts[#parts + 1] = Has(r[2]) and ("%s (%s)"):format(r[1], r[2]) or r[1]
+        end
+    end
+    if #parts == 0 then return nil end
+    return (ns.L.G_DROPS_FROM or "Drops from: %s"):format(table.concat(parts, "; "))
+end
+
+-- Leatherworking specialisation: "Dragonscale Leatherworking (trainer: Peter Galen, Azshara, ...)".
+local function SpecText(spec, trainer, mine)
+    if not Has(trainer) then return spec end
+    local where = WhereText(Data.GuideRecord("npc", trainer), mine)
+    local who = where and (trainer .. ", " .. where) or trainer
+    return spec .. " " .. (ns.L.G_SPEC_TRAINER or "(trainer: %s)"):format(who)
+end
+
 local AddRows   -- forward
 
 -- A chain or note record inline (cycle and depth guarded).
@@ -642,6 +674,12 @@ local function AddRecord(out, tname, key, ctx)
     AddRows(out, rec, ctx)
     ctx.depth = ctx.depth - 1
     ctx.seen[key] = nil
+end
+
+-- A chain record, else a note record of that key.
+local function AddChainOrNote(out, key, ctx)
+    if Data.GuideRecord("chain", key) then AddRecord(out, "chain", key, ctx)
+    else AddRecord(out, "note", key, ctx) end
 end
 
 -- A fold-out: its blocks are built now (shown when the player opens it). Empty -> nothing.
@@ -666,17 +704,26 @@ function AddRows(out, rows, ctx)
         if IsMine(r, mine) then own[#own + 1] = r
         else other[#other + 1] = r; otherFac = otherFac or r.fac end
     end
-    local level, minLevel, qtype, bring, mats = nil, nil, nil, {}, {}
+    local level, minLevel, qtype, bring, mats, drops = nil, nil, nil, {}, {}, {}
     for _, r in ipairs(own) do
         local k, a = r.key, r[1]
         if Has(a) then
             if k == "level" then level = a
             elseif k == "min" then minLevel = a
             elseif k == "type" then qtype = a
-            elseif k == "bring" then bring[#bring + 1] = a
-            elseif k == "gold" then bring[#bring + 1] = L.G_GOLD:format(a)
-            elseif k == "mat" then mats[#mats + 1] = Has(r[2]) and (a .. " " .. r[2]) or a
+            elseif k == "bring" then bring[#bring + 1] = { a, DropText(a) }
+            elseif k == "gold" then bring[#bring + 1] = { L.G_GOLD:format(a) }
+            elseif k == "mat" then
+                if a == "?" then
+                    if Has(r[2]) then mats[#mats + 1] = (L.G_AMOUNT_UNKNOWN or "%s (amount not known)"):format(r[2]) end
+                else
+                    mats[#mats + 1] = Has(r[2]) and (a .. " " .. r[2]) or a
+                end
             end
+        end
+        -- Recipe drops ("from|d|who|place", repeatable): one row, joined.
+        if k == "from" and a == "d" and Has(r[2]) then
+            drops[#drops + 1] = Has(r[3]) and ("%s (%s)"):format(r[2], r[3]) or r[2]
         end
     end
     local done, blocks = {}, {}
@@ -697,7 +744,11 @@ function AddRows(out, rows, ctx)
             if not done.bring and #bring > 0 then
                 done.bring = true
                 Add(out, "row", "", L.G_BRING)
-                for _, t in ipairs(bring) do Add(out, "bullet", t).col = true end   -- in the value column
+                for _, t in ipairs(bring) do
+                    local bl = Add(out, "bullet", t[1])
+                    bl.col = true          -- in the value column
+                    bl.sub = t[2]          -- "Drops from: ..." under it (drop table), or nil
+                end
             end
         elseif k == "mat" then
             if not done.mat and #mats > 0 then
@@ -714,9 +765,10 @@ function AddRows(out, rows, ctx)
         elseif k == "chance" then Add(out, "row", a, L.G_CHANCE)
         elseif k == "skill" then Add(out, "row", SkillText(r), L.G_SKILL)
         elseif k == "tools" then Add(out, "row", a, L.G_TOOLS)
+        elseif k == "spec" then Add(out, "row", SpecText(a, b, mine), L.G_NEEDS)
         elseif k == "l" then Add(out, "row", Has(b) and b or "", a)
         end
-        -- zone/where/xy/title/kind/size/need are read by the callers.
+        -- zone/where/xy/title/kind/size/need/att are read by the callers; unknown keys skipped.
     end
     for _, r in ipairs(blocks) do
         local k, a, b, c = r.key, r[1], r[2], r[3]
@@ -729,10 +781,7 @@ function AddRows(out, rows, ctx)
             local step = Add(out, "step", text, a or "")
             step.here = Has(b) and ctx.quest == b or nil
         elseif k == "fold" and Has(a) and Has(b) then
-            AddFold(out, a, function(sub)
-                if Data.GuideRecord("chain", b) then AddRecord(sub, "chain", b, ctx)
-                else AddRecord(sub, "note", b, ctx) end
-            end)
+            AddFold(out, a, function(sub) AddChainOrNote(sub, b, ctx) end)
         elseif k == "see" then AddRecord(out, "note", a, ctx)
         elseif k == "chain" then AddRecord(out, "chain", a, ctx)
         elseif k == "recipe" and Has(a) then
@@ -743,8 +792,11 @@ function AddRows(out, rows, ctx)
                 Add(out, "row", b, L.G_QUEST)
                 AddRecord(out, "quest", b, ctx)
             elseif a == "v" and Has(b) then Add(out, "row", NpcText(b, mine), L.G_FROM)
+            elseif a == "t" and Has(b) then Add(out, "row", NpcText(b, mine), L.G_TAUGHT_BY or "Taught by")
             elseif a == "t" then Add(out, "text", L.G_TRAINER)
-            elseif a == "d" and Has(b) then Add(out, "row", b, L.G_DROP)
+            elseif a == "d" and #drops > 0 and not done.drop then
+                done.drop = true
+                Add(out, "row", table.concat(drops, ", "), L.G_DROP)
             end
         end
     end
@@ -765,14 +817,7 @@ local function SourceEntries(itemID)
     local raw = type(tbl) == "table" and tbl[itemID]
     if type(raw) ~= "string" then return out end
     for entry in raw:gmatch("[^;]+") do
-        local f = SplitFields(entry)
-        local fac
-        local last = f[#f]
-        if #f > 1 and last and last:sub(1, 1) == "@" then
-            local letter = last:sub(2, 2)
-            if letter == "A" or letter == "H" then fac = letter end
-            f[#f] = nil
-        end
+        local f, fac = SplitTagged(entry)
         if SOURCE_TYPES[f[1]] or f[1] == "x" then
             out[#out + 1] = { kind = f[1], a = f[2], b = f[3], c = f[4], fac = fac }
         end
@@ -791,8 +836,8 @@ local function AddPlace(out, place, label, ctx, state)
     end
     Add(out, "row", WhereText(rec, ctx.mine) or L.G_NOT_KNOWN, L.G_WHERE)
     for _, r in ipairs(rec or {}) do
-        if r.key == "need" and Has(r[1]) then
-            local id = r[1] .. "|" .. (r[2] or "") .. "|" .. (r.fac or "")
+        if (r.key == "need" or r.key == "att") and Has(r[1]) then
+            local id = r.key .. "|" .. r[1] .. "|" .. (r[2] or "") .. "|" .. (r.fac or "")
             if not state.needSeen[id] then
                 state.needSeen[id] = true
                 state.needs[#state.needs + 1] = r
@@ -828,11 +873,8 @@ local function AddSource(out, e, itemID, ctx, state)
     if kind == "b" then
         Add(out, "sub", Has(a) and (word .. ": " .. a) or word)
         AddPlace(out, b, L.G_INSTANCE, ctx, state)
-        local bossRows = Data.GuideRecord("boss", a)
-        if not HasKey(bossRows, "chance") and not HasKey(itemRows, "chance") then
-            Add(out, "row", L.G_NOT_KNOWN, L.G_CHANCE)
-        end
-        AddRows(out, Concat(bossRows, itemRows), ctx)
+        -- No drop chance known: no row at all (a "not known" row only adds noise).
+        AddRows(out, Concat(Data.GuideRecord("boss", a), itemRows), ctx)
     elseif kind == "z" or kind == "w" then
         Add(out, "sub", Has(a) and (word .. ": " .. a) or word)
         if Has(a) then AddPlace(out, a, L.G_PLACE, ctx, state) end
@@ -841,7 +883,6 @@ local function AddSource(out, e, itemID, ctx, state)
         Add(out, "sub", Has(a) and (word .. ": " .. a) or word)
         local npcWhere = Has(a) and WhereText(Data.GuideRecord("npc", a), ctx.mine)
         Add(out, "row", npcWhere or (Has(b) and b) or L.G_NOT_KNOWN, L.G_WHERE)
-        if not HasKey(itemRows, "cost") then Add(out, "row", L.G_NOT_KNOWN, L.G_COST) end
         AddRows(out, itemRows, ctx)
         if Has(c) then
             if Data.GuideRecord("note", c) then AddRecord(out, "note", c, ctx)
@@ -873,6 +914,10 @@ function Data:GetGuide(piece)
     if not itemID then return {} end
     local hit = guideCache[itemID]
     if hit then return hit end
+    -- Only the page on screen is kept: a new piece drops the old blocks and parsed
+    -- records (building one costs ~0.02 ms; keeping all could reach ~2 MB).
+    wipe(guideCache)
+    wipe(recordCache)
 
     local mine = Data.PlayerFaction()
     local ctx = { mine = mine, seen = {}, depth = 0 }
@@ -896,14 +941,21 @@ function Data:GetGuide(piece)
     for _, e in ipairs(own) do AddSource(out, e, itemID, ctx, state) end
     if not state.itemDone then AddRows(out, Data.GuideRecord("item", itemID), ctx) end
 
-    -- Before you go: keys and attunements of the places above.
+    -- Before you go: keys and attunements of the places above, all the same way:
+    -- the sentence ("att": as written; "need": "To get in you need the <item>."), then
+    -- the chain open for your faction, the other faction's in a fold-out.
     if #state.needs > 0 then
         Add(out, "head", L.G_BEFORE)
         local said = {}
+        local function Sentence(r)
+            if r.key == "att" then return r[1] end
+            return L.G_NEED_TEXT:format(r[1])
+        end
         for _, r in ipairs(state.needs) do
             if IsMine(r, mine) then
-                if not said[r[1]] then said[r[1]] = true; Add(out, "text", L.G_NEED_TEXT:format(r[1])) end
-                AddRecord(out, "chain", r[2], ctx)
+                local s = Sentence(r)
+                if not said[s] then said[s] = true; Add(out, "text", s) end
+                AddChainOrNote(out, r[2], ctx)
             end
         end
         for _, r in ipairs(state.needs) do
@@ -911,8 +963,8 @@ function Data:GetGuide(piece)
                 AddFold(out, L.G_OTHER_VERSION:format(Data.FactionName(r.fac) or r.fac), function(sub)
                     local saved = ctx.mine
                     ctx.mine = r.fac
-                    if not said[r[1]] then Add(sub, "text", L.G_NEED_TEXT:format(r[1])) end
-                    AddRecord(sub, "chain", r[2], ctx)
+                    if not said[Sentence(r)] then Add(sub, "text", Sentence(r)) end
+                    AddChainOrNote(sub, r[2], ctx)
                     ctx.mine = saved
                 end)
             end
@@ -989,8 +1041,7 @@ local function PieceReportLine(piece, mode)
         local tbl = ns.SourcesData
         src = (type(tbl) == "table" and tbl[id]) or "?"
     else
-        local shown, all = Data:GetSourceLines(piece)
-        src = table.concat(#all > 0 and all or shown, "; ")
+        src = table.concat((Data:GetSourceLines(piece)), "; ")
     end
     local name = mode == 1 and ItemName(id)
     if name then return ("- %s (%d): %s"):format(name, id, src) end
@@ -1005,9 +1056,10 @@ function Data:SetReportURL(set)
     if GetBuildInfo then version, build = GetBuildInfo() end
     local locale = GetLocale and GetLocale() or "?"
     local setName = set.name or "?"
-    local title = UrlEncode(("Wrong source: %s (set %s)"):format(setName, tostring(set.id)))
+    local title
 
     local function Build(lines, cut)
+        title = UrlEncode(("Wrong source: %s (set %s)"):format(setName, tostring(set.id)))
         local body = { ("Set: %s (%s)"):format(setName, tostring(set.id)) }
         for _, l in ipairs(lines) do body[#body + 1] = l end
         if cut then body[#body + 1] = "..." end
@@ -1031,6 +1083,16 @@ function Data:SetReportURL(set)
         lines[#lines] = nil
         url = Build(lines, true)
     end
+    -- Still too long (a very long or non-Latin set name): shorten the name itself,
+    -- whole UTF-8 characters only.
+    local chars = {}
+    for ch in setName:gmatch("[%z\1-\127\194-\244][\128-\191]*") do chars[#chars + 1] = ch end
+    local n = #chars
+    while #url > REPORT_MAX_URL and n > 1 do
+        n = math.max(1, n - math.max(1, math.floor(n / 8)))
+        setName = table.concat(chars, "", 1, n) .. "..."
+        url = Build(lines, #lines < #set.pieces)
+    end
     return url
 end
 
@@ -1042,7 +1104,9 @@ function Data:CheckClassic()
         ns.Print(L.CHECK_NO_LIST)
         return
     end
-    local problems, setsN, itemsN, pending = 0, 0, 0, 0
+    -- pending starts at 1 (a guard for the loop itself): cached items answer at once,
+    -- and "done" must not print before every item was looked at.
+    local problems, setsN, itemsN, pending = 0, 0, 0, 1
     local done = false
     local function Report(msg)
         problems = problems + 1
@@ -1080,6 +1144,7 @@ function Data:CheckClassic()
             end
         end
     end
+    pending = pending - 1      -- the loop's guard
     if pending == 0 then Finish() else
         C_Timer.After(15, function()
             if not done and pending > 0 then Report(L.CHECK_SLOW:format(pending)) end

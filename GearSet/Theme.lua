@@ -20,7 +20,7 @@ Theme.templates = {
 }
 
 Theme.art = {
-    -- Piece rows (36 px, pet-list style). rowHighlight/rowSelect are the old names, same tables.
+    -- Piece rows (36 px, pet-list style).
     rowHover     = { atlas = "PetList-ButtonHighlight", file = "Interface\\QuestFrame\\UI-QuestTitleHighlight", blend = "ADD" },
     rowSelected  = { atlas = "PetList-ButtonSelect",    file = "Interface\\QuestFrame\\UI-QuestTitleHighlight" },
     -- Set list rows (22 px text rows): Settings-list bars, else the pet-list art, else the quest file.
@@ -61,11 +61,11 @@ Theme.art = {
         minus = "Interface\\Buttons\\UI-MinusButton-Up",
         size  = 14,
     },
-    detailBand = { 0, 0, 0, 0.35 },                     -- (old open-row band; kept for themes)
     -- Piece rows: arrow at the right end ("opens a page"); ">" text if missing.
     rowArrow = { file = "Interface\\ChatFrame\\ChatFrameExpandArrow", size = 12 },
-    -- Guide page: line under the header, fold-out +/- uses `expand` above.
-    guideDivider = { 1, 1, 1, 0.15 },
+    -- Guide page: line under the header and under each heading (Settings divider atlas,
+    -- else a 1 px line in `color`); fold-out +/- uses `expand` above.
+    guideDivider = { atlas = "Options_HorizontalDivider", color = { 1, 1, 1, 0.15 } },
     guideIcon = 40,                                      -- item icon size on the guide page
     -- Faction mark on PvP / Arathi Basin set rows: the mount journal's faction atlases
     -- (Blizzard_MountCollection MOUNT_FACTION_TEXTURES), else the classic battle standard icons.
@@ -75,8 +75,6 @@ Theme.art = {
         size = 14,
     },
 }
-Theme.art.rowHighlight = Theme.art.rowHover
-Theme.art.rowSelect    = Theme.art.rowSelected
 
 Theme.sizes = {
     check = 24,   -- every check box
@@ -107,18 +105,23 @@ Theme.colors = {
     subtle    = Color("LIGHTGRAY_FONT_COLOR", 0.8, 0.8, 0.8),    -- secondary lines
     loading   = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),         -- "Loading..."
     hint      = Color("GREEN_FONT_COLOR", 0.1, 1, 0.1),          -- "Click: ..." lines
-    detail    = Color("LIGHTGRAY_FONT_COLOR", 0.8, 0.8, 0.8),    -- source lines
     link      = Color("LINK_FONT_COLOR", 0.4, 0.73, 1),          -- "Report a mistake"
     linkHover = Color("HIGHLIGHT_FONT_COLOR", 1, 1, 1),
     removed   = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),         -- names of sets removed from the game
+    removedSelected = Color("LIGHTGRAY_FONT_COLOR", 0.8, 0.8, 0.8), -- removed set's name on the selected bar
+    menuChoice = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),        -- current choice after a filter-menu label
+    bonusTitle = Color("NORMAL_FONT_COLOR", 1, 0.82, 0),         -- "Set name (2/8)" atop the set bonus tooltip
     bonusOn   = Color("GREEN_FONT_COLOR", 0.1, 1, 0.1),          -- set bonus in effect / enough pieces
     bonusOff  = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),         -- set bonus not reached
     -- Guide page
     guideHead  = Color("NORMAL_FONT_COLOR", 1, 0.82, 0),         -- section headings (gold)
     guideSub   = Color("HIGHLIGHT_FONT_COLOR", 1, 1, 1),         -- "Boss Drop: Onyxia"
-    guideLabel = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),        -- "Where", "Level" ...
-    guideText  = Color("LIGHTGRAY_FONT_COLOR", 0.8, 0.8, 0.8),   -- values and paragraphs
+    guideLabel = Color("NORMAL_FONT_COLOR", 1, 0.82, 0),         -- "Where", "Level" ... (gold, like PaperDoll labels)
+    guideText  = Color("HIGHLIGHT_FONT_COLOR", 1, 1, 1),         -- values and paragraphs
     guideHere  = Color("GREEN_FONT_COLOR", 0.1, 1, 0.1),         -- the chain step for this piece
+    guideNote  = Color("LIGHTGRAY_FONT_COLOR", 0.8, 0.8, 0.8),   -- grey line under a bullet ("Drops from: ...")
+    guideFoot  = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),        -- footer (source credit)
+    guideHint  = Color("NORMAL_FONT_COLOR", 1, 0.82, 0),         -- copy view: "Ctrl+A selects all ..."
 }
 
 -- Colour per piece state.
@@ -184,6 +187,22 @@ function Theme.SetArt(tex, entry)
     if not used and entry.file then tex:SetTexture(entry.file) end
     if entry.blend and tex.SetBlendMode then tex:SetBlendMode(entry.blend) end
     return used
+end
+
+-- A divider line: the entry's atlas at its own height if the client has it, else a
+-- 1 px line in entry.color. Returns the height used.
+function Theme.SetDivider(tex, entry)
+    entry = entry or Theme.art.guideDivider
+    if Theme.AtlasExists(entry.atlas) then
+        tex:SetAtlas(entry.atlas)
+        local info = C_Texture.GetAtlasInfo(entry.atlas)
+        local h = math.max(1, math.min(4, (info and info.height) or 1))
+        tex:SetHeight(h)
+        return h
+    end
+    tex:SetColorTexture(unpack(entry.color or { 1, 1, 1, 0.15 }))
+    tex:SetHeight(1)
+    return 1
 end
 
 -- One colour rule for "have x / y" everywhere: complete green, some gold, none grey.

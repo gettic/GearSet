@@ -1,12 +1,13 @@
 -- Gear Set: right panel - the set's pieces and whether you have or need each one.
 -- Header: set name (prev/next arrows), armor type + classes, "Have x / y" (tooltip
--- with the breakdown), a "Set bonuses" link (tooltip) and one "Report wrong source" link.
+-- with the breakdown), "Set bonuses (x/y)" (tooltip) and one "Report wrong source" link.
 -- Each row: check box (piece shown on the preview), icon with quality frame, name
 -- (up to 2 lines), state, arrow. Clicking a row opens the piece's guide page
 -- (UI\GuidePage.lua) in place of the list; Back / Esc / right-click return here.
 -- Shift/Ctrl-click = Blizzard's usual item clicks (link in chat box, dressing room).
+-- Shared buttons and helpers: UI\Widgets.lua (ns.Widgets).
 local _, ns = ...
-local Theme, L = ns.Theme, ns.L
+local Theme, L, W = ns.Theme, ns.L, ns.Widgets
 
 local PieceList = {}
 ns.PieceList = PieceList
@@ -17,106 +18,18 @@ local INFO_TOP = -32       -- header: title at -10, armor/classes, then "Have x 
 local COUNT_TOP = -50
 local LIST_TOP = -74        -- where the scroll list starts below the header
 
--- Slots the character model doesn't show (neck, rings, trinkets, unknown).
-local NO_MODEL_SLOT = { [0] = true, [2] = true, [11] = true, [12] = true, [13] = true, [14] = true }
-local ICON_CROP = { 0.07, 0.93, 0.07, 0.93 }   -- cut the baked grey edge off item icons
-
-local function ShowsOnModel(piece)
-    return not NO_MODEL_SLOT[piece.slot or 0]
-end
-
--- ---- small helpers for Theme keys another agent adds (fallbacks keep it working) ----
-local function Hint(tip, text)
-    if Theme.AddHint then Theme.AddHint(tip, text) return end
-    local c = GREEN_FONT_COLOR
-    tip:AddLine(text, c and c.r or 0.1, c and c.g or 1, c and c.b or 0.1, true)
-end
-
-local function CountRGB(have, total)
-    if Theme.CountColor then return Theme.CountColor(have, total) end
-    local c = (have >= total and Theme.colors.have) or (have > 0 and Theme.colors.partial) or Theme.colors.none
-    return c:GetRGB()
-end
-
-local function CheckSize()
-    return (Theme.sizes and Theme.sizes.check) or 24
-end
-
-local function ArtFile(entry)
-    if type(entry) == "table" then return entry.file end
-    return entry
-end
-
-local function SetRowArt(tex, entry, fallback)
-    entry = entry or fallback
-    Theme.SetAtlasOr(tex, entry.atlas, entry.file)
-end
-
-local function StateColor(state)
-    if state == "need" then return Theme.colors.need end
-    return Theme.stateColor[state] or Theme.colors.text
-end
-
-local function SimpleTip(owner, text)
-    GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
-    GameTooltip:SetText(text, 1, 1, 1, 1, true)
-    GameTooltip:Show()
-end
-
-local function ItemLink(itemID)
-    local get = (C_Item and C_Item.GetItemInfo) or GetItemInfo
-    local _, link = get(itemID)
-    return link
-end
-
 local function PieceTooltip(row)
     local p = row.piece
     if not p then return end
     GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
     GameTooltip:SetItemByID(p.itemID)
     GameTooltip:AddLine(" ")
-    Hint(GameTooltip, L.PIECE_TIP)
-    Hint(GameTooltip, L.PIECE_TIP_MOD)
+    Theme.AddHint(GameTooltip, L.PIECE_TIP)
+    Theme.AddHint(GameTooltip, L.PIECE_TIP_MOD)
     GameTooltip:Show()
 end
 
--- Link-style text button (Blizzard hyperlink colours, underline on hover).
--- tip: text, or a function(button) that fills and shows the tooltip itself.
-local function LinkButton(parent, text, tip, onClick)
-    local b = CreateFrame("Button", nil, parent)
-    b:SetHeight(14)
-    local fs = b:CreateFontString(nil, "OVERLAY")
-    Theme.Font(fs, "small")
-    fs:SetPoint("LEFT")
-    fs:SetText(text)
-    fs:SetTextColor(Theme.colors.link:GetRGB())
-    b:SetWidth(fs:GetStringWidth() + 4)
-    local underline = b:CreateTexture(nil, "OVERLAY")
-    underline:SetHeight(1)
-    underline:SetPoint("TOPLEFT", fs, "BOTTOMLEFT", 0, -1)
-    underline:SetPoint("TOPRIGHT", fs, "BOTTOMRIGHT", 0, -1)
-    underline:SetColorTexture(Theme.colors.linkHover:GetRGB())
-    underline:Hide()
-    b:SetScript("OnEnter", function(self)
-        fs:SetTextColor(Theme.colors.linkHover:GetRGB())
-        underline:Show()
-        if type(tip) == "function" then tip(self) else SimpleTip(self, tip) end
-    end)
-    b:SetScript("OnLeave", function()
-        fs:SetTextColor(Theme.colors.link:GetRGB())
-        underline:Hide()
-        GameTooltip_Hide()
-    end)
-    b:SetScript("OnClick", onClick)
-    b.text = fs
-    return b
-end
-
--- Copy dialog (Core.lua). Falls back to the report dialog if the new one is missing.
-local function ShowCopy(kind, text, alt)
-    if ns.ShowCopyBox then ns.ShowCopyBox(kind, text, alt)
-    elseif ns.ShowReport then ns.ShowReport(text) end
-end
+local InitRow
 
 local function BuildRow(row)
     row.gsInit = true
@@ -127,17 +40,17 @@ local function BuildRow(row)
     row.sel:SetPoint("TOPLEFT")
     row.sel:SetPoint("TOPRIGHT")
     row.sel:SetHeight(ROW_H)
-    SetRowArt(row.sel, Theme.art.rowSelected, Theme.art.rowSelect)
+    Theme.SetArt(row.sel, Theme.art.rowSelected)
     row.sel:Hide()
     row.hl = row:CreateTexture(nil, "HIGHLIGHT")
     row.hl:SetPoint("TOPLEFT")
     row.hl:SetPoint("TOPRIGHT")
     row.hl:SetHeight(ROW_H)
-    SetRowArt(row.hl, Theme.art.rowHover, Theme.art.rowHighlight)
+    Theme.SetArt(row.hl, Theme.art.rowHover)
     row.hl:SetBlendMode("ADD")
 
     -- Check box: piece tried on the preview.
-    local cs = CheckSize()
+    local cs = Theme.sizes.check
     local check = Theme.CreateFrame("CheckButton", nil, row, "check")
     check:SetSize(cs, cs)
     check:SetPoint("TOPLEFT", 2, -(ROW_H - cs) / 2)
@@ -151,7 +64,7 @@ local function BuildRow(row)
     end)
     check:SetScript("OnEnter", function(self)
         local p = row.piece
-        if p then SimpleTip(self, ShowsOnModel(p) and L.SHOW_PIECE_TIP or L.NO_MODEL_TIP) end
+        if p then W.SimpleTip(self, W.ShowsOnModel(p) and L.SHOW_PIECE_TIP or L.NO_MODEL_TIP) end
     end)
     check:SetScript("OnLeave", GameTooltip_Hide)
     row.check = check
@@ -159,17 +72,13 @@ local function BuildRow(row)
     row.icon = row:CreateTexture(nil, "ARTWORK")
     row.icon:SetSize(30, 30)
     row.icon:SetPoint("TOPLEFT", ICON_LEFT, -3)
-    row.icon:SetTexCoord(unpack(Theme.art.iconCrop or ICON_CROP))
-    row.border = row:CreateTexture(nil, "OVERLAY")
-    row.border:SetAllPoints(row.icon)
-    row.hasBorder = Theme.TryTexture(row.border, ArtFile(Theme.art.iconBorder))
-    row.border:Hide()
+    row.icon:SetTexCoord(unpack(W.ICON_CROP))
+    row.border, row.hasBorder = W.IconBorder(row, row.icon)
 
     -- Arrow at the right end: the row opens a page. ">" if the art is missing.
-    local arrow = Theme.art.rowArrow or {}
-    local size = arrow.size or 12
+    local arrow = Theme.art.rowArrow
     row.marker = row:CreateTexture(nil, "ARTWORK")
-    row.marker:SetSize(size, size)
+    row.marker:SetSize(arrow.size, arrow.size)
     row.marker:SetPoint("RIGHT", row, "TOPRIGHT", -6, -ROW_H / 2)
     if not Theme.TryTexture(row.marker, arrow.file) then
         row.marker:Hide()
@@ -197,11 +106,7 @@ local function BuildRow(row)
         if not p then return end
         -- Shift-click: link into the open chat box; Ctrl-click: dressing room.
         -- Only on the player's own click; nothing is ever sent to chat.
-        if IsModifiedClick and (IsModifiedClick("CHATLINK") or IsModifiedClick("DRESSUP")) then
-            local link = ItemLink(p.itemID)
-            if link and HandleModifiedItemClick then HandleModifiedItemClick(link) end
-            return
-        end
+        if W.HandleModifiedClick(p.itemID) then return end
         PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
         GameTooltip_Hide()
         PieceList:ShowGuide(p)
@@ -210,7 +115,12 @@ local function BuildRow(row)
     row:SetScript("OnLeave", GameTooltip_Hide)
 end
 
-local function InitRow(row, piece)
+-- Item loaded later: refill the row (Widgets only calls back while it still shows that item).
+local function OnRowItemLoaded(row)
+    if row.piece then InitRow(row, row.piece) end
+end
+
+InitRow = function(row, piece)
     if not row.gsInit then BuildRow(row) end
     row.piece = piece
     local itemID = piece.itemID
@@ -220,7 +130,7 @@ local function InitRow(row, piece)
     local hidden = ns.Preview:IsHidden(itemID)
     row.icon:SetDesaturated(hidden)
 
-    if ShowsOnModel(piece) then
+    if W.ShowsOnModel(piece) then
         row.check:Enable()
         row.check:SetChecked(not hidden)
     else
@@ -228,29 +138,11 @@ local function InitRow(row, piece)
         row.check:Disable()
     end
 
-    row.border:Hide()
-    local item = Item:CreateFromItemID(itemID)
-    if item:IsItemDataCached() then
-        row.name:SetText(item:GetItemName())
-        local q = item:GetItemQuality()
-        local c = q and ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[q]
-        if c then row.name:SetTextColor(c.r, c.g, c.b) else row.name:SetTextColor(1, 1, 1) end
-        if c and row.hasBorder and q >= 2 then   -- uncommon and better, like Blizzard's item buttons
-            row.border:SetVertexColor(c.r, c.g, c.b)
-            row.border:Show()
-        end
-    else
-        row.name:SetText(L.LOADING)
-        local g = Theme.colors.loading or Theme.colors.none
-        row.name:SetTextColor(g:GetRGB())
-        item:ContinueOnItemLoad(function()
-            if row.piece == piece then InitRow(row, piece) end
-        end)
-    end
+    W.FillItem(row, itemID, OnRowItemLoaded)
 
     local state = ns.Owned:GetState(piece)
     row.state:SetText(L["STATE_" .. state])
-    row.state:SetTextColor(StateColor(state):GetRGB())
+    row.state:SetTextColor(W.StateColor(state):GetRGB())
 
     row.sel:SetShown(PieceList.lastItem == itemID)
 end
@@ -294,10 +186,7 @@ end
 local function SetInfoText(set)
     local parts = {}
     local armor = ns.Data.ArmorName(set.armor)
-    if armor then
-        local c = Theme.colors.armorLine or Theme.colors.partial
-        parts[1] = c:WrapTextInColorCode(armor)
-    end
+    if armor then parts[1] = Theme.colors.armorLine:WrapTextInColorCode(armor) end
     -- Class names in class colours; Dungeon Set 1/2 add "(any class can wear it)".
     local classes = ns.SetList and ns.SetList.ClassText and ns.SetList.ClassText(set)
     if not classes then classes = L.ALL_CLASSES end
@@ -305,39 +194,82 @@ local function SetInfoText(set)
     return table.concat(parts, " - ")
 end
 
--- "Set bonuses" tooltip: read on hover only (Data caches per set; one retry if the
--- item hasn't loaded, then the tooltip fills in if the mouse is still there).
--- Lines with a piece count are green when you have that many pieces, else grey;
--- bonuses the game already shows as in effect are green "Active: ...".
+-- Set bonuses only count pieces you wear (not bags, bank or appearances).
+local function WornCount(set)
+    return ns.Owned:SetBreakdown(set).equipped or 0
+end
+
+-- A bonus is in effect when you wear enough pieces (or the game already showed it as on).
+local function BonusOn(b, worn)
+    return b.active or (b.n ~= nil and worn >= b.n)
+end
+
+-- How many bonuses are in effect, and how many there are.
+function PieceList.BonusCount(bonuses, worn)
+    local on = 0
+    for _, b in ipairs(bonuses) do
+        if BonusOn(b, worn) then on = on + 1 end
+    end
+    return on, #bonuses
+end
+
+-- "Set bonuses" tooltip, like the set block of Blizzard's item tooltip: set name with
+-- pieces worn, then each bonus green when worn pieces reach it, else grey. Read on hover
+-- (Data caches per set; one retry if the item hasn't loaded, then it refills if still hovered).
 local function BonusTooltip(self)
     local set = PieceList.set
     if not set then return end
-    GameTooltip:SetOwner(self, "ANCHOR_BOTTOMLEFT")
-    GameTooltip:SetText(L.BONUSES, 1, 1, 1)
+    local refilled = false
     local bonuses = ns.Data:GetSetBonuses(set, function(doneSet)
-        if PieceList.set == doneSet and GameTooltip:IsOwned(self) then BonusTooltip(self) end
+        refilled = true
+        if PieceList.set == doneSet then
+            PieceList:UpdateBonuses()
+            if GameTooltip:IsOwned(self) then BonusTooltip(self) end
+        end
     end)
+    if refilled then return end      -- the callback ran at once and already drew it
+    local worn, total = WornCount(set), #set.pieces
+    GameTooltip:SetOwner(self, "ANCHOR_BOTTOMLEFT")
+    local head = Theme.colors.bonusTitle
+    GameTooltip:SetText(L.BONUS_TITLE:format(set.name, worn, total), head:GetRGB())
     if not bonuses then
         GameTooltip:AddLine(L.LOADING, Theme.colors.loading:GetRGB())
     elseif #bonuses == 0 then
         GameTooltip:AddLine(L.BONUS_NONE, Theme.colors.subtle:GetRGB())
     else
-        local have = ns.Owned:SetCount(set)
         local on, off = Theme.colors.bonusOn, Theme.colors.bonusOff
         for _, b in ipairs(bonuses) do
-            local r, g, bl
-            local text
-            if b.active then
-                text = L.BONUS_ACTIVE:format(b.text)
-                r, g, bl = on:GetRGB()
-            else
-                text = L.BONUS_LINE:format(b.n, b.text)
-                r, g, bl = (have >= b.n and on or off):GetRGB()
-            end
+            local text = b.n and L.BONUS_LINE:format(b.n, b.text) or L.BONUS_ACTIVE:format(b.text)
+            local r, g, bl = (BonusOn(b, worn) and on or off):GetRGB()
             GameTooltip:AddLine(text, r, g, bl, true)
         end
+        GameTooltip:AddLine(" ")
+        local r, g, bl = Theme.colors.subtle:GetRGB()
+        GameTooltip:AddLine(L.BONUS_WEARING:format(worn, total), r, g, bl, true)
     end
     GameTooltip:Show()
+end
+
+-- "Set bonuses (1/3)" next to "Have x / y"; greyed when the set has no bonus.
+function PieceList:UpdateBonuses()
+    local b, set = self.bonuses, self.set
+    if not (b and set) then return end
+    local refilled = false
+    local bonuses = ns.Data:GetSetBonuses(set, function(doneSet)
+        refilled = true
+        if PieceList.set == doneSet then
+            PieceList:UpdateBonuses()
+            if GameTooltip:IsOwned(b) then BonusTooltip(b) end
+        end
+    end)
+    if refilled then return end
+    if bonuses and #bonuses > 0 then
+        b:SetLinkText(L.BONUSES_N:format(PieceList.BonusCount(bonuses, WornCount(set))))
+        b:SetDim(false)
+    else
+        b:SetLinkText(L.BONUSES)
+        b:SetDim(bonuses ~= nil)     -- loading: normal; no bonus at all: grey
+    end
 end
 
 local function TitleTooltip(self)
@@ -362,47 +294,19 @@ local function CountTooltip(self)
     GameTooltip:SetText(L.HAVE_COUNT:format(ns.Owned:SetCount(set)), 1, 1, 1)
     for _, e in ipairs(BREAKDOWN) do
         if b[e[1]] > 0 then
-            local r, g, bl = StateColor(e[1]):GetRGB()
+            local r, g, bl = W.StateColor(e[1]):GetRGB()
             GameTooltip:AddDoubleLine(L[e[2]] or e[2], b[e[1]], r, g, bl, 1, 1, 1)
         end
     end
     if b.look > 0 then
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine(L.APPEARANCE_NOTE, 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine(L.APPEARANCE_NOTE, Theme.colors.subtle:GetRGB())
     end
     GameTooltip:Show()
 end
 
-local function ArrowButton(parent, dir, tip)
-    local b = CreateFrame("Button", nil, parent)
-    b:SetSize(24, 24)
-    local art = (Theme.art.arrows and Theme.art.arrows[dir]) or {
-        up = "Interface\\Buttons\\UI-SpellbookIcon-" .. (dir == "prev" and "PrevPage" or "NextPage") .. "-Up",
-        down = "Interface\\Buttons\\UI-SpellbookIcon-" .. (dir == "prev" and "PrevPage" or "NextPage") .. "-Down",
-        disabled = "Interface\\Buttons\\UI-SpellbookIcon-" .. (dir == "prev" and "PrevPage" or "NextPage") .. "-Disabled",
-        highlight = "Interface\\Buttons\\UI-Common-MouseHilight",
-    }
-    b:SetNormalTexture(art.up)
-    b:SetPushedTexture(art.down)
-    b:SetDisabledTexture(art.disabled)
-    b:SetHighlightTexture(art.highlight, "ADD")
-    -- If the arrow art is missing, show a plain "<" / ">" instead.
-    local nt = b:GetNormalTexture()
-    if nt and nt.GetTextureFileID and not nt:GetTextureFileID() then
-        local fs = b:CreateFontString(nil, "OVERLAY")
-        Theme.Font(fs, "normal")
-        fs:SetPoint("CENTER")
-        fs:SetText(dir == "prev" and "<" or ">")
-    end
-    b:SetScript("OnClick", function()
-        if ns.SetList and ns.SetList.SelectRelative then
-            PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
-            ns.SetList:SelectRelative(dir == "prev" and -1 or 1)
-        end
-    end)
-    b:SetScript("OnEnter", function(self) SimpleTip(self, tip) end)
-    b:SetScript("OnLeave", GameTooltip_Hide)
-    return b
+local function StepSet(delta)
+    if ns.SetList and ns.SetList.SelectRelative then ns.SetList:SelectRelative(delta) end
 end
 
 function PieceList:Build(panel)
@@ -412,9 +316,9 @@ function PieceList:Build(panel)
     self.root = parent
     if ns.GuidePage then ns.GuidePage:Build(panel) end
 
-    local nextB = ArrowButton(parent, "next", L.NEXT_SET)
+    local nextB = W.ArrowButton(parent, "next", L.NEXT_SET, function() StepSet(1) end)
     nextB:SetPoint("TOPRIGHT", -8, -6)
-    local prevB = ArrowButton(parent, "prev", L.PREV_SET)
+    local prevB = W.ArrowButton(parent, "prev", L.PREV_SET, function() StepSet(-1) end)
     prevB:SetPoint("RIGHT", nextB, "LEFT", 0, 0)
     self.prevB, self.nextB = prevB, nextB
 
@@ -452,16 +356,16 @@ function PieceList:Build(panel)
     countHit:SetScript("OnEnter", CountTooltip)
     countHit:SetScript("OnLeave", GameTooltip_Hide)
 
-    -- "Set bonuses" link right of "Have x / y" (tooltip only; nothing to click).
-    local bonuses = LinkButton(parent, L.BONUSES, BonusTooltip)
+    -- "Set bonuses (x/y)" right of "Have x / y": hover-only, so gold label style, not a link.
+    local bonuses = W.LinkButton(parent, L.BONUSES, BonusTooltip, nil, "label")
     bonuses:SetPoint("LEFT", count, "RIGHT", 12, 0)
     self.bonuses = bonuses
 
-    local report = LinkButton(parent, L.REPORT, L.REPORT_TIP, function()
+    local report = W.LinkButton(parent, L.REPORT, L.REPORT_TIP, function()
         local set = PieceList.set
         if not set then return end
         PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
-        ShowCopy("report", ns.Data:SetReportURL(set))
+        W.ShowCopy("report", ns.Data:SetReportURL(set))
     end)
     report:SetPoint("TOPRIGHT", -12, COUNT_TOP)
     self.report = report
@@ -525,7 +429,8 @@ function PieceList:Refresh()
     self.info:SetText(SetInfoText(set))
     local have, total = ns.Owned:SetCount(set)
     self.count:SetText(L.HAVE_COUNT:format(have, total))
-    self.count:SetTextColor(CountRGB(have, total))
+    self.count:SetTextColor(Theme.CountColor(have, total))
+    self:UpdateBonuses()
     local retain = ScrollBoxConstants and ScrollBoxConstants.RetainScrollPosition
     self.box:SetDataProvider(CreateDataProvider(set.pieces), retain)
     if ns.GuidePage and ns.GuidePage:IsOpen() then ns.GuidePage:Refresh() end

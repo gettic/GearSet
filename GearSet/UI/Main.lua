@@ -23,11 +23,14 @@ end
 local function RestorePosition(frame)
     local p = ns.db.point
     frame:ClearAllPoints()
-    if type(p) == "table" and p[1] then
-        frame:SetPoint(p[1], UIParent, p[2] or p[1], tonumber(p[3]) or 0, tonumber(p[4]) or 0)
-    else
-        frame:SetPoint("CENTER")
+    -- Checked again here (InitDB checks too): a bad saved point must never stop the window.
+    if ns.ValidPoint(p) and pcall(frame.SetPoint, frame, p[1], UIParent, p[2] or p[1],
+            tonumber(p[3]) or 0, tonumber(p[4]) or 0) then
+        return
     end
+    ns.db.point = nil
+    frame:ClearAllPoints()
+    frame:SetPoint("CENTER")
 end
 
 -- Shrink the window (never grow it) so it fits small or 4:3 screens at a large UI scale.

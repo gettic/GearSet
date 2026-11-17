@@ -6,6 +6,7 @@ local SetList = {}
 ns.SetList = SetList
 
 local ROW_H = 22
+local COUNT_W = 32      -- fixed width of "have/total", so the faction icons line up
 
 -- Class line for a set: class names in class colours; hinted sets (Dungeon Set 1/2)
 -- add "(any class can wear it)"; nil = all classes. Also used by the right panel header.
@@ -76,6 +77,8 @@ local function InitRow(row, set)
         row.count = row:CreateFontString(nil, "OVERLAY")
         Theme.Font(row.count, "small")
         row.count:SetPoint("RIGHT", -6, 0)
+        row.count:SetWidth(COUNT_W)
+        row.count:SetJustifyH("RIGHT")
         row.label = row:CreateFontString(nil, "OVERLAY")
         Theme.Font(row.label, "text")
         row.label:SetPoint("LEFT", 8, 0)
@@ -97,13 +100,19 @@ local function InitRow(row, set)
         row:SetScript("OnLeave", GameTooltip_Hide)
     end
     row.set = set
+    local selected = set.key == ns.db.lastSet
     row.label:SetText(set.name)
-    row.label:SetTextColor((set.removed and Theme.colors.removed or Theme.colors.text):GetRGB())
+    -- Removed sets are grey; on the selected bar a lighter grey so the name stays readable.
+    local nameColor = Theme.colors.text
+    if set.removed then
+        nameColor = selected and Theme.colors.removedSelected or Theme.colors.removed
+    end
+    row.label:SetTextColor(nameColor:GetRGB())
     SetFactionIcon(row, set.faction)
     local have, total = ns.Owned:SetCount(set)
     row.count:SetText(("%d/%d"):format(have, total))
     row.count:SetTextColor(Theme.CountColor(have, total))
-    row.sel:SetShown(set.key == ns.db.lastSet)
+    row.sel:SetShown(selected)
 end
 
 -- Filter defaults: Core.lua's defaults.filters (ns.FILTER_DEFAULTS). "Only my class"
@@ -137,12 +146,55 @@ local function ResetFilters()
     for k, v in pairs(Defaults()) do f[k] = v end
 end
 
--- Content filter entries (set kinds) in menu order.
-local KINDS = { "d", "r", "p", "c", "w", "f" }
+-- Content filter entries (set kinds) in menu order (Core.lua, also used to check saved values).
+local KINDS = ns.SET_KINDS or { "d", "r", "p", "c", "w", "f" }
 local function KindName(k) return L["KIND_" .. k:upper()] end
 
 -- Sort orders in menu order; unknown saved values sort like "owned".
 local SORTS = { { "owned", "SORT_OWNED" }, { "closest", "SORT_CLOSEST" }, { "name", "SORT_NAME" } }
+
+-- Menu entry label with the current choice after it: "Sort: Name" (choice in grey).
+local function ChoiceLabel(label, choice)
+    if not choice then return label end
+    local c = Theme.colors.menuChoice
+    return L.MENU_CHOICE:format(label, c:WrapTextInColorCode(choice))
+end
+
+-- Names of the current choices (pure; nil = nothing to name).
+function SetList.SortChoiceName()
+    for _, s in ipairs(SORTS) do
+        if s[1] == SetList.SortMode() then return L[s[2]] end
+    end
+end
+
+function SetList.ClassName(id)
+    if id == 0 then return L.ALL end
+    for _, c in ipairs(ns.Data:GetClasses()) do
+        if c.id == id then return c.name end
+    end
+end
+
+function SetList.ArmorChoiceName(id)
+    if id == 0 then return L.ALL end
+    return ns.Data.ArmorName(id)
+end
+
+function SetList.KindChoiceName(kind)
+    if (kind or "") == "" then return L.ALL end
+    return KindName(kind)
+end
+
+-- Class menu and "Only my class" can't both apply (a Mage set on a Warrior = empty list):
+-- picking a class turns "Only my class" off; ticking "Only my class" sets Class to All.
+function SetList.PickClass(f, id)
+    f.class = id
+    if id ~= 0 then f.usable = false end
+end
+
+function SetList.ToggleUsable(f)
+    f.usable = not f.usable
+    if f.usable then f.class = 0 end
+end
 
 -- Search/filter changed: the list starts from the top again.
 local function Changed()
@@ -156,34 +208,36 @@ end
 local function SetupMenu(owner, root)
     local f = ns.db.filters
 
-    local sortMenu = root:CreateButton(L.SORT)
+    -- Submenu labels show the current choice; the menu is built again each time it opens.
+    local sortMenu = root:CreateButton(ChoiceLabel(L.SORT, SetList.SortChoiceName()))
     for _, s in ipairs(SORTS) do
         sortMenu:CreateRadio(L[s[2]], function() return SetList.SortMode() == s[1] end,
             function() ns.db.sort = s[1]; Changed() end)
     end
     root:CreateDivider()
 
-    local classMenu = root:CreateButton(L.CLASS)
-    classMenu:CreateRadio(L.ALL, function() return f.class == 0 end, function() f.class = 0; Changed() end)
+    local classMenu = root:CreateButton(ChoiceLabel(L.CLASS, SetList.ClassName(f.class)))
+    classMenu:CreateRadio(L.ALL, function() return f.class == 0 end, function() SetList.PickClass(f, 0); Changed() end)
     for _, c in ipairs(ns.Data:GetClasses()) do
         local text = Theme.ClassColor(c.file):WrapTextInColorCode(c.name)
-        classMenu:CreateRadio(text, function() return f.class == c.id end, function() f.class = c.id; Changed() end)
+        classMenu:CreateRadio(text, function() return f.class == c.id end,
+            function() SetList.PickClass(f, c.id); Changed() end)
     end
 
-    local armorMenu = root:CreateButton(L.ARMOR)
+    local armorMenu = root:CreateButton(ChoiceLabel(L.ARMOR, SetList.ArmorChoiceName(f.armor)))
     armorMenu:CreateRadio(L.ALL, function() return f.armor == 0 end, function() f.armor = 0; Changed() end)
     for _, a in ipairs(ns.Data:GetArmorTypes()) do
         armorMenu:CreateRadio(a.name, function() return f.armor == a.id end, function() f.armor = a.id; Changed() end)
     end
 
-    local kindMenu = root:CreateButton(L.CONTENT)
+    local kindMenu = root:CreateButton(ChoiceLabel(L.CONTENT, SetList.KindChoiceName(f.kind)))
     kindMenu:CreateRadio(L.ALL, function() return (f.kind or "") == "" end, function() f.kind = ""; Changed() end)
     for _, k in ipairs(KINDS) do
         kindMenu:CreateRadio(KindName(k), function() return f.kind == k end, function() f.kind = k; Changed() end)
     end
 
     root:CreateDivider()
-    root:CreateCheckbox(L.USABLE, function() return f.usable end, function() f.usable = not f.usable; Changed() end)
+    root:CreateCheckbox(L.USABLE, function() return f.usable end, function() SetList.ToggleUsable(f); Changed() end)
     root:CreateCheckbox(L.MY_FACTION, function() return f.myFaction end, function() f.myFaction = not f.myFaction; Changed() end)
     root:CreateCheckbox(L.HIDE_COMPLETE, function() return f.hideComplete end, function() f.hideComplete = not f.hideComplete; Changed() end)
     root:CreateCheckbox(L.SHOW_REMOVED, function() return f.showRemoved end, function() f.showRemoved = not f.showRemoved; Changed() end)
@@ -342,53 +396,68 @@ end
 -- Complete sets first, then sets with some pieces, then the rest.
 -- Inside a group: highest share owned, then most pieces owned, then name order.
 -- Counts are worked out once per set before sorting (never in the comparator).
-local function SortOwnedFirst(list)
-    local rank = {}
+-- Sort keys live in reused file-level tables keyed by set (sets are fixed objects, so
+-- they never grow past the number of sets): no new tables per refresh.
+local rGroup, rShare, rHave, rMissing, rTotal = {}, {}, {}, {}, {}
+
+local function FillRanks(list)
     for _, s in ipairs(list) do
         local have, total = ns.Owned:SetCount(s)
-        local group = (have >= total and 1) or (have > 0 and 2) or 3
-        rank[s] = { group, total > 0 and have / total or 0, have }
+        rHave[s], rTotal[s] = have, total
+        rMissing[s] = total - have
+        rShare[s] = total > 0 and have / total or 0
     end
-    table.sort(list, function(a, b)
-        local ra, rb = rank[a], rank[b]
-        if ra[1] ~= rb[1] then return ra[1] < rb[1] end
-        if ra[2] ~= rb[2] then return ra[2] > rb[2] end
-        if ra[3] ~= rb[3] then return ra[3] > rb[3] end
-        if a.name ~= b.name then return a.name < b.name end
-        return a.key < b.key
-    end)
+end
+
+local function ByName(a, b)
+    if a.name ~= b.name then return a.name < b.name end
+    return a.key < b.key
+end
+
+local function OwnedFirstLess(a, b)
+    local ga, gb = rGroup[a], rGroup[b]
+    if ga ~= gb then return ga < gb end
+    if rShare[a] ~= rShare[b] then return rShare[a] > rShare[b] end
+    if rHave[a] ~= rHave[b] then return rHave[a] > rHave[b] end
+    return ByName(a, b)
+end
+
+local function SortOwnedFirst(list)
+    FillRanks(list)
+    for _, s in ipairs(list) do
+        local have, total = rHave[s], rTotal[s]
+        rGroup[s] = (have >= total and 1) or (have > 0 and 2) or 3
+    end
+    table.sort(list, OwnedFirstLess)
     return list
 end
 
 -- Closest to finishing: sets with some pieces first (fewest missing, then highest share),
 -- then untouched sets (fewest pieces), complete sets last; ties by name/key.
-local function SortClosest(list)
-    local rank = {}
-    for _, s in ipairs(list) do
-        local have, total = ns.Owned:SetCount(s)
-        local group = (have >= total and 3) or (have > 0 and 1) or 2
-        rank[s] = { group, total - have, total > 0 and have / total or 0, total }
+local function ClosestLess(a, b)
+    local ga, gb = rGroup[a], rGroup[b]
+    if ga ~= gb then return ga < gb end
+    if ga == 1 then
+        if rMissing[a] ~= rMissing[b] then return rMissing[a] < rMissing[b] end
+        if rShare[a] ~= rShare[b] then return rShare[a] > rShare[b] end
+    elseif ga == 2 then
+        if rTotal[a] ~= rTotal[b] then return rTotal[a] < rTotal[b] end
     end
-    table.sort(list, function(a, b)
-        local ra, rb = rank[a], rank[b]
-        if ra[1] ~= rb[1] then return ra[1] < rb[1] end
-        if ra[1] == 1 then
-            if ra[2] ~= rb[2] then return ra[2] < rb[2] end
-            if ra[3] ~= rb[3] then return ra[3] > rb[3] end
-        elseif ra[1] == 2 then
-            if ra[4] ~= rb[4] then return ra[4] < rb[4] end
-        end
-        if a.name ~= b.name then return a.name < b.name end
-        return a.key < b.key
-    end)
+    return ByName(a, b)
+end
+
+local function SortClosest(list)
+    FillRanks(list)
+    for _, s in ipairs(list) do
+        local have, total = rHave[s], rTotal[s]
+        rGroup[s] = (have >= total and 3) or (have > 0 and 1) or 2
+    end
+    table.sort(list, ClosestLess)
     return list
 end
 
 local function SortName(list)
-    table.sort(list, function(a, b)
-        if a.name ~= b.name then return a.name < b.name end
-        return a.key < b.key
-    end)
+    table.sort(list, ByName)
     return list
 end
 
