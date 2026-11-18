@@ -51,6 +51,31 @@ local function T(key, fallback)
     return v
 end
 
+-- One level above the window template's own parts. Their levels are fixed in the template
+-- (WoW Forever: border 500, portrait 400, title bar and X 510), so "window + 10" draws
+-- under the border art. Also used by Help.lua for note 4's line.
+local TEMPLATE_PARTS = { "NineSlice", "PortraitContainer", "TitleContainer", "CloseButton" }
+function UI.TopLevelOf(f)
+    local top = f:GetFrameLevel() or 0
+    for _, key in ipairs(TEMPLATE_PARTS) do
+        local part = f[key]
+        if type(part) == "table" and part.GetFrameLevel then
+            local lv = part:GetFrameLevel()
+            if lv and lv > top then top = lv end
+        end
+    end
+    return math.min(top + 1, 9000)
+end
+
+-- Gear and "?" on top of the template's art (Build, and again on every OnShow).
+function UI:RaiseButtons()
+    local f = self.frame
+    if not f then return end
+    local level = UI.TopLevelOf(f)
+    if self.gear then self.gear:SetFrameLevel(level) end
+    if self.helpButton then self.helpButton:SetFrameLevel(level) end
+end
+
 -- Gear button left of the close button: opens Gear Set's page in Blizzard's settings.
 local function MakeGearButton(f)
     local art = Theme.art.settingsIcon
@@ -62,7 +87,7 @@ local function MakeGearButton(f)
     else
         b:SetPoint("TOPRIGHT", f, "TOPRIGHT", -30, -4)
     end
-    b:SetFrameLevel(f:GetFrameLevel() + 10)
+    b:SetFrameLevel(UI.TopLevelOf(f))
     local icon = b:CreateTexture(nil, "ARTWORK")
     icon:SetAllPoints()
     Theme.SetArt(icon, art)
@@ -92,31 +117,85 @@ end
 
 -- "?" on the portrait: Blizzard's tutorial button (MainHelpPlateButton), else a "?" link.
 -- Its own scripts are replaced on our child button only (no Blizzard function touched).
+local function HelpOnClick()
+    if ns.Help and ns.Help.Show then ns.Help:Show() end
+end
+local function HelpOnEnter(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText(T("HELP_BUTTON_TIP", "Show help"), Theme.colors.title:GetRGB())
+    GameTooltip:Show()
+end
+
+-- Where the "?" goes: the bottom-right of the portrait picture when it has a size,
+-- else a fixed spot on the window (the portrait's corner on the classic layout).
+local PORTRAIT_SPOT_X, PORTRAIT_SPOT_Y = 52, -50
+local function PortraitRegion(f)
+    local pc = f.PortraitContainer
+    local list = { pc and pc.portrait, f.portrait, pc }
+    for i = 1, 3 do
+        local r = list[i]
+        if type(r) == "table" and r.GetWidth then
+            local w, h = r:GetWidth(), r:GetHeight()
+            if w and h and w > 1 and h > 1 then return r end
+        end
+    end
+end
+
+local function PlaceHelp(b, f, dx, dy, onWindow)
+    b:ClearAllPoints()
+    local region = not onWindow and PortraitRegion(f)
+    if region then
+        b:SetPoint("CENTER", region, "BOTTOMRIGHT", dx, dy)
+    else
+        local s = (b.GetScale and b:GetScale()) or 1   -- offsets count in the button's own scale
+        if not s or s <= 0 then s = 1 end
+        b:SetPoint("CENTER", f, "TOPLEFT", PORTRAIT_SPOT_X / s, PORTRAIT_SPOT_Y / s)
+    end
+end
+
+local function MakeHelpLink(f, onWindow)
+    local b = ns.Widgets.LinkButton(f, "?", HelpOnEnter, HelpOnClick, "link")
+    PlaceHelp(b, f, -6, 6, onWindow)
+    b:SetFrameLevel(UI.TopLevelOf(f))
+    b:Show()
+    return b
+end
+
 local function MakeHelpButton(f)
-    local function OnClick()
-        if ns.Help and ns.Help.Show then ns.Help:Show() end
-    end
-    local function OnEnter(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText(T("HELP_BUTTON_TIP", "Show help"), Theme.colors.title:GetRGB())
-        GameTooltip:Show()
-    end
-    local anchor = f.PortraitContainer or f.portrait or f
     local b, tmpl = Theme.CreateFrame("Button", nil, f, "helpButton")
     if b and tmpl then
         b:SetScale(0.6)
-        b:ClearAllPoints()
-        b:SetPoint("CENTER", anchor, "BOTTOMRIGHT", -2, 4)
-        b:SetScript("OnClick", OnClick)
-        b:SetScript("OnEnter", OnEnter)
+        PlaceHelp(b, f, -2, 4)
+        b:SetScript("OnClick", HelpOnClick)
+        b:SetScript("OnEnter", HelpOnEnter)
         b:SetScript("OnLeave", GameTooltip_Hide)
-    else
-        if b then b:Hide() end
-        b = ns.Widgets.LinkButton(f, "?", OnEnter, OnClick, "link")
-        b:SetPoint("CENTER", anchor, "BOTTOMRIGHT", -6, 6)
+        b.gsTemplate = true
+        b:SetFrameLevel(UI.TopLevelOf(f))
+        b:Show()   -- the template may start hidden on this client
+        return b
     end
-    b:SetFrameLevel(f:GetFrameLevel() + 10)
-    return b
+    if b then b:Hide() end
+    return MakeHelpLink(f)
+end
+
+-- First show, one frame later: if the template "?" has no position or its "i" art is
+-- missing on this client, swap it for the "?" text link on the window itself.
+local function TextureMissing(tex)
+    if not tex then return true end
+    local id = tex.GetTextureFileID and tex:GetTextureFileID()
+    if id == nil and tex.GetTexture then id = tex:GetTexture() end
+    return id == nil or id == 0
+end
+
+function UI:CheckHelpButton()
+    local b, f = self.helpButton, self.frame
+    if self.helpChecked or not (b and f and b.gsTemplate and f:IsShown()) then return end
+    self.helpChecked = true
+    local noPlace = b:GetLeft() == nil
+    if noPlace or TextureMissing(b.I) then
+        b:Hide()
+        self.helpButton = MakeHelpLink(f, noPlace)
+    end
 end
 
 local function MakeInset(parent, x1, x2)
@@ -176,6 +255,10 @@ function UI:Build()
 
     f:SetScript("OnShow", function()
         FitToScreen(f)
+        UI:RaiseButtons()
+        if not UI.helpChecked and C_Timer and C_Timer.After then
+            C_Timer.After(0, function() UI:CheckHelpButton() end)
+        end
         if f.SetPortraitToUnit then f:SetPortraitToUnit("player") end
         ns.Owned:Invalidate()
         UI:RefreshAll()

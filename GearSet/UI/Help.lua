@@ -117,7 +117,14 @@ function Help:Build()
     if gear then
         -- Note 4 hangs below the gear button with a thin gold line up to it.
         notes[4]:SetPoint("TOPRIGHT", gear, "BOTTOM", 26, -NOTE4_DROP)
-        local line = f:CreateTexture(nil, "ARTWORK")
+        -- The line reaches into the title bar, whose art sits above the overlay: draw it
+        -- on a mouse-less holder at the gear's level (UI.TopLevelOf).
+        local holder = CreateFrame("Frame", nil, f)
+        holder:SetAllPoints(f)
+        holder:SetFrameLevel(UI.TopLevelOf and UI.TopLevelOf(win) or f:GetFrameLevel() + 1)
+        holder:EnableMouse(false)
+        self.lineHolder = holder
+        local line = holder:CreateTexture(nil, "ARTWORK")
         line:SetColorTexture(Theme.colors.helpLine:GetRGB())
         line:SetWidth(Theme.art.helpLineWidth or 2)
         line:SetPoint("TOP", gear, "BOTTOM", 0, -2)
@@ -161,6 +168,7 @@ function Help:Show()
     end
     if win.Raise then win:Raise() end
     if not self:Build() then return end
+    if self.lineHolder and UI.TopLevelOf then self.lineHolder:SetFrameLevel(UI.TopLevelOf(win)) end
     ClearOurFocus(win)
     if not self.frame:IsShown() then
         self.frame:Show()
