@@ -14,6 +14,7 @@ local ST = {}
 ns.SelfTest = ST
 
 local MAX_LIST = 8          -- names listed per summary line
+local MISSING_IDS = 5       -- item IDs shown for "unknown to this client" (info line)
 local COVER_SHARE = 0.3     -- part counts as covered when this much of it is under another frame
 local SCREEN_SLACK = 2      -- px
 
@@ -446,7 +447,7 @@ function ST.MainParts()
         { name = "window", obj = f },
         { name = "close", obj = f and f.CloseButton, opt = true },
         { name = "gear", obj = UI.gear, top = true, art = { "icon" } },
-        { name = "help", obj = help, top = true, art = (help and help.gsTemplate) and { "I", "Ring" } or nil },
+        { name = "help", obj = help, top = true, art = (help and (help.gsArt or help.gsTemplate)) and { "I", "Ring" } or nil },
         { name = "insetL", obj = UI.left }, { name = "insetM", obj = UI.mid }, { name = "insetR", obj = UI.right },
         { name = "filter", obj = SL.filter }, { name = "search", obj = SL.search }, { name = "sets", obj = SL.box },
         { name = "model", obj = PV.model }, { name = "reset", obj = PV.reset }, { name = "onlySet", obj = PV.check },
@@ -690,10 +691,33 @@ local function CheckData()
     end
     if type(instant) ~= "function" then Skip("items", "(no API)") end
 
-    local nSrc, nGuide = 0, 0
+    -- Bundled items this client doesn't know (Data skips them while building): info only.
+    local built, bundledItems, missing = {}, 0, {}
+    for _, s in ipairs(sets) do
+        for _, p in ipairs(type(s.shown or s.pieces) == "table" and (s.shown or s.pieces) or {}) do
+            built[p.itemID] = true
+        end
+    end
+    local seenItem = {}
+    for _, e in pairs(type(ns.ClassicSets) == "table" and ns.ClassicSets or {}) do
+        for _, id in ipairs(type(e) == "table" and type(e.i) == "table" and e.i or {}) do
+            if not seenItem[id] then
+                seenItem[id] = true
+                bundledItems = bundledItems + 1
+                if not built[id] then missing[#missing + 1] = id end
+            end
+        end
+    end
+    table.sort(missing)
+
+    -- GuideData: { v = n, place = {...}, boss = {...}, ... }: count tables and their records.
+    local nSrc, nGuide, nRecords = 0, 0, 0
     for _ in pairs(type(ns.SourcesData) == "table" and ns.SourcesData or {}) do nSrc = nSrc + 1 end
     for _, v in pairs(type(ns.GuideData) == "table" and ns.GuideData or {}) do
-        if type(v) == "string" then nGuide = nGuide + 1 end
+        if type(v) == "table" then
+            nGuide = nGuide + 1
+            for _ in pairs(v) do nRecords = nRecords + 1 end
+        end
     end
     Count(2)
     if nSrc == 0 then Problem("DATA", "sources", "none loaded") end
@@ -704,7 +728,18 @@ local function CheckData()
         if not ok then Problem("DATA", "flags", Short(c))
         elseif type(c) == "table" and (c.badFlags or 0) > 0 then Problem("DATA", "flags", c.badFlags .. " bad") end
     end
-    Info(("sets %d/%d, pieces %d, sources %d, guide tables %d"):format(#sets, bundled, items, nSrc, nGuide))
+    local pieces = tostring(items)
+    if bundledItems > 0 then
+        pieces = ("%d/%d"):format(items, bundledItems)
+        if #missing > 0 then
+            local ids = {}
+            for i = 1, math.min(#missing, MISSING_IDS) do ids[i] = tostring(missing[i]) end
+            pieces = pieces .. (" (%d unknown to this client: %s%s)"):format(#missing,
+                table.concat(ids, ","), #missing > MISSING_IDS and ",..." or "")
+        end
+    end
+    Info(("sets %d/%d, pieces %s, sources %d, guide tables %d (%d records)"):format(
+        #sets, bundled, pieces, nSrc, nGuide, nRecords))
 
     -- The list code runs without errors (no tooltips, no stats).
     Count()

@@ -17,9 +17,9 @@ Theme.templates = {
     scrollBar = { "MinimalScrollBar" },
     -- Guide page: scrolling text (modern template, then the classic one; plain ScrollFrame + wheel if neither).
     scrollFrame = { "ScrollFrameTemplate", "UIPanelScrollFrameTemplate" },
-    -- First-time help: "?" on the portrait (Blizzard's tutorial button; "?" link text if
-    -- missing) and the note boxes (help-tip glow box, else a tooltip box, else a dark box).
-    helpButton = { "MainHelpPlateButton" },
+    -- First-time help note boxes (help-tip glow box, else a tooltip box, else a dark box).
+    -- The "?" button is our own plain button with Blizzard's art (art.helpIcon): the
+    -- MainHelpPlateButton template hides itself on WoW Forever.
     helpNote   = { "GlowBoxTemplate", "TooltipBackdropTemplate" },
 }
 
@@ -80,6 +80,15 @@ Theme.art = {
     },
     -- Gear button left of the window's close button (opens the settings).
     settingsIcon = { atlas = "GM-icon-settings", file = "Interface\\Buttons\\UI-OptionsButton", size = 20 },
+    -- "?" on the portrait: the art of Blizzard's MainHelpPlateButton by path (64 px layout:
+    -- "i" 46 px centred, ring 64 px at +12/-13, highlight 46 px at -1/+1), shown at `scale`.
+    -- Main.lua uses a "?" text link if the "i" doesn't load.
+    helpIcon = {
+        icon      = "Interface\\common\\help-i",
+        ring      = "Interface\\Minimap\\MiniMap-TrackingBorder",
+        highlight = "Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight",
+        size = 64, iconSize = 46, ringX = 12, ringY = -13, scale = 0.6,
+    },
     -- First-time help: line from the "4. Settings" note up to the gear button.
     helpLineWidth = 2,
 }

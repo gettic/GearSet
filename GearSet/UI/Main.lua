@@ -115,8 +115,7 @@ local function MakeGearButton(f)
     return b
 end
 
--- "?" on the portrait: Blizzard's tutorial button (MainHelpPlateButton), else a "?" link.
--- Its own scripts are replaced on our child button only (no Blizzard function touched).
+-- "?" on the portrait: our own button with Blizzard's help-plate art, else a "?" link.
 local function HelpOnClick()
     if ns.Help and ns.Help.Show then ns.Help:Show() end
 end
@@ -161,25 +160,48 @@ local function MakeHelpLink(f, onWindow)
     return b
 end
 
+-- Our own plain button with Blizzard's help-plate art (Theme.art.helpIcon, by path).
+-- Not the MainHelpPlateButton template: on WoW Forever it hides itself.
+-- `.I` / `.Ring` keep the template's names (the self-test reads them); `gsArt` marks it.
 local function MakeHelpButton(f)
-    local b, tmpl = Theme.CreateFrame("Button", nil, f, "helpButton")
-    if b and tmpl then
-        b:SetScale(0.6)
-        PlaceHelp(b, f, -2, 4)
-        b:SetScript("OnClick", HelpOnClick)
-        b:SetScript("OnEnter", HelpOnEnter)
-        b:SetScript("OnLeave", GameTooltip_Hide)
-        b.gsTemplate = true
-        b:SetFrameLevel(UI.TopLevelOf(f))
-        b:Show()   -- the template may start hidden on this client
-        return b
+    local art = Theme.art.helpIcon
+    if not art then return MakeHelpLink(f) end
+    local b = CreateFrame("Button", nil, f)
+    local size, iconSize = art.size or 64, art.iconSize or 46
+    b:SetSize(size, size)
+    b:SetScale(art.scale or 0.6)
+    local icon = b:CreateTexture(nil, "BACKGROUND")
+    icon:SetSize(iconSize, iconSize)
+    icon:SetPoint("CENTER")
+    if not Theme.TryTexture(icon, art.icon) then
+        b:Hide()
+        return MakeHelpLink(f)   -- the plain button stays hidden and unused
     end
-    if b then b:Hide() end
-    return MakeHelpLink(f)
+    b.I = icon
+    local ring = b:CreateTexture(nil, "BORDER")
+    ring:SetSize(size, size)
+    ring:SetPoint("CENTER", art.ringX or 12, art.ringY or -13)
+    Theme.TryTexture(ring, art.ring)
+    b.Ring = ring
+    if art.highlight then
+        local hl = b:CreateTexture(nil, "HIGHLIGHT")
+        hl:SetSize(iconSize, iconSize)
+        hl:SetPoint("CENTER", -1, 1)
+        hl:SetTexture(art.highlight)
+        hl:SetBlendMode("ADD")
+    end
+    b:SetScript("OnMouseDown", function() icon:SetPoint("CENTER", 1, -1) end)
+    b:SetScript("OnMouseUp", function() icon:SetPoint("CENTER", 0, 0) end)
+    b:SetScript("OnClick", HelpOnClick)
+    b:SetScript("OnEnter", HelpOnEnter)
+    b:SetScript("OnLeave", GameTooltip_Hide)
+    PlaceHelp(b, f, -2, 4)
+    b.gsArt = true
+    b:SetFrameLevel(UI.TopLevelOf(f))
+    b:Show()
+    return b
 end
 
--- First show, one frame later: if the template "?" has no position or its "i" art is
--- missing on this client, swap it for the "?" text link on the window itself.
 local function TextureMissing(tex)
     if not tex then return true end
     local id = tex.GetTextureFileID and tex:GetTextureFileID()
@@ -187,14 +209,20 @@ local function TextureMissing(tex)
     return id == nil or id == 0
 end
 
+-- Every window open, one frame later: the art "?" hidden, without a position or without
+-- its "i" -> swap it for the "?" text link (once); the link itself is kept shown.
 function UI:CheckHelpButton()
     local b, f = self.helpButton, self.frame
-    if self.helpChecked or not (b and f and b.gsTemplate and f:IsShown()) then return end
-    self.helpChecked = true
-    local noPlace = b:GetLeft() == nil
-    if noPlace or TextureMissing(b.I) then
-        b:Hide()
-        self.helpButton = MakeHelpLink(f, noPlace)
+    if not (b and f and f:IsShown()) then return end
+    if b.gsArt then
+        local noPlace = b:GetLeft() == nil
+        if noPlace or not b:IsShown() or TextureMissing(b.I) then
+            b:Hide()
+            b.gsArt = nil
+            self.helpButton = MakeHelpLink(f, noPlace)
+        end
+    elseif not b:IsShown() then
+        b:Show()
     end
 end
 
@@ -256,7 +284,7 @@ function UI:Build()
     f:SetScript("OnShow", function()
         FitToScreen(f)
         UI:RaiseButtons()
-        if not UI.helpChecked and C_Timer and C_Timer.After then
+        if C_Timer and C_Timer.After then
             C_Timer.After(0, function() UI:CheckHelpButton() end)
         end
         if f.SetPortraitToUnit then f:SetPortraitToUnit("player") end
