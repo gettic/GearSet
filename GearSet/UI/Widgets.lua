@@ -123,6 +123,37 @@ function W.LinkButton(parent, text, tip, onClick, style)
     return b
 end
 
+-- Scroll frames (guide page, Progress page): the modern bar re-anchored just outside the
+-- frame's right edge, like the piece list's; with no template, mouse wheel scrolling only.
+function W.PlaceScrollBar(scroll, tmpl)
+    local bar = scroll and scroll.ScrollBar
+    if tmpl == "ScrollFrameTemplate" and type(bar) == "table" and bar.ClearAllPoints then
+        bar:ClearAllPoints()
+        bar:SetPoint("TOPLEFT", scroll, "TOPRIGHT", 4, -2)
+        bar:SetPoint("BOTTOMLEFT", scroll, "BOTTOMRIGHT", 4, 2)
+    end
+end
+
+function W.WheelScroll(scroll)
+    scroll:EnableMouseWheel(true)
+    scroll:SetScript("OnMouseWheel", function(s, delta)
+        local child = s:GetScrollChild()
+        local h = child and child:GetHeight() or 0
+        local maxY = math.max(0, h - (s:GetHeight() or 0))
+        local y = math.min(maxY, math.max(0, (s:GetVerticalScroll() or 0) - delta * 40))
+        s:SetVerticalScroll(y)
+    end)
+end
+
+-- A themed scroll frame (Theme.templates.scrollFrame) with the bar placed and the wheel
+-- fallback; returns the frame and the template used (nil = none).
+function W.ScrollFrame(parent)
+    local scroll, tmpl = Theme.CreateFrame("ScrollFrame", nil, parent, "scrollFrame")
+    W.PlaceScrollBar(scroll, tmpl)
+    if not tmpl then W.WheelScroll(scroll) end
+    return scroll, tmpl
+end
+
 function W.PanelButton(parent, text, tip, onClick)
     local b = Theme.CreateFrame("Button", nil, parent, "button")
     b:SetHeight(22)

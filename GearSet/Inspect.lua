@@ -59,20 +59,28 @@ local function StripTooltip(self)
     GameTooltip:Show()
 end
 
+-- Strip sizes: Theme.sizes.inspectStrip { inset, height, gap, pad }; these until Theme has them.
+local SIZE_FALLBACK = { inset = 4, height = 24, gap = -2, pad = 10 }
+
 -- The strip hangs under the inspect window (outside it, so it never covers Blizzard's parts).
+-- Tooltip box (Theme.templates.inspectStrip, TooltipBackdropTemplate), else a dark colour box.
 local function Strip(parent)
     if Insp.strip then return Insp.strip end
-    local s = CreateFrame("Frame", nil, parent)
-    s:SetHeight(20)
-    s:SetPoint("TOPLEFT", parent, "BOTTOMLEFT", 0, -2)
-    s:SetPoint("TOPRIGHT", parent, "BOTTOMRIGHT", 0, -2)
-    local bg = s:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetColorTexture(Theme.colors.inspectBg:GetRGBA())
+    local sz = Theme.sizes.inspectStrip or SIZE_FALLBACK
+    local s, tmpl = Theme.CreateFrame("Frame", nil, parent, "inspectStrip")
+    if not s then return nil end
+    s:SetHeight(sz.height)
+    s:SetPoint("TOPLEFT", parent, "BOTTOMLEFT", sz.inset, sz.gap)
+    s:SetPoint("TOPRIGHT", parent, "BOTTOMRIGHT", -sz.inset, sz.gap)
+    if not tmpl then
+        local bg = s:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints()
+        bg:SetColorTexture(Theme.colors.inspectBg:GetRGBA())
+    end
     s.text = s:CreateFontString(nil, "OVERLAY")
     Theme.Font(s.text, "small")
-    s.text:SetPoint("LEFT", 8, 0)
-    s.text:SetPoint("RIGHT", -8, 0)
+    s.text:SetPoint("LEFT", sz.pad, 0)
+    s.text:SetPoint("RIGHT", -sz.pad, 0)
     s.text:SetJustifyH("CENTER")
     s.text:SetWordWrap(false)
     s:EnableMouse(true)
@@ -92,6 +100,7 @@ function Insp.Show(parent, who, list)
     for i, r in ipairs(list) do result[i] = r end
     Insp.who = who
     local s = Strip(parent)
+    if not s then return end
     if #result == 0 then s:Hide() return end
     local top = result[1]
     local text = Tip.Label() .. " " .. L.INSPECT_WEARS:format(who) .. " " .. Tip.Name(top.name) .. " " .. Tip.Count(top.worn, top.total)

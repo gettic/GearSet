@@ -471,6 +471,8 @@ function ST.MainParts()
         { name = "insetL", obj = UI.left }, { name = "insetM", obj = UI.mid }, { name = "insetR", obj = UI.right },
         { name = "filter", obj = SL.filter }, { name = "search", obj = SL.search }, { name = "sets", obj = SL.box },
         { name = "model", obj = PV.model }, { name = "reset", obj = PV.reset }, { name = "onlySet", obj = PV.check },
+        -- ui-review-3: "Sets complete" box under the title (only with the Progress module)
+        { name = "countBox", obj = UI.countBox, opt = not ns.Progress },
     }
     for i, t in ipairs(UI.tabs or {}) do
         parts[#parts + 1] = { name = "tab" .. i, obj = t.button }
@@ -479,7 +481,9 @@ function ST.MainParts()
     if not guideOpen then
         local list = {
             { name = "setPrev", obj = PL.prevB }, { name = "setNext", obj = PL.nextB },
-            { name = "title", obj = PL.title }, { name = "count", obj = PL.count },
+            { name = "title", obj = PL.title }, { name = "countBar", obj = PL.countBar },
+            { name = "count", obj = PL.count, shownOnly = true },
+            { name = "pDivider", obj = PL.divider, thin = true },
             { name = "bonuses", obj = PL.bonuses, shownOnly = true },
             { name = "stats", obj = PL.stats, shownOnly = true },
             { name = "effort", obj = PL.effort, shownOnly = true, opt = true },
@@ -497,25 +501,38 @@ function ST.ProgressParts()
         { name = "pPage", obj = UI.progressPage }, { name = "pPct", obj = P.pct },
         { name = "pScope", obj = P.scope }, { name = "pTotal", obj = P.total },
         { name = "pList", obj = P.scroll }, { name = "pNote", obj = P.note },
+        { name = "pLeft", obj = P.leftScroll, opt = true },
     }
     for i, b in ipairs(P.bars or {}) do
         parts[#parts + 1] = { name = "pBar" .. i, obj = b, shownOnly = true }
     end
+    for i, b in ipairs(P.charRows or {}) do
+        parts[#parts + 1] = { name = "pChar" .. i, obj = b, shownOnly = true }
+    end
     return parts
 end
 
--- Bottom tabs hang under the window, below its border art (never under it), on screen.
+-- Bottom tabs hang from under the window's bottom border like CharacterFrame's (top at most
+-- Theme.sizes.tabOffsetY px above the window's bottom edge: the border draws over that
+-- strip, Blizzard's design), the rest below the window, inside its left/right edges.
 local function CheckTabs()
     local UI = ns.UI or {}
     local win = UI.frame
+    local sizes = (ns.Theme and ns.Theme.sizes) or {}
+    local tuck = math.max(0, tonumber(sizes.tabOffsetY) or 0)
     for i, t in ipairs(UI.tabs or {}) do
         Count()
         local r, w = ScreenRect(t.button), ScreenRect(win)
         if r == "secret" or w == "secret" then
             Skip("tab" .. i, "(secret)")
         elseif type(r) == "table" and type(w) == "table" then
-            if r.t > w.b + SCREEN_SLACK then
-                Problem("UI", "tab" .. i, ("under the window border (%d px)"):format(math.floor(r.t - w.b)))
+            -- ScreenRect is in screen px; the offset is in window px.
+            local s = select(2, Read(win, "GetEffectiveScale"))
+            local reach = tuck * (type(s) == "number" and s or 1)
+            if r.t > w.b + reach + SCREEN_SLACK then
+                Problem("UI", "tab" .. i, ("too far up into the window (%d px)"):format(math.floor(r.t - w.b)))
+            elseif r.b > w.b - SCREEN_SLACK then
+                Problem("UI", "tab" .. i, "does not hang below the window")
             elseif r.l < w.l - SCREEN_SLACK or r.r > w.r + SCREEN_SLACK then
                 Problem("UI", "tab" .. i, "not under the window")
             end
@@ -523,15 +540,33 @@ local function CheckTabs()
     end
 end
 
+-- beta.9: the guide's Way buttons in view (inside the scroll area; scrolled-away ones skipped).
+local MAX_WAY_PARTS = 4
+local function WayParts(G, parts)
+    local area = G.scroll and ScreenRect(G.scroll)
+    if type(area) ~= "table" then return end
+    local n = 0
+    for i = 1, math.min(G.wayUsed or 0, #(G.wayPool or {})) do
+        local b = G.wayPool[i]
+        local r = ScreenRect(b)
+        if type(r) == "table" and r.t <= area.t + SCREEN_SLACK and r.b >= area.b - SCREEN_SLACK and n < MAX_WAY_PARTS then
+            n = n + 1
+            parts[#parts + 1] = { name = "gWay" .. i, obj = b, shownOnly = true, art = b.icon and { "icon" } or nil }
+        end
+    end
+end
+
 function ST.GuideParts()
     local G = ns.GuidePage or {}
-    return {
+    local parts = {
         { name = "gBack", obj = G.back }, { name = "gCopy", obj = G.copy }, { name = "gWiki", obj = G.wiki },
         { name = "gPrev", obj = G.prevB }, { name = "gNext", obj = G.nextB },
         { name = "gIcon", obj = G.icon, artSelf = true }, { name = "gName", obj = G.name },
         { name = "gModel", obj = G.modelCheck }, { name = "gCopyText", obj = G.copyText },
         { name = "gScroll", obj = G.scroll },
     }
+    WayParts(G, parts)
+    return parts
 end
 
 function ST.CopyParts()
@@ -546,7 +581,10 @@ function ST.HelpParts()
         { name = "helpDim", obj = H.frame },
         { name = "note1", obj = notes[1] }, { name = "note2", obj = notes[2] },
         { name = "note3", obj = notes[3] }, { name = "note4", obj = notes[4] },
-        { name = "note4Line", obj = H.line, opt = true, thin = true },
+        -- the arrow (template or file art; nil = line only) and the gold line, which hides
+        -- itself when the gap to the gear is tiny
+        { name = "note4Arrow", obj = H.arrow, opt = true, art = H.arrow and { "gsArrow" } or nil },
+        { name = "note4Line", obj = H.line, opt = true, thin = true, shownOnly = true },
         { name = "gotIt", obj = H.okButton },
     }
 end
@@ -554,6 +592,16 @@ end
 -- Minimap button: shown as the setting says, next to the minimap.
 local function CheckMinimap()
     local MB = ns.MinimapButton
+    -- review 3: the icon file the button and the data-bar launcher use loads
+    if MB and MB.IconFile then
+        Count()
+        local okI, file = pcall(MB.IconFile)
+        if not okI or type(file) ~= "string" then
+            Problem("ART", "minimap icon", "no icon file loads")
+        elseif FileLoads(file) == false then   -- nil = couldn't check
+            Problem("ART", "minimap icon", "icon file does not load: " .. file)
+        end
+    end
     local b = MB and MB.button
     local db = DB()
     local wantShown = not (db and db.minimap and db.minimap.hide)
@@ -1010,6 +1058,139 @@ local function Ms(start)
 end
 local function Now() return type(debugprofilestop) == "function" and debugprofilestop() or 0 end
 
+-- beta.9 map positions (PlacesData) and the Way button's data: every map ID is a real map
+-- (English client: with the zone's name) where a map pin can be set; every position parses
+-- and its zone has an ID (zones with no static ID, e.g. Riverglades, are looked up and
+-- printed so the next data build can add them); a dungeon piece's guide carries a Way point.
+-- Read-only: GetMapInfo / CanSetUserWaypointOnMap only, never a waypoint, TomTom or super-track call.
+local function CheckPlaces()
+    local PD, Way = ns.PlacesData, ns.Way
+    Count()
+    if type(PD) ~= "table" or type(PD.map) ~= "table" or type(PD.at) ~= "table" then
+        return Problem("MAP", "places", "not loaded")
+    end
+    if not Way then return Problem("MAP", "Way", "missing") end
+    local getInfo = C_Map and type(C_Map.GetMapInfo) == "function" and C_Map.GetMapInfo or nil
+    local canSet = C_Map and type(C_Map.CanSetUserWaypointOnMap) == "function" and C_Map.CanSetUserWaypointOnMap or nil
+    local okLocale, locale = pcall(GetLocale)
+    local english = okLocale and (locale == "enUS" or locale == "enGB")
+    local nMaps, nOk, nPin, bad, badName = 0, 0, 0, {}, {}
+    for zone, id in pairs(PD.map) do
+        nMaps = nMaps + 1
+        Count()
+        if getInfo then
+            local ok, info = pcall(getInfo, id)
+            if not ok or type(info) ~= "table" then
+                bad[#bad + 1] = zone .. "=" .. tostring(id)
+            else
+                nOk = nOk + 1
+                if english and not IsSecret(info.name) and info.name ~= zone then
+                    badName[#badName + 1] = ("%s=%s"):format(zone, tostring(info.name))
+                end
+            end
+        end
+        if canSet then
+            local ok, can = pcall(canSet, id)
+            if ok and can == true then nPin = nPin + 1 end
+        end
+    end
+    if not getInfo then Skip("maps", "(no GetMapInfo)") end
+    if #bad > 0 then
+        Problem("MAP", "ids", ("%d unknown: %s"):format(#bad, table.concat(bad, ", ", 1, math.min(#bad, MAX_LIST))))
+    end
+    if #badName > 0 then
+        Problem("MAP", "names", ("%d differ: %s"):format(#badName, table.concat(badName, ", ", 1, math.min(#badName, MAX_LIST))))
+    end
+    -- Every position parses; zones without a static ID are found at runtime (or not).
+    local nAt, badAt, extra = 0, {}, {}
+    for key, raw in pairs(PD.at) do
+        nAt = nAt + 1
+        Count()
+        local rec = Way.Parse(raw)
+        if not rec then
+            badAt[#badAt + 1] = tostring(key)
+        else
+            for _, p in ipairs(rec.points) do
+                if type(PD.map[p.zone]) ~= "number" and extra[p.zone] == nil then
+                    extra[p.zone] = Way.MapID(p.zone) or false
+                end
+            end
+        end
+    end
+    if #badAt > 0 then
+        Problem("MAP", "at", ("%d bad: %s"):format(#badAt, table.concat(badAt, ", ", 1, math.min(#badAt, MAX_LIST))))
+    end
+    local found = {}
+    for zone, id in pairs(extra) do found[#found + 1] = ("%s = %s"):format(zone, id and tostring(id) or "none") end
+    table.sort(found)
+    Info(("maps %d/%d, map pins %d/%d, places %d%s"):format(nOk, nMaps, nPin, nMaps, nAt,
+        #found > 0 and (", " .. table.concat(found, ", ")) or ""))
+    -- A dungeon drop's guide has a Way point on its Where row (Data -> Way.Point).
+    local D = ns.Data
+    if D and D.GetGuide and type(ns.SourcesData) == "table" then
+        Count()
+        local itemID
+        for id, src in pairs(ns.SourcesData) do
+            local place = type(src) == "string" and src:match("^b|[^|;]*|([^|;@]+)")
+            -- not crafted: a crafted piece's guide may read its tooltip (bind type)
+            if place and PD.at["place:" .. place] and not src:find("^c|") and not src:find(";c|", 1, true) then
+                itemID = id
+                break
+            end
+        end
+        if not itemID then return Skip("way data", "(no dungeon drop with a place)") end
+        local ok, blocks = pcall(D.GetGuide, D, { itemID = itemID })
+        local hasWay = false
+        local function Walk(list)
+            for _, b in ipairs(type(list) == "table" and list or {}) do
+                if type(b.way) == "table" and b.way.x and b.way.y then hasWay = true end
+                if b.blocks then Walk(b.blocks) end
+            end
+        end
+        if ok then Walk(blocks) end
+        if not ok then Problem("MAP", "guide", Short(blocks))
+        elseif not hasWay then Problem("MAP", "guide", "item " .. tostring(itemID) .. " has no Way point") end
+    end
+end
+
+-- beta.9 search (part C's check, plans\v1.0.0\beta9-C-adds.md 5). Read-only: never types into
+-- the user's box, never changes GearSetDB.search, never calls SetPropagateKeyboardInput.
+local function CheckSearch()
+    local S = ns.Search
+    if not (S and S.Find) then return Skip("search", "(not loaded)") end
+    local sets = ns.Data and ns.Data:GetSets() or {}
+    local first = sets[1]
+    if first then
+        Count()
+        local groups = S.Find(first.name, sets)
+        local g = type(groups) == "table" and groups[1]
+        if not (g and g.kind == "set" and (g.n or 0) >= 1) then Problem("SEARCH", "find", "own set name not found") end
+    end
+    if S.Index then
+        Count()
+        local idx = S.Index()
+        local nb, nNames = 0, 0
+        for _, src in ipairs(type(idx) == "table" and type(idx.sources) == "table" and idx.sources or {}) do
+            if src.kind == "boss" then nb = nb + 1 end
+        end
+        for _ in pairs(type(idx) == "table" and type(idx.names) == "table" and idx.names or {}) do nNames = nNames + 1 end
+        Info(("search index: %d sources, %d named pieces"):format(
+            type(idx) == "table" and type(idx.sources) == "table" and #idx.sources or 0, nNames))
+        if nb == 0 then Problem("SEARCH", "index", "no bosses in the index") end
+    end
+    -- Ctrl+F is wired and keys pass on (ToS W1)
+    local f = ns.UI and ns.UI.frame
+    if f then
+        Count()
+        local okE, enabled = Read(f, "IsKeyboardEnabled")
+        local okP, passes = Read(f, "GetPropagateKeyboardInput")
+        if okE == "ok" and okP == "ok" and enabled and not passes then
+            Problem("SEARCH", "keys", "window takes keys without passing them on")
+        end
+        if not f:GetScript("OnKeyDown") then Problem("SEARCH", "ctrlf", "no Ctrl+F handler") end
+    end
+end
+
 local function CheckData()
     local D = ns.Data
     Count()
@@ -1186,6 +1367,14 @@ local function CheckHooks()
             end
         end
     end
+    -- review 3: "Only while Shift is held" hangs under "Show the Gear Set line" (Info, not
+    -- Problem: without SetParentInitializer the row still works, just not indented).
+    if S and S.category then
+        Count()
+        if S.shiftIndented ~= true then
+            Info("settings: Shift row not indented (no SetParentInitializer on this client)")
+        end
+    end
 
     -- beta.7 (Tooltip.lua / Integrations.lua): tooltip post-call, the line text built for a
     -- set piece (builder called directly, no real tooltip; text not shown, it may hold
@@ -1210,6 +1399,15 @@ local function CheckHooks()
                 if not okL then Problem("HOOK", "tooltip", "line for " .. SET_ITEM .. ": " .. Short(lines))
                 elseif type(lines) ~= "table" or type(lines[1]) ~= "string" or lines[1] == "" then
                     Problem("HOOK", "tooltip", "no line for " .. SET_ITEM)
+                end
+                -- review 3: an item in one set says "have x/y" (no set name; Blizzard's set block has it)
+                if type(isPiece) == "number" and okL and type(lines) == "table" and type(lines[1]) == "string"
+                    and type(Tip.SetOf) == "function" then
+                    Count()
+                    local okS, _, setName = pcall(Tip.SetOf, isPiece)
+                    if okS and type(setName) == "string" and setName ~= "" and lines[1]:find(setName, 1, true) then
+                        Problem("HOOK", "tooltip", "one-set line repeats the set name")
+                    end
                 end
             else
                 Info(SET_ITEM .. " is not a set piece in the data")
@@ -1248,6 +1446,13 @@ local function CheckHooks()
         Count()
         if ldb and not Int.broker then Problem("HOOK", "broker", "LibDataBroker loaded but no launcher")
         else Info("broker launcher " .. (Int.broker and "yes" or "no (no LibDataBroker)")) end
+    end
+    -- review 3: inspect strip look (only once the inspect window was used this session)
+    local Insp = ns.Inspect
+    if Insp and Insp.strip then
+        Count()
+        local okT, tmpl = pcall(ns.Theme.Template, "inspectStrip")
+        Info("inspect strip: " .. ((okT and tmpl) and "tooltip box" or "colour box"))
     end
 end
 
@@ -1524,7 +1729,9 @@ function ST:Start(mode)
     Guard("alts", CheckAlts)
     Guard("progress", CheckProgress)
     Guard("data", CheckData)
+    Guard("places", CheckPlaces)
     Guard("hooks", CheckHooks)
+    Guard("search", CheckSearch)
     Guard("theme", CheckTheme)
     -- The window: opened if closed (no first-time help while we run), checked next frame.
     local UI, H = ns.UI, ns.Help

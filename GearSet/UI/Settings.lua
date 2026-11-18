@@ -156,12 +156,25 @@ local function Header(layout, text, tooltip)
     return ok and init or nil
 end
 
+-- Returns the setting and Blizzard's row initializer (nil on old clients).
 local function Checkbox(category, key, name, tooltip)
     local setting = MakeSetting(category, key, name)
     if not setting then return end
+    local init
     local create = Settings.CreateCheckbox or Settings.CreateCheckBox
-    if type(create) == "function" then pcall(create, category, setting, tooltip) end
-    return setting
+    if type(create) == "function" then
+        local ok, i = pcall(create, category, setting, tooltip)
+        if ok and type(i) == "table" then init = i end
+    end
+    return setting, init
+end
+
+-- A row that only matters while its parent box is ticked: Blizzard indents it and greys it
+-- out while the parent is off (SetParentInitializer, Blizzard_SettingControls.lua).
+local function DependsOn(childInit, parentInit, isOn)
+    if type(childInit) ~= "table" or type(parentInit) ~= "table" then return false end
+    if type(childInit.SetParentInitializer) ~= "function" then return false end
+    return (pcall(childInit.SetParentInitializer, childInit, parentInit, isOn))
 end
 
 -- A button row. Without the button initializer: a check box that runs the action when
@@ -346,13 +359,15 @@ function S:Init()
     self.settings.minimap = Checkbox(category, "minimap", T("S_MINIMAP", "Show the minimap button"),
         T("S_MINIMAP_TIP", "Also /gs minimap."))
     self.settings.helpNext = Checkbox(category, "helpNext",
-        T("S_HELP_NEXT", "Show help the next time I open Gear Set"))
+        T("S_HELP_NEXT", "Show help the next time I open Gear Set"),
+        T("S_HELP_NEXT_TIP", "Shows the four help notes again the next time you open the window."))
     Button(category, layout, T("S_POS_LABEL", "Window position"), T("S_RESET_POS", "Reset"),
         ResetPosition, T("S_RESET_POS_TIP", "Moves the window back to the middle of the screen."))
 
     Header(layout, T("S_LIST", "Set list"))
     self.settings.showHidden = Checkbox(category, "showHidden",
-        T("S_SHOW_HIDDEN", "Show hidden sets in the list"))
+        T("S_SHOW_HIDDEN", "Show hidden sets in the list"),
+        T("S_SHOW_HIDDEN_TIP", "Hidden sets show in grey with a \"hidden\" tag. Right-click a set in the list to hide or show it."))
     self.unhideInit = Button(category, layout, T("S_HIDDEN_LABEL", "Hidden sets"), UnhideText(), UnhideAll)
     -- Greyed out while nothing is hidden (only where the initializer has the method).
     if type(self.unhideInit) == "table" and type(self.unhideInit.AddModifyPredicate) == "function" then
@@ -360,10 +375,14 @@ function S:Init()
     end
 
     Header(layout, T("S_TIPS", "Tooltip and clicks"))
-    self.settings.tooltipLine = Checkbox(category, "tooltipLine",
-        T("S_TOOLTIP_LINE", "Show the Gear Set line on item tooltips"))
-    self.settings.tooltipShift = Checkbox(category, "tooltipShift", T("S_TOOLTIP_SHIFT", "Only while Shift is held"),
+    local lineInit, shiftInit
+    self.settings.tooltipLine, lineInit = Checkbox(category, "tooltipLine",
+        T("S_TOOLTIP_LINE", "Show the Gear Set line on item tooltips"),
+        T("S_TOOLTIP_LINE_TIP", "On set pieces: how many pieces of the set you have, and whether you still need this one."))
+    self.settings.tooltipShift, shiftInit = Checkbox(category, "tooltipShift", T("S_TOOLTIP_SHIFT", "Only while Shift is held"),
         T("S_TOOLTIP_SHIFT_TIP", "Keeps tooltips short when you use other tooltip addons."))
+    -- Indented under the line option, greyed out while the line is off.
+    self.shiftIndented = DependsOn(shiftInit, lineInit, function() return VALUES.tooltipLine.get() end)
     self.settings.altClick = Checkbox(category, "altClick", T("S_ALT_CLICK", "Alt-click an item to open its guide"),
         T("S_ALT_CLICK_TIP", "Works on bag items, chat links, loot and the character window."))
 
@@ -379,10 +398,10 @@ function S:Init()
 
     Header(layout, T("S_HELP", "Help"))
     Button(category, layout, T("S_HELP_LABEL", "First-time help"), T("S_HELP_NOW", "Show now"), ShowHelp)
+    -- The data version line sits at the end of this button's tooltip (not as a big header row).
     Button(category, layout, T("S_REPORT_LABEL", "Found a bug?"), T("S_REPORT", "Report a problem"), Report,
-        T("S_REPORT_TIP", "Shows a line about your game and the set you looked at, ready to copy."))
-
-    self.dataInit = Header(layout, DataText())
+        T("S_REPORT_TIP", "Shows a line about your game and the set you looked at, ready to copy.")
+            .. "\n\n" .. DataText())
 
     if not pcall(Settings.RegisterAddOnCategory, category) then return end
     self.category = category
@@ -443,14 +462,13 @@ function S:Refresh()
         if mirror[var] ~= nil then mirror[var] = VALUES[key].get() and true or false end
         if type(Settings.NotifyUpdate) == "function" then pcall(Settings.NotifyUpdate, var) end
     end
-    -- Button text and data line are read again the next time the rows are drawn.
+    -- Button texts are read again the next time the rows are drawn.
     local function SetData(init, field, value)
         if not init then return end
         local data = init.GetData and init:GetData() or init.data
         if type(data) == "table" then data[field] = value end
     end
     SetData(self.unhideInit, "buttonText", UnhideText())
-    SetData(self.dataInit, "name", DataText())
     SetData(self.forgetInit, "name", ForgetLabel())
     self.refreshing = nil
 end

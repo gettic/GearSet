@@ -17,7 +17,7 @@
 -- to anyone; at the first look the milestones already reached are noted silently.
 -- Only this account's own characters are ever counted (never inspect data).
 local _, ns = ...
-local Theme, L = ns.Theme, ns.L
+local Theme, L, W = ns.Theme, ns.L, ns.Widgets
 
 local Track, Progress = {}, {}
 ns.Track, ns.Progress = Track, Progress
@@ -465,7 +465,7 @@ function Progress.NewMilestones(marks, key, sum, now)
 end
 
 function Progress.MilestoneText(id)
-    return T("MS_LINE", "Milestone: %s"):format(T("MS_" .. tostring(id), tostring(id)))
+    return T("MS_LINE", "milestone reached - %s!"):format(T("MS_" .. tostring(id), tostring(id)))
 end
 
 local function ProgressTable()
@@ -647,21 +647,38 @@ function Progress.ShareNote(ok, why)
     return w and T(w[1], w[2]) or nil
 end
 
+-- Pure: the "Gear Set:" note when only some pieces fit in the chat line (nil = all fit).
+function Progress.ShareFitNote(ok, shown, total)
+    if not (ok and type(shown) == "number" and type(total) == "number") then return nil end
+    if shown <= 0 or shown >= total then return nil end
+    return T("SHARE_FIT", "%d of %d pieces fit in one chat line"):format(shown, total)
+end
+
 -- -> ok, why. On a failure SetToChat inserts nothing; we tell the player why in one chat line.
+-- When only some links fit, one quiet line says how many (the text itself ends "+N more").
 function Progress.Share(set)
     if not (set and set.id and Progress.CanShare()) then return nil end
-    local done, ok, _, _, why = pcall(ns.Share.SetToChat, ns.Share, set.id)
+    local done, ok, shown, total, why = pcall(ns.Share.SetToChat, ns.Share, set.id)
     if not done then return nil end
-    local note = Progress.ShareNote(ok, why)
+    local note = Progress.ShareNote(ok, why) or Progress.ShareFitNote(ok, shown, total)
     if note and ns.Print then ns.Print(note) end
     return ok, why
 end
 
 -- ---------------------------------------------------------------------------
 -- The Progress tab (one full-width inset; Main.lua's UI:AddTab makes the page)
+-- Left: the "All" bar, then a scroll area with one bar per content kind and per tier under
+-- gold headings with the guide's divider (so new tier tags can never run into the note).
+-- Right: a scroll area with "Recently got" (icon, link, set name, date) and one bar row per
+-- character (class-coloured name). Bars: Blizzard's ColoredProgressBarTemplate (the bar of
+-- Forever's Skills / Reputation pages) when the client has it, else a StatusBar with
+-- Theme.art.progressBar's file. Every look comes from Theme.
 
 local LEFT_X, LEFT_W, RIGHT_X = 14, 500, 540
 local LABEL_W, PCT_W = 150, 44
+local LIST_TOP = -104                 -- top of the left scroll area (under the "All" bar)
+local HEAD_H = 24                     -- heading + divider + gap
+local RECENT_H, ICON, DATE_W = 20, 16, 70
 local KIND_ORDER = ns.SET_KINDS or { "d", "r", "p", "c", "w", "f" }
 local TIER_ORDER = { "D1", "D2", "T1", "T2", "T3", "ZG", "AQ20", "AQ40", "PvP" }
 
@@ -671,6 +688,8 @@ local function TierName(tag)
     if D and D.TierName then return D.TierName(tag) end
     return L["TIER_" .. tag] or tag
 end
+
+local function RowHeight() return Theme.sizes.progressRow or 22 end
 
 local function BarTooltip(row)
     local g = row.group
@@ -690,15 +709,47 @@ local function BarClick(row)
     if SL and SL.ShowGroup then SL.ShowGroup(row.kind, row.tier) end
 end
 
-function Progress.MakeBar(parent, width)
+-- Blizzard's bar (Theme.templates.progressBar), only when it has what we call: a client
+-- could have a template of that name without SetFillPercent / Fill / Text.
+local function TemplateBar(row)
+    local bar, tmpl = Theme.CreateFrame("Frame", nil, row, "progressBar")
+    if tmpl and bar and bar.SetFillPercent and bar.Fill and bar.Text then return bar end
+    if bar then bar:Hide() end
+    return nil
+end
+
+-- Our own bar: Theme.art.progressBar's file on a dark backing with a darker edge.
+local function PlainBar(row)
     local art = Theme.art.progressBar or {}
+    local h = art.height or 14
+    local edge = row:CreateTexture(nil, "BACKGROUND")
+    edge:SetPoint("LEFT", LABEL_W - 1, 0)
+    edge:SetPoint("RIGHT", row.pct, "LEFT", -5, 0)
+    edge:SetHeight(h + 2)
+    if art.edge then edge:SetColorTexture(unpack(art.edge)) end
+    local bar = CreateFrame("StatusBar", nil, row)
+    bar:SetPoint("LEFT", LABEL_W, 0)
+    bar:SetPoint("RIGHT", row.pct, "LEFT", -6, 0)
+    bar:SetHeight(h)
+    if bar.SetStatusBarTexture and art.file then bar:SetStatusBarTexture(art.file) end
+    local bg = bar:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    if art.bg then bg:SetColorTexture(unpack(art.bg)) end
+    local count = bar:CreateFontString(nil, "OVERLAY")
+    Theme.Font(count, "small")
+    count:SetPoint("CENTER")
+    return bar, count
+end
+
+-- One bar row: white label, bar with "have / total" on it, % at the right.
+function Progress.MakeBar(parent, width)
     local row = CreateFrame("Button", nil, parent)
-    row:SetSize(width or LEFT_W, Theme.sizes.progressRow or 22)
+    row:SetSize(width or LEFT_W, RowHeight())
     local hl = row:CreateTexture(nil, "HIGHLIGHT")
     hl:SetAllPoints()
     Theme.SetArt(hl, Theme.art.listHover)
     row.label = row:CreateFontString(nil, "OVERLAY")
-    Theme.Font(row.label, "normal")
+    Theme.Font(row.label, "text")                -- white, like the Skills page's names
     row.label:SetPoint("LEFT", 4, 0)
     row.label:SetWidth(LABEL_W - 8)
     row.label:SetJustifyH("LEFT")
@@ -708,50 +759,79 @@ function Progress.MakeBar(parent, width)
     row.pct:SetPoint("RIGHT", -4, 0)
     row.pct:SetWidth(PCT_W)
     row.pct:SetJustifyH("RIGHT")
-    local h = art.height or 14
-    local edge = row:CreateTexture(nil, "BACKGROUND")
-    edge:SetPoint("LEFT", LABEL_W - 1, 0)
-    edge:SetPoint("RIGHT", row.pct, "LEFT", -5, 0)
-    edge:SetHeight(h + 2)
-    edge:SetColorTexture(unpack(art.edge or { 0, 0, 0, 0.9 }))
-    local bar = CreateFrame("StatusBar", nil, row)
-    bar:SetPoint("LEFT", LABEL_W, 0)
-    bar:SetPoint("RIGHT", row.pct, "LEFT", -6, 0)
-    bar:SetHeight(h)
-    if bar.SetStatusBarTexture then bar:SetStatusBarTexture(art.file or "Interface\\TargetingFrame\\UI-StatusBar") end
-    local bg = bar:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetColorTexture(unpack(art.bg or { 0, 0, 0, 0.45 }))
-    row.bar = bar
-    row.count = bar:CreateFontString(nil, "OVERLAY")
-    Theme.Font(row.count, "small")
-    row.count:SetPoint("CENTER")
+    local stat = TemplateBar(row)
+    if stat then
+        local art = Theme.art.progressBar or {}
+        stat:SetPoint("LEFT", LABEL_W - 6, 0)    -- the template's track has 6 px padding
+        stat:SetPoint("RIGHT", row.pct, "LEFT", 0, 0)
+        stat:SetHeight(art.barHeight or 24)
+        if stat.EnableMouse then stat:EnableMouse(false) end
+        row.stat, row.count = stat, stat.Text
+    else
+        row.bar, row.count = PlainBar(row)
+    end
     row:SetScript("OnEnter", BarTooltip)
     row:SetScript("OnLeave", GameTooltip_Hide)
     row:SetScript("OnClick", BarClick)
     return row
 end
 
+-- Template bar fill: the darker green atlas when complete, else the white fill tinted in
+-- the count colour (Theme.art.progressBar.tint darkens it so the white count stays readable).
+local function FillStat(row, have, total)
+    local art = Theme.art.progressBar or {}
+    local stat = row.stat
+    local complete = total > 0 and have >= total
+    local atlas = (complete and Theme.AtlasExists(art.complete)) and art.complete or art.atlas
+    if atlas and row.gsFill ~= atlas and Theme.AtlasExists(atlas) then
+        stat.Fill:SetAtlas(atlas)
+        row.gsFill = atlas
+    end
+    if complete and row.gsFill and row.gsFill == art.complete then
+        stat.Fill:SetVertexColor(1, 1, 1)
+    else
+        local t = art.tint or 1
+        local r, g, b = Theme.CountColor(have, total)
+        stat.Fill:SetVertexColor(r * t, g * t, b * t)
+    end
+    stat:SetFillPercent(total > 0 and have / total or 0)
+end
+
 function Progress.FillBar(row, label, g)
     row.group = g
     row.label:SetText(label)
     local have, total = g.have, g.total
-    local bar = row.bar
-    if bar.SetMinMaxValues then bar:SetMinMaxValues(0, math.max(total, 1)) end
-    if bar.SetValue then bar:SetValue(have) end
-    if bar.SetStatusBarColor then bar:SetStatusBarColor(Theme.CountColor(have, total)) end
+    if row.stat then
+        FillStat(row, have, total)
+    else
+        local bar = row.bar
+        if bar.SetMinMaxValues then bar:SetMinMaxValues(0, math.max(total, 1)) end
+        if bar.SetValue then bar:SetValue(have) end
+        if bar.SetStatusBarColor then bar:SetStatusBarColor(Theme.CountColor(have, total)) end
+    end
     row.count:SetText(("%d / %d"):format(have, total))
     row.pct:SetText(("%d%%"):format(total > 0 and math.floor(have * 100 / total) or 0))
     row.pct:SetTextColor(Theme.CountColor(have, total))
 end
 
+-- Gold heading with the guide page's divider under it (fs.gsLine).
 local function Head(parent, text)
     local fs = parent:CreateFontString(nil, "OVERLAY")
     Theme.Font(fs, "normal")
     fs:SetTextColor(Theme.colors.progressHead:GetRGB())
     fs:SetText(text)
     fs:SetJustifyH("LEFT")
+    local line = parent:CreateTexture(nil, "ARTWORK")
+    line:SetPoint("TOPLEFT", fs, "BOTTOMLEFT", 0, -3)
+    line:SetWidth(LEFT_W)
+    Theme.SetDivider(line)
+    fs.gsLine = line
     return fs
+end
+
+local function ShowHead(head, shown)
+    head:SetShown(shown)
+    head.gsLine:SetShown(shown)
 end
 
 local function SetScope(scope)
@@ -790,11 +870,21 @@ local function MakeScope(page)
     return dd
 end
 
+-- Scroll frame + child (W.ScrollFrame: bar just outside the right edge, wheel fallback).
+local function ScrollList(page, width)
+    local scroll = W.ScrollFrame(page)
+    local child = CreateFrame("Frame", nil, scroll)
+    child:SetSize(width, 10)
+    scroll:SetScrollChild(child)
+    return scroll, child
+end
+
 function Progress:Build(page)
     if self.page then return end
     self.page = page
     self.pct = page:CreateFontString(nil, "OVERLAY")
     Theme.Font(self.pct, "header")
+    self.pct:SetTextColor(Theme.colors.progressHead:GetRGB())
     self.pct:SetPoint("TOPLEFT", LEFT_X, -12)
     self.summary = page:CreateFontString(nil, "OVERLAY")
     Theme.Font(self.summary, "text")
@@ -807,25 +897,31 @@ function Progress:Build(page)
 
     self.total = Progress.MakeBar(page, LEFT_W)
     self.total:SetPoint("TOPLEFT", LEFT_X, -74)
-    self.kindHead = Head(page, T("P_BY_KIND", "By content"))
-    self.tierHead = Head(page, T("P_BY_TIER", "By tier"))
+
+    -- Left: bars per content kind and tier, scrolling.
+    local left, lchild = ScrollList(page, LEFT_W)
+    left:SetPoint("TOPLEFT", LEFT_X, LIST_TOP)
+    left:SetPoint("BOTTOMLEFT", LEFT_X, 30)
+    left:SetWidth(LEFT_W)
+    self.leftScroll, self.leftChild = left, lchild
+    self.kindHead = Head(lchild, T("P_BY_KIND", "By content"))
+    self.tierHead = Head(lchild, T("P_BY_TIER", "By tier"))
     self.bars = {}
 
-    -- Right column: recently got + one row per character, in a scroll frame.
-    local scroll = Theme.CreateFrame("ScrollFrame", nil, page, "scrollFrame")
+    -- Right: recently got + one bar row per character.
+    local scroll, child = ScrollList(page, 400)
     scroll:SetPoint("TOPLEFT", RIGHT_X, -74)
     scroll:SetPoint("BOTTOMRIGHT", -30, 30)
-    local child = CreateFrame("Frame", nil, scroll)
-    child:SetSize(400, 10)
-    scroll:SetScrollChild(child)
-    if scroll.SetScript and not scroll.ScrollBar then
-        scroll:EnableMouseWheel(true)
-        scroll:SetScript("OnMouseWheel", function(sf, delta)
-            local cur, max = sf:GetVerticalScroll() or 0, sf:GetVerticalScrollRange() or 0
-            sf:SetVerticalScroll(math.max(0, math.min(max, cur - delta * 40)))
-        end)
-    end
-    self.scroll, self.child, self.lines = scroll, child, {}
+    self.scroll, self.child = scroll, child
+    self.recentHead = Head(child, T("P_RECENT", "Recently got"))
+    self.recentNone = child:CreateFontString(nil, "OVERLAY")
+    Theme.Font(self.recentNone, "small")
+    self.recentNone:SetTextColor(Theme.colors.progressNote:GetRGB())
+    self.recentNone:SetJustifyH("LEFT")
+    self.recentNone:SetWordWrap(true)
+    self.recentNone:SetText(T("P_RECENT_NONE", "Nothing new yet."))
+    self.charHead = Head(child, T("P_CHARS", "Your characters"))
+    self.recentRows, self.charRows = {}, {}
 
     self.note = page:CreateFontString(nil, "OVERLAY")
     Theme.Font(self.note, "small")
@@ -837,39 +933,39 @@ end
 local function Bar(self, i)
     local b = self.bars[i]
     if not b then
-        b = Progress.MakeBar(self.page, LEFT_W)
+        b = Progress.MakeBar(self.leftChild, LEFT_W)
         self.bars[i] = b
     end
     return b
 end
 
--- Bars per kind and tier (only groups with sets), under their headings.
+-- Bars per kind and tier (only groups with sets), under their headings, in the left list.
 local function LayBars(self, s)
-    local rowH = Theme.sizes.progressRow or 22
-    local y, n = -104, 0
+    local rowH = RowHeight()
+    local y, n = 0, 0
     local function Section(head, order, groups, nameOf, field)
         local any = false
         for _, k in ipairs(order) do if groups[k] then any = true end end
-        head:SetShown(any)
+        ShowHead(head, any)
         if not any then return end
+        if y > 0 then y = y + 8 end
         head:ClearAllPoints()
-        head:SetPoint("TOPLEFT", LEFT_X, y)
-        y = y - 20
+        head:SetPoint("TOPLEFT", self.leftChild, "TOPLEFT", 0, -y)
+        y = y + HEAD_H
         for _, k in ipairs(order) do
             local g = groups[k]
             if g then
                 n = n + 1
                 local b = Bar(self, n)
                 b:ClearAllPoints()
-                b:SetPoint("TOPLEFT", LEFT_X, y)
+                b:SetPoint("TOPLEFT", self.leftChild, "TOPLEFT", 0, -y)
                 b.kind, b.tier = nil, nil
                 b[field] = k
                 Progress.FillBar(b, nameOf(k), g)
                 b:Show()
-                y = y - rowH
+                y = y + rowH
             end
         end
-        y = y - 8
     end
     Section(self.kindHead, KIND_ORDER, s.kinds, KindName, "kind")
     -- tiers not in the known order still show (data may add tags)
@@ -885,19 +981,7 @@ local function LayBars(self, s)
     for _, k in ipairs(extra) do order[#order + 1] = k end
     Section(self.tierHead, order, s.tiers, TierName, "tier")
     for i = n + 1, #self.bars do self.bars[i]:Hide() end
-end
-
-local function Line(self, i, font)
-    local fs = self.lines[i]
-    if not fs then
-        fs = self.child:CreateFontString(nil, "OVERLAY")
-        fs:SetJustifyH("LEFT")
-        fs:SetWordWrap(true)
-        self.lines[i] = fs
-    end
-    Theme.Font(fs, font)
-    fs:SetTextColor(Theme.colors.text:GetRGB())
-    return fs
+    self.leftChild:SetHeight(math.max(10, y + 4))
 end
 
 local function ItemText(id)
@@ -911,6 +995,15 @@ local function ItemText(id)
     if type(name) == "string" and name ~= "" then return name, true end
     if C_Item and C_Item.RequestLoadItemDataByID then pcall(C_Item.RequestLoadItemDataByID, id) end
     return "item " .. tostring(id), false
+end
+
+local function ItemIcon(id)
+    local get = (C_Item and C_Item.GetItemInfoInstant) or GetItemInfoInstant
+    if get then
+        local ok, _, _, _, _, icon = pcall(get, id)
+        if ok and icon then return icon end
+    end
+    return 134400
 end
 
 local function SetNameOf(id)
@@ -928,47 +1021,110 @@ local function DateText(t)
     return A and A.DateText and A.DateText(t) or tostring(t)
 end
 
+local function RecentTooltip(row)
+    if not row.itemID then return end
+    GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
+    GameTooltip:SetItemByID(row.itemID)
+    GameTooltip:Show()
+end
+
+-- "Recently got" row: icon, link + set name (grey), date right-aligned in its own column.
+local function RecentRow(self, i)
+    local r = self.recentRows[i]
+    if r then return r end
+    r = CreateFrame("Button", nil, self.child)
+    r:SetHeight(RECENT_H)
+    local hl = r:CreateTexture(nil, "HIGHLIGHT")
+    hl:SetAllPoints()
+    Theme.SetArt(hl, Theme.art.listHover)
+    r.icon = r:CreateTexture(nil, "ARTWORK")
+    r.icon:SetSize(ICON, ICON)
+    r.icon:SetPoint("LEFT", 4, 0)
+    if W and W.ICON_CROP then r.icon:SetTexCoord(unpack(W.ICON_CROP)) end
+    r.date = r:CreateFontString(nil, "OVERLAY")
+    Theme.Font(r.date, "small")
+    r.date:SetTextColor(Theme.colors.progressNote:GetRGB())
+    r.date:SetPoint("RIGHT", -4, 0)
+    r.date:SetWidth(DATE_W)
+    r.date:SetJustifyH("RIGHT")
+    r.text = r:CreateFontString(nil, "OVERLAY")
+    Theme.Font(r.text, "small")
+    r.text:SetPoint("LEFT", r.icon, "RIGHT", 6, 0)
+    r.text:SetPoint("RIGHT", r.date, "LEFT", -6, 0)
+    r.text:SetJustifyH("LEFT")
+    r.text:SetWordWrap(false)
+    r:SetScript("OnEnter", RecentTooltip)
+    r:SetScript("OnLeave", GameTooltip_Hide)
+    r:SetScript("OnClick", function(btn)
+        if btn.itemID and W and W.HandleModifiedClick then W.HandleModifiedClick(btn.itemID) end
+    end)
+    self.recentRows[i] = r
+    return r
+end
+
 local function LayRight(self, scope)
     local width = (self.scroll:GetWidth() or 0)
     if width < 50 then width = 470 end
     self.child:SetWidth(width)
-    local y, n, missing = 0, 0, false
-    local function Add(text, font, color)
-        n = n + 1
-        local fs = Line(self, n, font)
-        fs:ClearAllPoints()
-        fs:SetPoint("TOPLEFT", self.child, "TOPLEFT", 0, -y)
-        fs:SetWidth(width - 4)
-        fs:SetText(text)
-        if color then fs:SetTextColor(color:GetRGB()) end
-        fs:Show()
-        y = y + math.max(14, fs:GetStringHeight() or 14) + 4
-        return fs
+    local y, missing = 0, false
+    local function PlaceHead(head)
+        head:ClearAllPoints()
+        head:SetPoint("TOPLEFT", self.child, "TOPLEFT", 0, -y)
+        head.gsLine:SetWidth(width - 4)
+        ShowHead(head, true)
+        y = y + HEAD_H
     end
-    Add(T("P_RECENT", "Recently got"), "normal", Theme.colors.progressHead)
+    PlaceHead(self.recentHead)
     local recent = self:Recent(scope)
+    local none = self.recentNone
+    none:SetShown(#recent == 0)
     if #recent == 0 then
-        Add(T("P_RECENT_NONE", "Nothing new yet."), "small", Theme.colors.progressNote)
+        none:ClearAllPoints()
+        none:SetPoint("TOPLEFT", self.child, "TOPLEFT", 4, -y)
+        none:SetWidth(width - 8)
+        y = y + math.max(14, none:GetStringHeight() or 14) + 4
     end
-    for _, r in ipairs(recent) do
+    for i, r in ipairs(recent) do
+        local row = RecentRow(self, i)
         local item, loaded = ItemText(r.id)
         if not loaded then missing = true end
-        local text = Theme.colors.progressNote:WrapTextInColorCode(DateText(r.t)) .. "  " .. item
         local setName = SetNameOf(r.id)
-        if setName then text = text .. "  " .. Theme.colors.subtle:WrapTextInColorCode("(" .. setName .. ")") end
-        if r.who then text = text .. " - " .. tostring(r.who) end
-        Add(text, "small")
+        local extra = setName
+        if r.who then extra = T("P_RECENT_WHO", "%s (%s)"):format(setName or "", tostring(r.who)) end
+        local text = item
+        if extra and extra ~= "" then text = text .. "  " .. Theme.colors.progressNote:WrapTextInColorCode(extra) end
+        row.itemID = r.id
+        row.icon:SetTexture(ItemIcon(r.id))
+        row.text:SetText(text)
+        row.date:SetText(DateText(r.t))
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", self.child, "TOPLEFT", 0, -y)
+        row:SetWidth(width - 4)
+        row:Show()
+        y = y + RECENT_H
     end
-    y = y + 10
-    Add(T("P_CHARS", "Your characters"), "normal", Theme.colors.progressHead)
-    for _, c in ipairs(self:Chars()) do
+    for i = #recent + 1, #self.recentRows do self.recentRows[i]:Hide() end
+    y = y + 12
+    PlaceHead(self.charHead)
+    local rowH = RowHeight()
+    local chars = self:Chars()
+    for i, c in ipairs(chars) do
+        local b = self.charRows[i]
+        if not b then
+            b = Progress.MakeBar(self.child, width - 4)
+            self.charRows[i] = b
+        end
+        b:SetWidth(width - 4)
+        b:ClearAllPoints()
+        b:SetPoint("TOPLEFT", self.child, "TOPLEFT", 0, -y)
         local name = tostring(c.name or "?")
         if c.class then name = Theme.ClassColor(c.class):WrapTextInColorCode(name) end
-        local fs = Add(T("P_CHAR_LINE", "%s: %d complete, %d%%"):format(name, c.complete, c.pct), "small")
-        fs:SetTextColor(Theme.CountColor(c.have, c.total))
+        Progress.FillBar(b, name, c)
+        b:Show()
+        y = y + rowH
     end
-    for i = n + 1, #self.lines do self.lines[i]:Hide() end
-    self.child:SetHeight(math.max(10, y))
+    for i = #chars + 1, #self.charRows do self.charRows[i]:Hide() end
+    self.child:SetHeight(math.max(10, y + 4))
     -- item names not loaded yet: draw again once they are (a few tries)
     if missing and (self.retries or 0) < 3 and C_Timer and C_Timer.After then
         self.retries = (self.retries or 0) + 1
@@ -979,6 +1135,16 @@ local function LayRight(self, scope)
         self.retries = 0
     end
 end
+
+-- "38% of set pieces": the line stays gold (a page title), only the number is coloured.
+local function PctTitle(s)
+    local fmt = T("P_PCT", "%d%% of set pieces")
+    local num = Theme.CountColorObj(s.have, s.total):WrapTextInColorCode(("%d%%"):format(s.pct))
+    local withS, n = fmt:gsub("%%d%%%%", "%%s", 1)
+    if n == 1 then return withS:format(num) end
+    return fmt:format(s.pct)
+end
+Progress.PctTitle = PctTitle
 
 function Progress:Refresh()
     local page = self.page
@@ -996,8 +1162,8 @@ function Progress:Refresh()
         self.pct:SetText(L.LOADING)
         return
     end
-    self.pct:SetText(T("P_PCT", "%d%% of set pieces"):format(s.pct))
-    self.pct:SetTextColor(Theme.CountColor(s.have, s.total))
+    self.pct:SetText(PctTitle(s))
+    self.pct:SetTextColor(Theme.colors.progressHead:GetRGB())
     self.summary:SetText(T("P_SUMMARY", "%d complete, %d started, %d / %d pieces"):format(
         s.complete, s.started, s.have, s.total))
     local t = self:TrackedStats()

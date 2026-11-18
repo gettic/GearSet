@@ -1,5 +1,5 @@
 -- Gear Set: the item -> set index and one line on item tooltips:
---   "Gear Set: Nightslayer 3/8 - you need this"
+--   "Gear Set: have 3/8 - you need this"   (item in 2+ sets: "Gear Set: Nightslayer 3/8 ..." per set)
 --   "Needed by: Stabby 3/8, Healz 1/8"   (alts from ns.Alts, plans\v1.0.0\beta7-interface.md)
 -- Only TooltipDataProcessor.AddTooltipPostCall (the probe found no OnTooltipSetItem on Forever);
 -- no GameTooltip method is replaced. Item IDs are checked with issecretvalue first.
@@ -14,6 +14,7 @@ ns.Tooltip = Tip
 local TEXT = {
     TIP_LABEL = "Gear Set:",
     TIP_NEED = "- you need this",
+    TIP_HAVE = "have %s",   -- %s = the count; used when the item is in one set only
     TIP_NEEDED_BY = "Needed by:",
     TIP_MORE = "+%d more",
     INSPECT_WEARS = "%s wears",
@@ -223,25 +224,49 @@ local function NeededBy(set, setID, held)
     return s
 end
 
+-- "have 5/8": grey words around the coloured count (L.TIP_HAVE, %s = the count).
+function Tip.Have(have, total)
+    local fmt = L.TIP_HAVE or "have %s"
+    local pre, post = fmt:match("^(.-)%%s(.*)$")
+    if not pre then pre, post = fmt .. " ", "" end
+    local s = Tip.Count(have, total)
+    if pre ~= "" then s = Tip.Note(pre) .. s end
+    if post ~= "" then s = s .. Tip.Note(post) end
+    return s
+end
+
+-- "- you need this" stands out in white (review 3: not the grey of unreached set bonuses).
+function Tip.Need()
+    return Wrap(Theme.colors.tipNeed or Theme.colors.tipName, L.TIP_NEED)
+end
+
 -- Lines for one item (list of strings; empty for non-set items). Used by the hook and tests.
+-- One set: "Gear Set: have 5/8 - you need this" (the set name is already in Blizzard's set
+-- block just above). Two or more sets: "Gear Set: <set> 5/8 - you need this" per set.
 function Tip.LinesFor(itemID)
     local out = {}
     local v = Tip.Lookup(itemID)
     if v == nil then return out end
     local ids = type(v) == "number" and { v } or v
+    local single = #ids == 1
     local held
     for _, setID in ipairs(ids) do
         local set, name = Tip.SetOf(setID)
         local have, total = Progress(set, setID, nil)
-        local line = Tip.Label() .. " " .. Tip.Name(name)
-        if have and total then line = line .. " " .. Tip.Count(have, total) end
+        local line
+        if single and have and total then
+            line = Tip.Label() .. " " .. Tip.Have(have, total)
+        else
+            line = Tip.Label() .. " " .. Tip.Name(name)
+            if have and total then line = line .. " " .. Tip.Count(have, total) end
+        end
         local piece = PieceOf(set, itemID)
         if piece and ns.Owned then
             held = held or Holders(itemID)
             local myKey = ns.Alts and ns.Alts.MyKey and ns.Alts:MyKey()
             local done = have and total and have >= total   -- a finished set stays finished
             local need = not done and not ns.Owned:IsHave(piece) and not (myKey and held[myKey])
-            if need then line = line .. " " .. Tip.Note(L.TIP_NEED) end
+            if need then line = line .. " " .. Tip.Need() end
         end
         out[#out + 1] = line
         held = held or Holders(itemID)

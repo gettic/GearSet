@@ -50,33 +50,17 @@ end
 -- Esc: W.PushEsc / W.PopEsc (Widgets.lua) put the page's name in the window's
 -- UISpecialFrames slot while it is open (the help can stack on top of it).
 
--- Re-anchor the modern scroll bar like the piece list's (inside the panel's right edge).
-local function PlaceScrollBar(scroll, tmpl)
-    local bar = scroll.ScrollBar
-    if tmpl == "ScrollFrameTemplate" and type(bar) == "table" and bar.ClearAllPoints then
-        bar:ClearAllPoints()
-        bar:SetPoint("TOPLEFT", scroll, "TOPRIGHT", 4, -2)
-        bar:SetPoint("BOTTOMLEFT", scroll, "BOTTOMRIGHT", 4, 2)
-    end
-end
-
+-- Scroll area (W.ScrollFrame: bar re-anchored like the piece list's, wheel fallback).
 local function ScrollArea(parent, top)
-    local scroll, tmpl = Theme.CreateFrame("ScrollFrame", nil, parent, "scrollFrame")
+    local scroll = W.ScrollFrame(parent)
     scroll:SetPoint("TOPLEFT", 6, top)
     scroll:SetPoint("BOTTOMRIGHT", -22, 6)
-    PlaceScrollBar(scroll, tmpl)
-    if not tmpl then
-        -- No template on this client: mouse wheel only.
-        scroll:EnableMouseWheel(true)
-        scroll:SetScript("OnMouseWheel", function(s, delta)
-            local child = s:GetScrollChild()
-            local h = child and child:GetHeight() or 0
-            local maxY = math.max(0, h - (s:GetHeight() or 0))
-            local y = math.min(maxY, math.max(0, (s:GetVerticalScroll() or 0) - delta * 40))
-            s:SetVerticalScroll(y)
-        end)
-    end
     return scroll
+end
+
+-- Section heading font: Theme.fonts.guideHead (GameFontNormalMed2), else the normal one.
+local function HeadFont()
+    return Theme.fonts.guideHead and "guideHead" or "normal"
 end
 
 function GuidePage:Build(parent)
@@ -221,7 +205,8 @@ function GuidePage:Build(parent)
     scroll:SetScrollChild(content)
     self.scroll, self.content = scroll, content
 
-    self.fsPool, self.foldPool, self.linePool = {}, {}, {}
+    self.fsPool, self.foldPool, self.linePool, self.wayPool = {}, {}, {}, {}
+    self.fsUsed, self.foldUsed, self.lineUsed, self.wayUsed = 0, 0, 0, 0
     self.openFolds = {}
 end
 
@@ -279,13 +264,79 @@ local function TakeFold(self)
             PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
             GuidePage:ToggleFold(btn.foldKey)
         end)
+        -- Blizzard collapse-row style: gold label, white on hover.
         b:SetScript("OnEnter", function(btn) btn.label:SetTextColor(Theme.colors.linkHover:GetRGB()) end)
-        b:SetScript("OnLeave", function(btn) btn.label:SetTextColor(Theme.colors.link:GetRGB()) end)
+        b:SetScript("OnLeave", function(btn) btn.label:SetTextColor(Theme.colors.guideLabel:GetRGB()) end)
         self.foldPool[self.foldUsed] = b
     end
     b:ClearAllPoints()
     b:Show()
     return b
+end
+
+-- beta.9 Way button: the game's map pin art (Theme.art.wayPin), else the word "Way" in link
+-- colours; at the right edge of its row, the same column on every row. Only a click sends
+-- the player anywhere (Way:Go); right-click = Back like the rest of the page.
+local function WayClick(btn, button)
+    if button == "RightButton" then GuidePage:Back() return end
+    PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+    if ns.Way and btn.point then ns.Way:Go(btn.point) end
+end
+
+local function WayEnter(btn)
+    if btn.label then btn.label:SetTextColor(Theme.colors.linkHover:GetRGB()) end
+    if ns.Way and btn.point then ns.Way.Tooltip(btn, btn.point) end
+end
+
+local function WayLeave(btn)
+    if btn.label then btn.label:SetTextColor(Theme.colors.link:GetRGB()) end
+    GameTooltip_Hide()
+end
+
+local function TakeWay(self)
+    self.wayUsed = self.wayUsed + 1
+    local b = self.wayPool[self.wayUsed]
+    if not b then
+        local size = Theme.sizes.way or 14
+        local art = Theme.art.wayPin or {}
+        b = CreateFrame("Button", nil, self.content)
+        b:SetSize(size, size)
+        b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        if Theme.AtlasExists(art.atlas) then
+            b.icon = b:CreateTexture(nil, "ARTWORK")
+            b.icon:SetAllPoints()
+            b.icon:SetAtlas(art.atlas)
+            if Theme.AtlasExists(art.hover) then
+                local hl = b:CreateTexture(nil, "HIGHLIGHT")
+                hl:SetAllPoints()
+                hl:SetAtlas(art.hover)
+                hl:SetBlendMode("ADD")
+            end
+        else
+            b.label = b:CreateFontString(nil, "OVERLAY")
+            Theme.Font(b.label, "small")
+            b.label:SetPoint("RIGHT")
+            b.label:SetText(L.WAY_FALLBACK or "Way")
+            b.label:SetTextColor(Theme.colors.link:GetRGB())
+            b:SetWidth(math.max(size, math.ceil(b.label:GetStringWidth() or 0) + 2))
+        end
+        b:SetScript("OnClick", WayClick)
+        b:SetScript("OnEnter", WayEnter)
+        b:SetScript("OnLeave", WayLeave)
+        self.wayPool[self.wayUsed] = b
+    end
+    b:ClearAllPoints()
+    b:Show()
+    return b
+end
+
+-- Places a Way button for block b at line top y; returns the px the row's text gives up.
+local function PlaceWay(self, b, y, width)
+    if not (b.way and ns.Way) then return 0 end
+    local btn = TakeWay(self)
+    btn.point = b.way
+    btn:SetPoint("TOPRIGHT", self.content, "TOPLEFT", width - 4, -(y - 1))
+    return (btn:GetWidth() or Theme.sizes.way or 14) + (Theme.sizes.wayGap or 4)
 end
 
 local function Text(self, font, color, text, x, y, width)
@@ -324,7 +375,7 @@ function GuidePage:LayBlocks(blocks, depth, y, width, path)
         if k == "head" then
             head = b.text
             if y > 4 then y = y + GAP_HEAD end
-            y = y + Text(self, "normal", c.guideHead, b.text, x0, y, w) + 2
+            y = y + Text(self, HeadFont(), c.guideHead, b.text, x0, y, w) + 2
             local line = TakeLine(self)
             line:SetPoint("TOPLEFT", x0, -y)
             line:SetWidth(w)
@@ -335,16 +386,20 @@ function GuidePage:LayBlocks(blocks, depth, y, width, path)
         elseif k == "row" then
             local h1 = Text(self, "small", c.guideLabel, b.label, x0 + 8, y, LABEL_W - 4)
             local h2 = 0
+            local wayW = PlaceWay(self, b, y, width)
             if b.text and b.text ~= "" then
-                h2 = Text(self, "small", c.guideText, b.text, x0 + 8 + LABEL_W, y, w - 8 - LABEL_W)
+                h2 = Text(self, "small", c.guideText, b.text, x0 + 8 + LABEL_W, y, w - 8 - LABEL_W - wayW)
             end
             y = y + math.max(h1, h2) + GAP_LINE
         elseif k == "text" then
             y = y + Text(self, "small", c.guideText, b.text, x0 + 8, y, w - 8) + GAP_LINE
         elseif k == "flag" then
             -- WoW Forever flag: "Not confirmed on WoW Forever yet", "Not yet released" ...
-            local col = (Theme.flagColor and Theme.flagColor[b.flag]) or c.guideNote
-            y = y + Text(self, "small", col, b.text, x0 + 8, y, w - 8) + GAP_LINE
+            -- The piece's own "not out yet" line is skipped while the header says it.
+            if not (b.flag == "later" and self.laterInHeader) then
+                local col = (Theme.flagColor and Theme.flagColor[b.flag]) or c.guideNote
+                y = y + Text(self, "small", col, b.text, x0 + 8, y, w - 8) + GAP_LINE
+            end
         elseif k == "bullet" then
             -- "You bring" items sit in the value column; note bullets at the left.
             local bx = b.col and (x0 + 8 + LABEL_W) or (x0 + 18)
@@ -356,9 +411,12 @@ function GuidePage:LayBlocks(blocks, depth, y, width, path)
         elseif k == "step" then
             -- Numbers get a narrow column, words ("Belt, Gloves") the label column.
             local lw = IsStepNumber(b.label) and 28 or LABEL_W
+            -- Quest name white (green for this piece's step), " - NPC, place" grey after it.
             local h1 = Text(self, "small", c.guideLabel, b.label, x0 + 8, y, lw - 4)
             local text = b.here and (b.text .. "  " .. L.G_HERE) or b.text
-            local h2 = Text(self, "small", b.here and c.guideHere or c.guideText, text, x0 + 8 + lw, y, w - 8 - lw)
+            if b.sub and b.sub ~= "" then text = text .. "  " .. c.guideNote:WrapTextInColorCode("- " .. b.sub) end
+            local wayW = PlaceWay(self, b, y, width)
+            local h2 = Text(self, "small", b.here and c.guideHere or c.guideText, text, x0 + 8 + lw, y, w - 8 - lw - wayW)
             y = y + math.max(h1, h2) + GAP_LINE
         elseif k == "fold" then
             local key = FoldKey(self, path, head, b.text)
@@ -371,7 +429,7 @@ function GuidePage:LayBlocks(blocks, depth, y, width, path)
                 btn.mark:Show(); btn.markText:Hide()
             end
             btn.label:SetText(b.text)
-            btn.label:SetTextColor(c.link:GetRGB())
+            btn.label:SetTextColor(c.guideLabel:GetRGB())
             btn:SetPoint("TOPLEFT", x0 + 8, -y)
             btn:SetSize(math.min(w - 8, (btn.label:GetStringWidth() or 100) + Theme.art.expand.size + 8), 16)
             y = y + 16 + GAP_LINE
@@ -394,7 +452,7 @@ end
 
 function GuidePage:Render()
     if not (self.page and self.piece) then return end
-    self.fsUsed, self.foldUsed, self.lineUsed = 0, 0, 0
+    self.fsUsed, self.foldUsed, self.lineUsed, self.wayUsed = 0, 0, 0, 0
     self.foldCount = {}
     local width = self.scroll:GetWidth() or 0
     if width < 100 then width = 434 end
@@ -405,6 +463,7 @@ function GuidePage:Render()
     for i = self.fsUsed + 1, #self.fsPool do self.fsPool[i]:Hide() end
     for i = self.foldUsed + 1, #self.foldPool do self.foldPool[i]:Hide() end
     for i = self.lineUsed + 1, #self.linePool do self.linePool[i]:Hide() end
+    for i = self.wayUsed + 1, #self.wayPool do self.wayPool[i]:Hide(); self.wayPool[i].point = nil end
     self.contentH = y
     self.content:SetHeight(math.max(y, 10))
     if self.copyMode then self:FillCopyText() end
@@ -425,11 +484,24 @@ local function Plain(s)
     return ns.Data.StripCodes(s) or ""
 end
 
+-- A Way point in the copy text: the rounded "(43, 52)" the page shows becomes "(43.4, 52.2)";
+-- a line without one gets "(Zone 43.4, 52.2)" (the zone only when the line doesn't name it).
+local function WithPosition(text, p)
+    if not (p and p.x and p.y) then return text end
+    local exact = ("(%.1f, %.1f)"):format(p.x, p.y)
+    local swapped, n = text:gsub("%(%d+, %d+%)", exact, 1)
+    if n > 0 then return swapped end
+    local zone = p.zone and not text:find(p.zone, 1, true) and (p.zone .. " ") or ""
+    return text .. " (" .. zone .. ("%.1f, %.1f)"):format(p.x, p.y)
+end
+GuidePage.WithPosition = WithPosition
+
 function GuidePage.PlainLines(blocks, depth, out)
     local ind = string.rep("  ", depth)
     local ind2 = ind .. "  "
     for _, b in ipairs(blocks or {}) do
         local k, text, label = b.k, Plain(b.text), Plain(b.label)
+        if b.way and k ~= "step" then text = WithPosition(text, b.way) end
         if k == "head" then
             if #out > 0 and out[#out] ~= "" then out[#out + 1] = "" end
             out[#out + 1] = ind .. text
@@ -444,6 +516,9 @@ function GuidePage.PlainLines(blocks, depth, out)
             if b.sub then out[#out + 1] = ind2 .. (b.col and "  " or "") .. "  " .. Plain(b.sub) end
         elseif k == "step" then
             local sep = IsStepNumber(label) and ". " or ": "
+            local sub = b.sub and Plain(b.sub) or ""
+            if sub ~= "" then text = text .. " - " .. sub end
+            if b.way then text = WithPosition(text, b.way) end
             out[#out + 1] = ind2 .. label .. sep .. text .. (b.here and ("  " .. L.G_HERE) or "")
         elseif k == "fold" then
             out[#out + 1] = ind2 .. "[" .. text .. "]"
@@ -491,8 +566,22 @@ local function BuildCopyView(self)
     hint:SetPoint("RIGHT", page, "RIGHT", -12, 0)
     hint:SetJustifyH("LEFT")
     hint:SetText(L.G_COPY_HINT or "Text is selected - press Ctrl+C to copy. Esc or Done goes back.")
-    local scroll = ScrollArea(page, TEXT_TOP - 18)
-    local box = CreateFrame("EditBox", nil, scroll)
+    -- Blizzard's bordered multi-line box (InputScrollFrameTemplate: Common-Input-Border frame,
+    -- its own EditBox and scroll bar inside the border); else a plain scroll area + EditBox.
+    local scroll, tmpl = Theme.CreateFrame("ScrollFrame", nil, page, "copyBox")
+    local box = tmpl and scroll and scroll.EditBox
+    if box and box.SetMultiLine then
+        scroll:SetPoint("TOPLEFT", 14, TEXT_TOP - 24)    -- the border art sits 5 px outside
+        scroll:SetPoint("BOTTOMRIGHT", -14, 12)
+        if scroll.CharCount then scroll.CharCount:Hide() end
+        self.copyBarPad = 18                                -- InputScrollFrame_OnLoad: bar inside
+    else
+        if scroll then scroll:Hide() end
+        scroll = ScrollArea(page, TEXT_TOP - 18)
+        box = CreateFrame("EditBox", nil, scroll)
+        scroll:SetScrollChild(box)
+        self.copyBarPad = 0
+    end
     box:SetMultiLine(true)
     box:SetAutoFocus(false)
     box:EnableMouse(true)
@@ -506,7 +595,8 @@ local function BuildCopyView(self)
     box:SetWidth(400)
     box:SetHeight(100)
     box:SetScript("OnEscapePressed", function() GuidePage:HideCopyText() end)
-    box:SetScript("OnTextChanged", function(eb, userInput)
+    -- HookScript: the template's own OnTextChanged (scroll to the cursor) keeps running.
+    box:HookScript("OnTextChanged", function(eb, userInput)
         if userInput then                                 -- read-only: typing puts the text back
             eb:SetText(eb.gsText or "")
             eb:HighlightText()
@@ -517,7 +607,6 @@ local function BuildCopyView(self)
         if button == "RightButton" then GuidePage:Back() return end
         eb:HighlightText()                                -- a click selects all, ready for Ctrl+C
     end)
-    scroll:SetScrollChild(box)
     -- The box follows the area's real width (it can read 0 on the frame it's made).
     scroll:HookScript("OnSizeChanged", function()
         if GuidePage.copyMode then GuidePage:FillCopyText() end
@@ -534,7 +623,7 @@ function GuidePage:FillCopyText()
     local box = self.copyBox
     if not (box and self.piece) then return end
     local text = self:PlainText()
-    local width = self.copyScroll:GetWidth() or 0
+    local width = (self.copyScroll:GetWidth() or 0) - (self.copyBarPad or 0)
     if width > 0 then box:SetWidth(width) else width = box:GetWidth() or 400 end
     box.gsText = text
     box:SetText(text)
@@ -627,7 +716,8 @@ function GuidePage:FillHeader()
     self.setLine:SetText(SetLine(self.set))
     self.setLine:SetTextColor(Theme.colors.subtle:GetRGB())
     local state = ns.Owned:GetState(p)
-    if p.later and not ns.Owned:IsHave(p) then
+    self.laterInHeader = (p.later and not ns.Owned:IsHave(p)) and true or nil
+    if self.laterInHeader then
         self.state:SetText(ns.Data.FlagText("FLAG_LATER_SHORT"))
         self.state:SetTextColor(Theme.colors.later:GetRGB())
     else
@@ -731,7 +821,11 @@ function GuidePage:OnHidden()
     if ns.PieceList and ns.PieceList.OnGuideClosed then ns.PieceList:OnGuideClosed() end
 end
 
--- Owned state changed while open: the header only.
+-- Owned state changed while open: the header (and the guide when the header's
+-- "not out yet" changed, which decides whether the guide repeats it).
 function GuidePage:Refresh()
-    if self:IsOpen() and self.piece then self:FillHeader() end
+    if not (self:IsOpen() and self.piece) then return end
+    local before = self.laterInHeader
+    self:FillHeader()
+    if before ~= self.laterInHeader then self:Render() end
 end

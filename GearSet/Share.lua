@@ -34,24 +34,50 @@ local function Pieces(set)
     return type(list) == "table" and list or {}
 end
 
--- Text for a set within `room` characters (default 255): name, then whole links while they fit.
+local function MoreText(n)
+    local fmt = ns.L and ns.L.SHARE_MORE
+    if type(fmt) ~= "string" then fmt = "+%d more" end
+    return " " .. fmt:format(n)
+end
+
+-- Text for a set within `room` characters (default 255): "Name:", then whole links while
+-- they fit, then "+N more" when some were left out (room kept for it).
 -- -> text|nil, shown, total, notLoaded (pieces skipped because their link isn't loaded yet)
 function Share.Text(setID, room)
     local set = SetOf(setID)
     if not set or type(set.name) ~= "string" or set.name == "" then return nil, 0, 0 end
     room = type(room) == "number" and room or MAX_CHARS
     local pieces = Pieces(set)
-    local text = set.name
-    if #text > room then return nil, 0, #pieces end
-    local shown, notLoaded = 0, 0
+    local head = set.name .. ":"
+    if #head > room then
+        if #set.name > room then return nil, 0, #pieces end
+        head = set.name
+    end
+    local links, notLoaded = {}, 0
     for _, p in ipairs(pieces) do
         local id = type(p) == "table" and p.itemID or p
         local link = type(id) == "number" and LinkOf(id)
-        if not link then
-            notLoaded = notLoaded + 1
-        elseif #text + 1 + #link <= room then
-            text = text .. " " .. link
-            shown = shown + 1
+        if link then links[#links + 1] = link else notLoaded = notLoaded + 1 end
+    end
+    local function Build(limit)
+        local text, shown = head, 0
+        for _, link in ipairs(links) do
+            if #text + 1 + #link <= limit then
+                text = text .. " " .. link
+                shown = shown + 1
+            end
+        end
+        return text, shown
+    end
+    local text, shown = Build(room)
+    if shown < #pieces then
+        -- keep room for the longest "+N more" (N can only grow when fewer links fit);
+        -- if that would leave no link at all, the links win and "+N more" is left off
+        local t2, s2 = Build(room - #MoreText(#pieces))
+        if s2 > 0 or shown == 0 then
+            text, shown = t2, s2
+            local more = MoreText(#pieces - shown)
+            if #text + #more <= room then text = text .. more end
         end
     end
     return text, shown, #pieces, notLoaded

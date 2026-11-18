@@ -130,7 +130,14 @@ function Int.InitBroker()
     if LS == nil then return nil end
     local ok, ldb = pcall(LS, "LibDataBroker-1.1", true)
     if not ok or type(ldb) ~= "table" or type(ldb.NewDataObject) ~= "function" then return nil end
-    local icon = Theme.art.minimapIcon and Theme.art.minimapIcon[1] or "Interface\\Icons\\INV_Misc_QuestionMark"
+    -- The file the minimap button loaded (checked on a scratch texture when the button is hidden),
+    -- so the bar never shows a blank icon when the first choice is missing on this client.
+    local MB = ns.MinimapButton
+    local icon = MB and MB.IconFile and MB.IconFile()
+    if type(icon) ~= "string" then
+        local list = Theme.art.minimapIcon
+        icon = list and list[#list] or "Interface\\Icons\\INV_Misc_QuestionMark"
+    end
     local okNew, obj = pcall(ldb.NewDataObject, ldb, "Gear Set", {
         type = "launcher",
         label = L.TITLE or "Gear Set",

@@ -1,7 +1,7 @@
 -- Gear Set: right panel - the set's pieces and whether you have or need each one.
--- Header: set name (prev/next arrows), armor type + classes, "Have x / y" (tooltip
--- with the breakdown), "Set bonuses (x/y)", "Stats" (can you wear it + summed stats)
--- and "Effort: High" (reasons), each with a tooltip.
+-- Header: set name (prev/next arrows), armor type + classes, a "have x / y" bar (tooltip
+-- with the breakdown), then "Set bonuses (x/y)", "Stats" (can you wear it + summed stats)
+-- and "Effort: High" (reasons), each with a tooltip; a divider above the list.
 -- Each row: check box (piece shown on the preview), icon with quality frame, name
 -- (up to 2 lines), state, arrow. Clicking a row opens the piece's guide page
 -- (UI\GuidePage.lua) in place of the list; Back / Esc / right-click return here.
@@ -13,11 +13,16 @@ local Theme, L, W = ns.Theme, ns.L, ns.Widgets
 local PieceList = {}
 ns.PieceList = PieceList
 
-local ROW_H = 36
+local ROW_H = Theme.sizes.pieceRow or 36
 local ICON_LEFT = 28        -- icon starts right of the check box
-local INFO_TOP = -32       -- header: title at -10, armor/classes, then "Have x / y"
-local COUNT_TOP = -50
-local LIST_TOP = -74        -- where the scroll list starts below the header
+local ROW_GAP = Theme.sizes.pieceRowGap or 2   -- px between rows (journal lists: each row has its own bar)
+-- Header (ui-review-3): title at -10, armor/classes, the "have" bar, the label row
+-- ("Set bonuses  Stats  Effort"), a divider, then the list.
+local INFO_TOP = -32
+local BAR_TOP = -50
+local LABELS_TOP = -70
+local DIVIDER_TOP = -88
+local LIST_TOP = -94
 
 -- beta.7 alt memory (Alts.lua). Mailbox / keyring / account bank state: "seen N days ago";
 -- a piece this character lacks: "Also on: Bankalt (bank)" (+n more). nil = no line.
@@ -109,6 +114,20 @@ local function BuildRow(row)
     row.gsInit = true
     row:RegisterForClicks("LeftButtonUp")
 
+    -- Row bar under everything (Mount/Pet journal and Wardrobe set rows); a faint colour
+    -- band if the atlas is missing, nothing without a Theme entry.
+    local bgArt = Theme.art.rowBackground
+    row.bg = row:CreateTexture(nil, "BACKGROUND", nil, 0)
+    row.bg:SetPoint("TOPLEFT")
+    row.bg:SetPoint("TOPRIGHT")
+    row.bg:SetHeight(ROW_H)
+    local drawn = Theme.SetArt(row.bg, bgArt) or (bgArt and bgArt.file)
+    if not drawn and bgArt and bgArt.color then
+        row.bg:SetColorTexture(unpack(bgArt.color))
+        drawn = true
+    end
+    row.bg:SetShown(drawn and true or false)
+
     -- Last piece looked at: the select art (like the chosen set).
     row.sel = row:CreateTexture(nil, "BACKGROUND", nil, 1)
     row.sel:SetPoint("TOPLEFT")
@@ -150,10 +169,11 @@ local function BuildRow(row)
     row.icon:SetPoint("TOPLEFT", ICON_LEFT, -3)
     row.icon:SetTexCoord(unpack(W.ICON_CROP))
     row.border, row.hasBorder = W.IconBorder(row, row.icon)
-    -- beta.8: tracking star on the icon's top-left corner.
+    -- beta.8: tracking star hung on the icon's top-left corner, half outside it (like the
+    -- Wardrobe set rows' favourite star), so it doesn't sit on the quality frame.
     if ns.Track and ns.Track.MakeStar then
         row.star = ns.Track.MakeStar(row, "OVERLAY")
-        row.star:SetPoint("CENTER", row.icon, "TOPLEFT", 2, -2)
+        row.star:SetPoint("CENTER", row.icon, "TOPLEFT", -1, 1)
     end
 
     -- Arrow at the right end: the row opens a page. ">" if the art is missing.
@@ -530,7 +550,8 @@ local function CountTooltip(self)
     for _, e in ipairs(BREAKDOWN) do
         if (b[e[1]] or 0) > 0 then
             local r, g, bl = W.StateColor(e[1]):GetRGB()
-            GameTooltip:AddDoubleLine(L[e[2]] or e[2], b[e[1]], r, g, bl, 1, 1, 1)
+            local vr, vg, vb = Theme.colors.text:GetRGB()
+            GameTooltip:AddDoubleLine(L[e[2]] or e[2], b[e[1]], r, g, bl, vr, vg, vb)
         end
     end
     if b.look > 0 then
@@ -583,20 +604,37 @@ function PieceList:Build(panel)
     info:SetWordWrap(false)
     self.info = info
 
-    local count = parent:CreateFontString(nil, "OVERLAY")
-    Theme.Font(count, "text")
-    count:SetPoint("TOPLEFT", 12, COUNT_TOP)
-    self.count = count
-    local countHit = CreateFrame("Frame", nil, parent)
-    countHit:SetPoint("TOPLEFT", count, "TOPLEFT")
-    countHit:SetPoint("BOTTOMRIGHT", count, "BOTTOMRIGHT")
-    countHit:EnableMouse(true)
-    countHit:SetScript("OnEnter", CountTooltip)
-    countHit:SetScript("OnLeave", GameTooltip_Hide)
+    -- "Have x / y" as a bar (the Progress tab's bar art), "3 / 8" centred; hover = breakdown.
+    local art = Theme.art.progressBar or {}
+    local barH = art.height or 14
+    local countBar = CreateFrame("Frame", nil, parent)
+    countBar:SetPoint("TOPLEFT", 12, BAR_TOP)
+    countBar:SetPoint("TOPRIGHT", -12, BAR_TOP)
+    countBar:SetHeight(barH + 2)
+    local edge = countBar:CreateTexture(nil, "BACKGROUND")
+    edge:SetAllPoints()
+    edge:SetColorTexture(unpack(art.edge or { 0, 0, 0, 0.9 }))
+    local fill = CreateFrame("StatusBar", nil, countBar)
+    fill:SetPoint("TOPLEFT", 1, -1)
+    fill:SetPoint("BOTTOMRIGHT", -1, 1)
+    if fill.SetStatusBarTexture then fill:SetStatusBarTexture(art.file or "Interface\\TargetingFrame\\UI-StatusBar") end
+    if fill.SetMinMaxValues then fill:SetMinMaxValues(0, 1) end
+    if fill.SetValue then fill:SetValue(0) end
+    local bg = fill:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(unpack(art.bg or { 0, 0, 0, 0.45 }))
+    local count = fill:CreateFontString(nil, "OVERLAY")
+    Theme.Font(count, "small")
+    count:SetPoint("CENTER")
+    countBar:EnableMouse(true)
+    countBar:SetScript("OnEnter", CountTooltip)
+    countBar:SetScript("OnLeave", GameTooltip_Hide)
+    self.countBar, self.countFill, self.count = countBar, fill, count
 
-    -- "Set bonuses (x/y)" right of "Have x / y": hover-only, so gold label style, not a link.
+    -- Label row under the bar: "Set bonuses (x/y)", "Stats", "Effort: High" (hover-only,
+    -- gold label style, not links).
     local bonuses = W.LinkButton(parent, L.BONUSES, BonusTooltip, nil, "label")
-    bonuses:SetPoint("LEFT", count, "RIGHT", 12, 0)
+    bonuses:SetPoint("TOPLEFT", 12, LABELS_TOP)
     self.bonuses = bonuses
 
     -- "Stats" and "Effort: High" right of it, same hover-only label style.
@@ -608,6 +646,13 @@ function PieceList:Build(panel)
     effort:Hide()
     self.effort = effort
 
+    -- Line between header and list (same divider as the guide page).
+    local div = parent:CreateTexture(nil, "ARTWORK")
+    div:SetPoint("TOPLEFT", 8, DIVIDER_TOP)
+    div:SetPoint("TOPRIGHT", -8, DIVIDER_TOP)
+    Theme.SetDivider(div)
+    self.divider = div
+
     local box = Theme.CreateFrame("Frame", nil, parent, "scrollBox")
     box:SetPoint("TOPLEFT", 4, LIST_TOP)
     box:SetPoint("BOTTOMRIGHT", -22, 4)
@@ -616,7 +661,7 @@ function PieceList:Build(panel)
     bar:SetPoint("BOTTOMLEFT", box, "BOTTOMRIGHT", 4, 2)
     self.box = box
 
-    local view = CreateScrollBoxListLinearView()
+    local view = CreateScrollBoxListLinearView(0, 0, 0, 0, ROW_GAP)
     view:SetElementExtent(ROW_H)
     view:SetElementInitializer("Button", InitRow)
     ScrollUtil.InitScrollBoxListWithScrollBar(box, bar, view)
@@ -648,6 +693,18 @@ function PieceList:ShowSet(set)
     self:Refresh()
 end
 
+-- The "have" bar: filled have/total in the count colour, "3 / 8" on it (empty without a set).
+function PieceList:SetCountBar(have, total)
+    have, total = tonumber(have) or 0, tonumber(total) or 0
+    local fill = self.countFill
+    if fill then
+        if fill.SetMinMaxValues then fill:SetMinMaxValues(0, math.max(total, 1)) end
+        if fill.SetValue then fill:SetValue(math.min(have, math.max(total, 1))) end
+        if fill.SetStatusBarColor then fill:SetStatusBarColor(Theme.CountColor(have, total)) end
+    end
+    self.count:SetText(total > 0 and ("%d / %d"):format(have, total) or "")
+end
+
 function PieceList:Refresh()
     if not self.box then return end
     local set = self.set
@@ -660,15 +717,13 @@ function PieceList:Refresh()
     if not hasSet then
         self:SetTitle(L.NO_SET)
         self.info:SetText("")
-        self.count:SetText("")
+        self:SetCountBar(0, 0)
         self.box:SetDataProvider(CreateDataProvider({}))
         return
     end
     self:SetTitle(set.name)
     self.info:SetText(SetInfoText(set))
-    local have, total = ns.Owned:SetCount(set)
-    self.count:SetText(L.HAVE_COUNT:format(have, total))
-    self.count:SetTextColor(Theme.CountColor(have, total))
+    self:SetCountBar(ns.Owned:SetCount(set))
     self:UpdateBonuses()
     local retain = ScrollBoxConstants and ScrollBoxConstants.RetainScrollPosition
     self.box:SetDataProvider(CreateDataProvider(set.shown or set.pieces), retain)

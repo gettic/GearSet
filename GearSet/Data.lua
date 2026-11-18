@@ -613,7 +613,9 @@ end
 -- Every GuideData record is optional: without one the page shows what SourcesData
 -- has and "not known". Result: a list of blocks for UI\GuidePage.lua:
 --   { k = "head"|"sub"|"row"|"text"|"bullet"|"step"|"fold", text, label, here, blocks }
--- bullets may have col (value column) and sub (a grey line under it: where it drops).
+-- bullets may have col (value column) and sub (a grey line under it: where it drops);
+-- steps may have sub (the quest's "NPC, place", drawn grey after the quest name).
+-- beta.9: rows and steps may have way = a Way.Point (Waypoint.lua): the page draws a Way button.
 local guideCache, recordCache = {}, {}
 local GUIDE_MAX_DEPTH = 4
 local BIND_ON_EQUIP = (Enum and Enum.ItemBind and Enum.ItemBind.OnEquip) or 2
@@ -697,23 +699,45 @@ local function Coords(s)
     return ("(%d, %d)"):format(math.floor(x + 0.5), math.floor(y + 0.5))
 end
 
--- "Zone, place text (43, 52)" from zone/where/xy rows, or nil.
-local function WhereText(rec, mine)
-    if not rec then return nil end
+-- beta.9: a map point from ns.PlacesData (Waypoint.lua's Way.Point), or nil.
+-- tname = "npc" / "place" / "boss" (the GuideData table the key belongs to).
+local function WayPoint(tname, key)
+    local Way = ns.Way
+    if not (Way and Way.Point and Has(key)) then return nil end
+    return Way.Point(tname, key)
+end
+
+-- "Zone, place text (43, 52)" from zone/where rows and the PlacesData point (GuideData's
+-- old `xy` row only as a fallback), or nil. point: the record's Way point, if any.
+local function WhereText(rec, mine, point)
     local zone, where = Field(rec, "zone", mine), Field(rec, "where", mine)
     local text = (zone and where) and (zone .. ", " .. where) or zone or where
-    local xy = Coords(Field(rec, "xy", mine))
-    if text and xy then text = text .. " " .. xy end
+    if not text and point then text = point.zone end
+    if not text then return nil end
+    local xy
+    if point then xy = Coords(point.x .. "," .. point.y)
+    else xy = Coords(Field(rec, "xy", mine)) end
+    if xy then text = text .. " " .. xy end
     return text
 end
 
--- NPC name <title> - where (from the npc record when there is one).
+-- NPC name <title> - where (from the npc record when there is one), and the NPC's point.
 local function NpcText(name, mine)
     local rec = Data.GuideRecord("npc", name)
+    local point = WayPoint("npc", name)
     local title = Field(rec, "title", mine)
     local text = title and ("%s <%s>"):format(name, title) or name
-    local where = WhereText(rec, mine)
-    return where and (text .. " - " .. where) or text
+    local where = WhereText(rec, mine, point)
+    return where and (text .. " - " .. where) or text, point
+end
+Data.NpcText = NpcText   -- (name, faction) -> text, point; for tests and the self-check
+
+-- A labelled row with an NPC (giver, vendor, trainer): text + its Way point.
+local function AddNpcRow(out, name, label, mine)
+    local text, point = NpcText(name, mine)
+    local b = Add(out, "row", text, label)
+    b.way = point
+    return b
 end
 
 -- "raid, 40 players, level 60" from a place record.
@@ -760,9 +784,10 @@ end
 -- Leatherworking specialisation: "Dragonscale Leatherworking (trainer: Peter Galen, Azshara, ...)".
 local function SpecText(spec, trainer, mine)
     if not Has(trainer) then return spec end
-    local where = WhereText(Data.GuideRecord("npc", trainer), mine)
+    local point = WayPoint("npc", trainer)
+    local where = WhereText(Data.GuideRecord("npc", trainer), mine, point)
     local who = where and (trainer .. ", " .. where) or trainer
-    return spec .. " " .. (ns.L.G_SPEC_TRAINER or "(trainer: %s)"):format(who)
+    return spec .. " " .. (ns.L.G_SPEC_TRAINER or "(trainer: %s)"):format(who), point
 end
 
 local AddRows   -- forward
@@ -860,7 +885,7 @@ function AddRows(out, rows, ctx)
             end
         elseif not Has(a) then -- luacheck: ignore 542
             -- empty value: nothing to show (the branch stops the rows below)
-        elseif k == "giver" then Add(out, "row", NpcText(a, mine), L.G_GIVER)
+        elseif k == "giver" then AddNpcRow(out, a, L.G_GIVER, mine)
         elseif k == "rep" then Add(out, "row", Has(b) and (a .. " " .. b) or a, L.G_NEEDS)
         elseif k == "rank" then Add(out, "row", Has(b) and L.G_RANK:format(a, b) or L.G_RANK_N:format(a), L.G_NEEDS)
         elseif k == "cost" then Add(out, "row", a, L.G_COST)
@@ -868,8 +893,22 @@ function AddRows(out, rows, ctx)
         elseif k == "chance" then Add(out, "row", a, L.G_CHANCE)
         elseif k == "skill" then Add(out, "row", SkillText(r), L.G_SKILL)
         elseif k == "tools" then Add(out, "row", a, L.G_TOOLS)
-        elseif k == "spec" then Add(out, "row", SpecText(a, b, mine), L.G_NEEDS)
+        elseif k == "spec" then
+            local text, point = SpecText(a, b, mine)
+            Add(out, "row", text, L.G_NEEDS).way = point
         elseif k == "l" then Add(out, "row", Has(b) and b or "", a)
+        -- beta.9 boss records: "Inside: boss 5 of 7, Undead side ...", rare spawn, summoned.
+        elseif k == "wing" or k == "n" then
+            if not done.wing then
+                done.wing = true
+                local wing, nRow = Field(own, "wing", mine), select(2, Field(own, "n", mine))
+                local parts = {}
+                if nRow and Has(nRow[2]) then parts[1] = (L.G_BOSS_N or "boss %s of %s"):format(nRow[1], nRow[2]) end
+                if wing then parts[#parts + 1] = wing end
+                if #parts > 0 then Add(out, "row", table.concat(parts, ", "), L.G_INSIDE or "Inside") end
+            end
+        elseif k == "rare" then Add(out, "text", L.G_RARE or "Rare spawn: not always there.")
+        elseif k == "sum" then Add(out, "text", a)   -- a whole sentence: "Summoned with ..."
         end
         -- zone/where/xy/title/kind/size/need/att are read by the callers; unknown keys skipped.
     end
@@ -877,12 +916,16 @@ function AddRows(out, rows, ctx)
         local k, a, b, c = r.key, r[1], r[2], r[3]
         if k == "p" and Has(a) then Add(out, "text", a)
         elseif k == "b" and Has(a) then Add(out, "bullet", a)
-        elseif k == "t" and Has(a) then Add(out, "head", a)
+        elseif k == "t" and Has(a) then Add(out, "sub", a)   -- chain title: a sub-heading
         elseif k == "s" and (Has(a) or Has(b)) then
-            local text = b or ""
-            if Has(c) then text = Has(text) and (text .. " - " .. c) or c end
+            -- quest name as the step's text, "NPC, place" kept apart (`sub`, drawn grey)
+            local text = Has(b) and b or (Has(c) and c or "")
             local step = Add(out, "step", text, a or "")
+            if Has(b) and Has(c) then step.sub = c end
             step.here = Has(b) and ctx.quest == b or nil
+            -- Way to the step's NPC: the quest's giver, else the name before "," in "NPC, place".
+            local npc = Has(b) and Field(Data.GuideRecord("quest", b), "giver", mine)
+            step.way = WayPoint("npc", npc) or WayPoint("npc", Has(c) and c:match("^%s*([^,]+)") or nil)
         elseif k == "fold" and Has(a) and Has(b) then
             AddFold(out, a, function(sub) AddChainOrNote(sub, b, ctx) end)
         elseif k == "see" then AddRecord(out, "note", a, ctx)
@@ -894,8 +937,8 @@ function AddRows(out, rows, ctx)
             if a == "q" and Has(b) then
                 Add(out, "row", b, L.G_QUEST)
                 AddRecord(out, "quest", b, ctx)
-            elseif a == "v" and Has(b) then Add(out, "row", NpcText(b, mine), L.G_FROM)
-            elseif a == "t" and Has(b) then Add(out, "row", NpcText(b, mine), L.G_TAUGHT_BY or "Taught by")
+            elseif a == "v" and Has(b) then AddNpcRow(out, b, L.G_FROM, mine)
+            elseif a == "t" and Has(b) then AddNpcRow(out, b, L.G_TAUGHT_BY or "Taught by", mine)
             elseif a == "t" then Add(out, "text", L.G_TRAINER)
             elseif a == "d" and #drops > 0 and not done.drop then
                 done.drop = true
@@ -936,14 +979,17 @@ end
 
 -- Place lines: "Instance: name - raid, 40 players, level 60", "Where: ..."; the
 -- place's need rows are kept for the "Before you go" part.
-local function AddPlace(out, place, label, ctx, state)
+-- boss: a world boss / rare roams its own spot (PlacesData boss:<name>); a boss inside a
+-- dungeon has none, so its Where row points at the place's entrance.
+local function AddPlace(out, place, label, ctx, state, boss)
     local L = ns.L
     local rec = Data.GuideRecord("place", place)
     if Has(place) then
         local desc = PlaceDesc(rec, ctx.mine)
         Add(out, "row", desc and (place .. " - " .. desc) or place, label)
     end
-    Add(out, "row", WhereText(rec, ctx.mine) or L.G_NOT_KNOWN, L.G_WHERE)
+    local point = WayPoint("boss", boss) or WayPoint("place", place)
+    Add(out, "row", WhereText(rec, ctx.mine, point) or L.G_NOT_KNOWN, L.G_WHERE).way = point
     for _, r in ipairs(rec or {}) do
         if (r.key == "need" or r.key == "att") and Has(r[1]) then
             local id = r.key .. "|" .. r[1] .. "|" .. (r[2] or "") .. "|" .. (r.fac or "")
@@ -981,7 +1027,7 @@ local function AddSource(out, e, itemID, ctx, state)
     local word = TypeWord(kind)
     if kind == "b" then
         Add(out, "sub", Has(a) and (word .. ": " .. a) or word)
-        AddPlace(out, b, L.G_INSTANCE, ctx, state)
+        AddPlace(out, b, L.G_INSTANCE, ctx, state, a)
         -- No drop chance known: no row at all (a "not known" row only adds noise).
         AddRows(out, Concat(Data.GuideRecord("boss", a), itemRows), ctx)
     elseif kind == "z" or kind == "w" then
@@ -990,8 +1036,9 @@ local function AddSource(out, e, itemID, ctx, state)
         AddRows(out, itemRows, ctx)
     elseif kind == "v" then
         Add(out, "sub", Has(a) and (word .. ": " .. a) or word)
-        local npcWhere = Has(a) and WhereText(Data.GuideRecord("npc", a), ctx.mine)
-        Add(out, "row", npcWhere or (Has(b) and b) or L.G_NOT_KNOWN, L.G_WHERE)
+        local point = WayPoint("npc", a)
+        local npcWhere = Has(a) and WhereText(Data.GuideRecord("npc", a), ctx.mine, point)
+        Add(out, "row", npcWhere or (Has(b) and b) or L.G_NOT_KNOWN, L.G_WHERE).way = point
         AddRows(out, itemRows, ctx)
         if Has(c) then
             if Data.GuideRecord("note", c) then AddRecord(out, "note", c, ctx)
@@ -1001,7 +1048,7 @@ local function AddSource(out, e, itemID, ctx, state)
         Add(out, "sub", Has(a) and (word .. ": " .. a) or word)
         local qrec = Data.GuideRecord("quest", a)
         if not HasKey(qrec, "giver") then
-            if Has(c) then Add(out, "row", NpcText(c, ctx.mine), L.G_GIVER)
+            if Has(c) then AddNpcRow(out, c, L.G_GIVER, ctx.mine)
             elseif Has(b) then Add(out, "row", b, L.G_WHERE)
             else Add(out, "row", L.G_NOT_KNOWN, L.G_GIVER) end
         end

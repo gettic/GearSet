@@ -2,7 +2,7 @@
 ## Title: Gear Set
 ## Notes: See armor sets on your character and track which pieces you have or still need. Type /gs to open.
 ## Author: Gettic
-## Version: 1.0.0-beta.8
+## Version: 1.0.0-beta.9
 ## SavedVariables: GearSetDB
 ## IconTexture: Interface\Minimap\Tracking\Transmogrifier
 ## AddonCompartmentFunc: GearSet_OnAddonCompartmentClick
@@ -14,11 +14,14 @@ Theme.lua
 SetsData.lua
 SourcesData.lua
 GuideData.lua
+PlacesData.lua
 Data.lua
+Waypoint.lua
 Owned.lua
 Alts.lua
 Entries.lua
 Probe.lua
+Search.lua
 UI\Widgets.lua
 UI\Main.lua
 UI\SetList.lua

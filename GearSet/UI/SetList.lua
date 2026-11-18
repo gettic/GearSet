@@ -5,8 +5,8 @@ local Theme, L = ns.Theme, ns.L
 local SetList = {}
 ns.SetList = SetList
 
-local ROW_H = 22
-local COUNT_W = 32      -- fixed width of "have/total", so the faction icons line up
+local ROW_H = Theme.sizes.setRow or 22
+local COUNT_W = Theme.sizes.setCount or 32   -- fixed width of "have/total", so the faction icons line up
 local MAX_REASONS = 4   -- effort reasons shown in a set row's tooltip
 
 -- Text with an English fallback (keys part A adds to ns.L at the merge).
@@ -240,7 +240,10 @@ local function SetFactionIcon(row, faction, hidden, tracked)
     end
 end
 
-local function InitRow(row, set)
+local ResultTooltip   -- search result rows (below)
+
+-- Parts every list row has (set rows and search result rows share the frames).
+local function BuildRow(row)
     if not row.gsInit then
         row.gsInit = true
         row:SetHeight(ROW_H)
@@ -279,7 +282,9 @@ local function InitRow(row, set)
         end
         row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
         row:SetScript("OnClick", function(self, button)
-            if button == "RightButton" then
+            if self.elem then
+                if button ~= "RightButton" then SetList.Activate(self.elem) end
+            elseif button == "RightButton" then
                 RowMenu(self)
             elseif self.set and IsShiftKeyDown and IsShiftKeyDown() and ns.Track then
                 ns.Track.ToggleSet(self.set)     -- shift-click: track / untrack (no chat link)
@@ -288,9 +293,26 @@ local function InitRow(row, set)
                 ns.UI:SelectSet(self.set.key)
             end
         end)
-        row:SetScript("OnEnter", SetTooltip)
+        row:SetScript("OnEnter", function(self)
+            if self.elem then ResultTooltip(self) else SetTooltip(self) end
+        end)
         row:SetScript("OnLeave", GameTooltip_Hide)
     end
+end
+
+-- Back to the set row look after the frame showed a search result (frames are reused).
+local function ResetRowLook(row)
+    row.elem = nil
+    row:EnableMouse(true)
+    row.hl:Show()
+    Theme.Font(row.label, "text")
+    Theme.Font(row.count, "small")
+    row.count:Show()
+end
+
+local function InitRow(row, set)
+    BuildRow(row)
+    ResetRowLook(row)
     row.set = set
     local selected = set.key == ns.db.lastSet
     -- Hidden sets (listed only with "Show hidden sets"), removed and not-yet-released
@@ -315,6 +337,106 @@ local function InitRow(row, set)
     if set.unreleased then row.count:SetTextColor(Theme.colors.later:GetRGB())
     else row.count:SetTextColor(Theme.CountColor(have, total)) end
     row.sel:SetShown(selected)
+end
+
+-- ---------------------------------------------------------------------------
+-- beta.9 search results (part C, ns.Search): with search text the list shows groups
+-- ("Sets (4)", "Pieces (2)", "Bosses (1)" ...). Element data: a set table (the normal set
+-- row) or { gsKind = "head" | "piece" | "boss" | "place" | "npc" | "more" | "back", ... }.
+local SOURCE_KINDS = { boss = true, place = true, npc = true }
+local KIND_WORD = { boss = { "SEARCH_KIND_BOSS", "Boss" }, place = { "SEARCH_KIND_PLACE", "Place" },
+    npc = { "SEARCH_KIND_NPC", "NPC (vendor or quest giver)" } }
+
+local function Color(key, fallback)
+    local c = Theme.colors
+    return c[key] or c[fallback] or c.text
+end
+
+local function Grey(text)
+    return Color("searchSub", "subtle"):WrapTextInColorCode(text)
+end
+
+local function HideSetParts(row)
+    row.faction:Hide(); row.star:Hide(); row.tag:Hide(); row.sel:Hide()
+    row.label:ClearAllPoints()
+    row.label:SetPoint("LEFT", 8, 0)
+    row.label:SetPoint("RIGHT", row.count, "LEFT", -6, 0)
+end
+
+local function InitResultRow(row, e)
+    BuildRow(row)
+    ResetRowLook(row)
+    row.elem, row.set = e, nil
+    HideSetParts(row)
+    row.count:SetText("")
+    local k = e.gsKind
+    if k == "head" then
+        row:EnableMouse(false)
+        row.hl:Hide()
+        Theme.Font(row.label, "normal")
+        row.label:ClearAllPoints()
+        row.label:SetPoint("LEFT", 4, -2)
+        row.label:SetPoint("RIGHT", -6, -2)
+        row.label:SetText(e.label)
+        row.label:SetTextColor(Color("searchHead", "title"):GetRGB())
+    elseif k == "more" or k == "back" then
+        Theme.Font(row.label, "small")
+        row.label:SetText(e.label)
+        row.label:SetTextColor(Color("searchMore", "link"):GetRGB())
+    elseif k == "piece" then
+        local name = e.label
+        if e.set and e.set.name then name = name .. " " .. Grey("(" .. e.set.name .. ")") end
+        row.label:SetText(name)
+        local state = ns.Owned and e.piece and ns.Owned:GetState(e.piece)
+        local W = ns.Widgets
+        local c = state and W and W.StateColor and W.StateColor(state)
+        row.label:SetTextColor(((c and c.GetRGB) and c or Theme.colors.text):GetRGB())
+    else   -- boss / place / npc: name (place), number of sets on the right
+        local name = e.label
+        if e.sub then name = name .. " " .. Grey("(" .. e.sub .. ")") end
+        row.label:SetText(name)
+        row.label:SetTextColor(Theme.colors.text:GetRGB())
+        row.count:SetText(tostring(e.n or 0))
+        row.count:SetTextColor(Color("searchSub", "subtle"):GetRGB())
+    end
+end
+
+-- The view's one initializer: set rows and result rows share the Button frames.
+local function InitAny(row, e)
+    if type(e) == "table" and e.gsKind then InitResultRow(row, e) else InitRow(row, e) end
+end
+SetList.InitElement = InitAny   -- offline tests / pictures draw rows with it
+
+function ResultTooltip(row)
+    local e = row.elem
+    if not e or e.gsKind == "head" or e.gsKind == "back" then GameTooltip:Hide() return end
+    GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
+    local sub = Color("searchSub", "subtle")
+    if e.gsKind == "more" then
+        GameTooltip:SetText(e.label, Theme.colors.title:GetRGB())
+        Theme.AddHint(GameTooltip, T("SEARCH_MORE_HINT", "Click: show all"))
+    elseif e.gsKind == "piece" then
+        if GameTooltip.SetItemByID and e.itemID then
+            GameTooltip:SetItemByID(e.itemID)
+        else
+            GameTooltip:SetText(e.label, Theme.colors.title:GetRGB())
+        end
+        if e.set then GameTooltip:AddLine(e.set.name, sub:GetRGB()) end
+        Theme.AddHint(GameTooltip, T("SEARCH_PIECE_HINT", "Click: open its set and its guide"))
+    else
+        GameTooltip:SetText(e.label, Theme.colors.title:GetRGB())
+        local w = KIND_WORD[e.gsKind]
+        if w then GameTooltip:AddLine(T(w[1], w[2]), sub:GetRGB()) end
+        if e.sub then GameTooltip:AddLine(e.sub, sub:GetRGB()) end
+        local sets = e.sets or {}
+        GameTooltip:AddLine(T("SEARCH_SETS_N", "Sets with a piece from here: %d"):format(#sets), Theme.colors.text:GetRGB())
+        for i, s in ipairs(sets) do
+            if i > 5 then break end
+            GameTooltip:AddLine("  " .. s.name, Theme.colors.text:GetRGB())
+        end
+        Theme.AddHint(GameTooltip, T("SEARCH_SRC_HINT", "Click: show these sets and the first piece's guide"))
+    end
+    GameTooltip:Show()
 end
 
 -- Filter defaults: Core.lua's defaults.filters (ns.FILTER_DEFAULTS). "Only my class"
@@ -531,7 +653,7 @@ end
 function SetList:ClearAll()
     ResetFilters()
     if self.search and (self.search:GetText() or "") ~= "" then
-        self.search:SetText("")   -- OnTextChanged saves "" and refreshes from the top
+        self:ClearSearch()        -- saves "" and refreshes from the top
     else
         ns.db.search = ""
         self.fromTop = true
@@ -586,6 +708,74 @@ function SetList:UpdateEmpty(isEmpty)
     e:Show()
 end
 
+-- ---------------------------------------------------------------------------
+-- Search text, Esc and Ctrl+F (beta.9 part C).
+local ESC_NAME = "GearSetSearchEsc"
+
+-- While the box has text, a hidden named frame sits on the Esc stack (W.PushEsc): Esc
+-- (Blizzard's CloseSpecialWindows) hides it, which clears the search; the next Esc closes
+-- the window as before. Hidden together with the window: only taken off the stack (the
+-- text stays) and put back when the window shows again.
+local function UpdateEsc()
+    local e = SetList.escFrame
+    if not e then return end
+    e:SetShown((ns.db.search or "") ~= "")
+end
+
+local function BuildEscFrame(self, parent)
+    local e = CreateFrame("Frame", ESC_NAME, parent)
+    e:SetSize(1, 1)
+    e:SetPoint("TOPLEFT")
+    e:Hide()
+    e:SetScript("OnShow", function()
+        local W = ns.Widgets
+        if W and W.PushEsc then W.PushEsc(ESC_NAME) end
+    end)
+    e:SetScript("OnHide", function(f)
+        local W = ns.Widgets
+        if W and W.PopEsc then W.PopEsc(ESC_NAME) end
+        if not f:IsShown() then SetList:ClearSearch() end   -- hidden itself (Esc), not with the window
+    end)
+    self.escFrame = e
+    UpdateEsc()
+end
+
+-- New search text (box typing, ClearSearch): saved, results start over, list from the top.
+function SetList:ApplySearch(text)
+    text = text or ""
+    if text == ns.db.search and SetList.list then return end
+    ns.db.search = text
+    SetList.source = nil
+    SetList.expanded = {}
+    UpdateEsc()
+    Changed()
+end
+
+function SetList:ClearSearch()
+    local box = self.search
+    if box and (box:GetText() or "") ~= "" then box:SetText("") end
+    self:ApplySearch("")
+end
+
+-- Ctrl+F (Main.lua): Sets tab, focus the box, its text selected so typing replaces it.
+function SetList:FocusSearch()
+    local box = self.search
+    if not box then return false end
+    local UI = ns.UI
+    if UI and UI.CurrentTab and UI:CurrentTab() ~= "sets" and UI.ShowTab then UI:ShowTab("sets") end
+    box:SetFocus()
+    if box.HighlightText then box:HighlightText() end
+    return true
+end
+
+local function SearchTooltip(self)
+    GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
+    GameTooltip:SetText(T("SEARCH_TIP", "Finds sets, pieces, bosses, places and NPCs."), Theme.colors.title:GetRGB())
+    Theme.AddHint(GameTooltip, T("SEARCH_ENTER_HINT", "Enter: open the first result"))
+    Theme.AddHint(GameTooltip, T("SEARCH_ESC_HINT", "Esc: clear the search"))
+    GameTooltip:Show()
+end
+
 function SetList:Build(parent)
     -- Filter button (top right of the panel)
     local filter, tmpl = Theme.CreateFrame("DropdownButton", nil, parent, "filter")
@@ -611,18 +801,25 @@ function SetList:Build(parent)
     -- Search box
     local search = Theme.CreateFrame("EditBox", nil, parent, "search")
     search:SetSize(150, 20)
-    search:SetPoint("TOPLEFT", 12, -6)
+    -- x 15: SearchBoxTemplate's left cap draws 5 px outside the box (Mount journal: 15,-9),
+    -- so its visible edge lines up with the row text.
+    search:SetPoint("TOPLEFT", 15, -6)
     search:SetPoint("RIGHT", filter, "LEFT", -8, 0)
     search:SetAutoFocus(false)
-    if search.Instructions then search.Instructions:SetText(L.SEARCH) end
+    if search.Instructions then search.Instructions:SetText(T("SEARCH_BOX", L.SEARCH)) end
     search:SetText(ns.db.search or "")
     search:HookScript("OnTextChanged", function(self)
-        local text = self:GetText() or ""
-        if text == ns.db.search and SetList.list then return end
-        ns.db.search = text
-        Changed()
+        SetList:ApplySearch(self:GetText() or "")
     end)
+    -- Enter opens the first result (then the box lets go of the keyboard).
+    search:HookScript("OnEnterPressed", function(box)
+        SetList:ActivateFirst()
+        box:ClearFocus()
+    end)
+    search:HookScript("OnEnter", SearchTooltip)
+    search:HookScript("OnLeave", GameTooltip_Hide)
     self.search = search
+    BuildEscFrame(self, parent)
 
     -- Scrolling list
     local box = Theme.CreateFrame("Frame", nil, parent, "scrollBox")
@@ -633,7 +830,7 @@ function SetList:Build(parent)
     bar:SetPoint("BOTTOMLEFT", box, "BOTTOMRIGHT", 4, 2)
     local view = CreateScrollBoxListLinearView()
     view:SetElementExtent(ROW_H)
-    view:SetElementInitializer("Button", InitRow)
+    view:SetElementInitializer("Button", InitAny)
     ScrollUtil.InitScrollBoxListWithScrollBar(box, bar, view)
     self.box = box
 
@@ -755,6 +952,129 @@ local function BuildList()
     return SORTERS[SetList.SortMode()](list)
 end
 
+-- Sets the filters allow (search left out), sorted: search results come only from these.
+local function AllowedSets()
+    local list = ExtraFilter(ns.Data:Filter("", ns.db.filters), ns.db.filters)
+    return SORTERS[SetList.SortMode()](list)
+end
+
+local function SearchWords()
+    local S = ns.Search
+    return S and S.Words and S.Words(ns.db.search)
+end
+
+SetList.expanded = {}   -- result groups opened with "n more" (reset when the text changes)
+
+-- Narrowed to one boss / place / NPC: "Sets with pieces from X (n)", "< All results", its sets
+-- (those the filters still allow, in list order).
+local function SourceRows(src)
+    local allowed, keep = {}, {}
+    for _, s in ipairs(AllowedSets()) do allowed[s] = true end
+    for _, s in ipairs(src.sets or {}) do
+        if allowed[s] then keep[#keep + 1] = s end
+    end
+    local rows = {
+        { gsKind = "head", label = T("SEARCH_FROM", "Sets with pieces from %s (%d)"):format(src.label, #keep) },
+        { gsKind = "back", label = T("SEARCH_BACK", "< All results") },
+    }
+    for _, s in ipairs(keep) do rows[#rows + 1] = s end
+    return rows, keep
+end
+
+-- Grouped results; a group header only when more than the sets group has results
+-- (a plain set-name search looks like the list always did). Returns rows, sets shown.
+local function ResultRows()
+    local groups = ns.Search.Find(ns.db.search, AllowedSets(), SetList.expanded)
+    SetList.groups = groups
+    local rows, sets = {}, {}
+    local onlySets = #groups == 1 and groups[1].kind == "set"
+    for _, g in ipairs(groups) do
+        if not onlySets then rows[#rows + 1] = { gsKind = "head", label = g.label, kind = g.kind } end
+        for _, it in ipairs(g.items) do
+            if it.kind == "set" then
+                rows[#rows + 1] = it.set
+            else
+                it.gsKind = it.kind
+                rows[#rows + 1] = it
+            end
+        end
+        if g.kind == "set" then
+            for _, it in ipairs(g.all) do sets[#sets + 1] = it.set end
+        end
+        if g.more > 0 then
+            rows[#rows + 1] = { gsKind = "more", kind = g.kind,
+                label = T("SEARCH_MORE", "%d more ..."):format(g.more) }
+        end
+    end
+    return rows, sets
+end
+
+-- Rows to show and the set list behind them (SelectRelative steps through that list).
+local function BuildRows()
+    if not SearchWords() then
+        SetList.source, SetList.groups = nil, nil
+        local list = BuildList()
+        return list, list
+    end
+    if SetList.source then return SourceRows(SetList.source) end
+    return ResultRows()
+end
+
+local function FirstPieceFrom(set, src)
+    local ids = src.itemIDs or {}
+    for _, p in ipairs(set.shown or set.pieces or {}) do
+        if ids[p.itemID] then return p end
+    end
+end
+
+-- A result row clicked (or Enter on the first one).
+function SetList.Activate(e)
+    if type(e) ~= "table" then return false end
+    local UI, PL = ns.UI, ns.PieceList
+    local k = e.gsKind
+    if not k then
+        if not e.key then return false end
+        PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+        UI:SelectSet(e.key)
+        return true
+    end
+    if k == "piece" and e.set then
+        PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+        UI:SelectSet(e.set.key)
+        if PL and PL.ShowGuide and e.piece then PL:ShowGuide(e.piece) end
+        return true
+    elseif SOURCE_KINDS[k] then
+        local first = e.sets and e.sets[1]
+        if not first then return false end
+        PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+        SetList.source = e
+        SetList.fromTop = true
+        UI:SelectSet(first.key)
+        local piece = FirstPieceFrom(first, e)
+        if piece and PL and PL.ShowGuide then PL:ShowGuide(piece) end
+        return true
+    elseif k == "more" then
+        SetList.expanded[e.kind] = true
+        SetList:Refresh()
+        return true
+    elseif k == "back" then
+        SetList.source = nil
+        SetList.fromTop = true
+        SetList:Refresh()
+        return true
+    end
+    return false
+end
+
+-- Enter in the search box: open the first row that does something.
+function SetList:ActivateFirst()
+    for _, e in ipairs(self.rows or {}) do
+        local k = type(e) == "table" and e.gsKind
+        if not k or k == "piece" or SOURCE_KINDS[k] then return SetList.Activate(e) end
+    end
+    return false
+end
+
 -- Tier tags that have sets, in the usual order (unknown tags after, by name).
 local TIER_ORDER = { "D1", "D2", "T1", "T2", "T3", "ZG", "AQ20", "AQ40", "PvP" }
 function SetList.TierList()
@@ -794,16 +1114,22 @@ function SetList:ScrollToSelected()
     local box = self.box
     local i = IndexOf(self.list, ns.db.lastSet)
     if not (box and i and box.ScrollToElementData) then return end
+    -- Search results may show only some of the sets (5 per group): only scroll to a shown row.
+    local set, shown = self.list[i], false
+    for _, e in ipairs(self.rows or self.list) do
+        if e == set then shown = true break end
+    end
+    if not shown then return end
     local align = ScrollBoxConstants and ScrollBoxConstants.AlignNearest
-    pcall(box.ScrollToElementData, box, self.list[i], align)
+    pcall(box.ScrollToElementData, box, set, align)
 end
 
 function SetList:Refresh()
     if not self.box then return end
     -- Window hidden: skip the work; OnShow refreshes everything.
     if not (ns.UI and ns.UI:IsShown()) then return end
-    local list = BuildList()
-    self.list = list
+    local rows, list = BuildRows()
+    self.list, self.rows = list, rows
     local fromTop = self.fromTop
     self.fromTop = nil
     local consts = ScrollBoxConstants
@@ -811,8 +1137,8 @@ function SetList:Refresh()
     if consts then
         if fromTop then retain = consts.DiscardScrollPosition else retain = consts.RetainScrollPosition end
     end
-    self.box:SetDataProvider(CreateDataProvider(list), retain)
-    self:UpdateEmpty(#list == 0)
+    self.box:SetDataProvider(CreateDataProvider(rows), retain)
+    self:UpdateEmpty(#rows == 0)
     -- First open: pick the first set so the window is never blank.
     if not ns.Data:GetSet(ns.db.lastSet) and list[1] then
         ns.db.lastSet = list[1].key

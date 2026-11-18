@@ -42,7 +42,7 @@ end
 -- Shrink the window (never grow it) so it fits small or 4:3 screens at a large UI scale.
 -- The bottom tabs hang below the window (Theme.sizes.tabOverhang), so they count too.
 local FIT_MARGIN = 20
-local function TabOverhang() return (Theme.sizes and Theme.sizes.tabOverhang) or 32 end
+local function TabOverhang() return (Theme.sizes and Theme.sizes.tabOverhang) or 30 end
 local function FitToScreen(frame)
     local w, h = frame:GetWidth(), frame:GetHeight()
     local sw, sh = UIParent:GetWidth(), UIParent:GetHeight()
@@ -239,6 +239,103 @@ local function MakeInset(parent, x1, x2)
 end
 
 -- ---------------------------------------------------------------------------
+-- "Sets complete: 12 / 186" box in the strip under the title bar (ui-review-3; the
+-- journals' count box, CollectionsCountTemplate pattern). Counts this character's sets
+-- (Progress:Get("char")); click = Progress tab. Hidden without the Progress module.
+local COUNT_BOX = { x = 70, y = -35, h = 20, pad = 20, gap = 4, minW = 130 }
+
+local function CountSummary()
+    local P = ns.Progress
+    if not (P and P.Get) then return nil end
+    local ok, s = pcall(P.Get, P, "char")
+    if ok and type(s) == "table" then return s end
+end
+
+local function CountBoxTooltip(self)
+    local s = CountSummary()
+    GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
+    GameTooltip:SetText(T("COUNT_BOX_TIP", "Sets complete on this character"), 1, 1, 1)
+    if s then
+        local sub = Theme.colors.subtle
+        GameTooltip:AddLine(T("P_SUMMARY", "%d complete, %d started, %d / %d pieces"):format(
+            s.complete or 0, s.started or 0, s.have or 0, s.total or 0), sub:GetRGB())
+        GameTooltip:AddLine(T("P_PCT", "%d%% of set pieces"):format(s.pct or 0), sub:GetRGB())
+    end
+    Theme.AddHint(GameTooltip, T("COUNT_BOX_HINT", "Click: open the Progress tab."))
+    GameTooltip:Show()
+end
+
+local function FontKey(fs, key, fallback)
+    fs:SetFontObject(Theme.fonts[key] or fallback)
+end
+
+local function MakeCountBox(f)
+    if not (ns.Progress and ns.Progress.Get) then return nil end
+    local box = Theme.CreateFrame("Frame", nil, f, "countBox")
+    if not box then return nil end
+    local tmpl = Theme.Template("countBox")
+    box:SetPoint("TOPLEFT", f, "TOPLEFT", COUNT_BOX.x, COUNT_BOX.y)
+    box:SetSize(COUNT_BOX.minW, COUNT_BOX.h)
+    if not tmpl then
+        -- No inset template: a dark box with a thin edge.
+        local c = Theme.colors.countBoxBg
+        local bg = box:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints()
+        bg:SetColorTexture(0, 0, 0, 0.5)
+        if c and c.GetRGBA then bg:SetColorTexture(c:GetRGBA()) end
+    end
+    local label = box:CreateFontString(nil, "OVERLAY")
+    FontKey(label, "countLabel", "GameFontNormalSmall")
+    label:SetText(T("COUNT_BOX", "Sets complete:"))
+    label:SetPoint("LEFT", box, "LEFT", COUNT_BOX.pad / 2, 0)
+    local count = box:CreateFontString(nil, "OVERLAY")
+    FontKey(count, "countValue", "GameFontHighlightSmall")
+    count:SetPoint("LEFT", label, "RIGHT", COUNT_BOX.gap, 0)
+    box.label, box.count = label, count
+    -- Click/hover on a plain button over the box (the inset template is a Frame).
+    local hit = CreateFrame("Button", nil, box)
+    hit:SetAllPoints()
+    hit:SetScript("OnEnter", CountBoxTooltip)
+    hit:SetScript("OnLeave", GameTooltip_Hide)
+    hit:SetScript("OnClick", function()
+        PlaySound(SOUNDKIT.IG_CHARACTER_INFO_TAB or SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+        if UI.tabByKey.progress then UI:ShowTab("progress") end
+    end)
+    box.hit = hit
+    box:Show()
+    return box
+end
+
+-- Count text; the box is text + padding wide (at least minW), text centred.
+function UI:UpdateCountBox()
+    local box = self.countBox
+    if not box then return end
+    local s = CountSummary()
+    if s then
+        box.count:SetText(("%d / %d"):format(s.complete or 0, s.sets or 0))
+    else
+        box.count:SetText("?")
+    end
+    local textW = (box.label:GetStringWidth() or 0) + COUNT_BOX.gap + (box.count:GetStringWidth() or 0)
+    local boxW = math.max(COUNT_BOX.minW, math.ceil(textW + COUNT_BOX.pad))
+    box:SetWidth(boxW)
+    box.label:ClearAllPoints()
+    box.label:SetPoint("LEFT", box, "LEFT", math.floor((boxW - textW) / 2), 0)
+end
+
+-- Progress counts were dropped (bags, hide, track ...): redraw once on the next frame.
+local countPending
+local function CountChanged()
+    if countPending or not (UI.frame and UI.frame:IsShown()) then return end
+    countPending = true
+    local function run()
+        countPending = false
+        UI:UpdateCountBox()
+    end
+    if C_Timer and C_Timer.After then C_Timer.After(0, run) else run() end
+end
+
+-- ---------------------------------------------------------------------------
 -- Bottom tabs (review-ui 2/3): Blizzard's PanelTabButtonTemplate on our own window only,
 -- else plain panel buttons. Each tab shows its own frames; `onShow` runs after a switch.
 UI.tabs, UI.tabByKey = {}, {}
@@ -264,10 +361,13 @@ local function MakeTab(f, i, label)
         local w = tab.GetTextWidth and tab:GetTextWidth()
         if w and w > 0 then tab:SetWidth(math.max(90, w + 30)) end
     end
+    -- Hung from under the border like CharacterFrame's tabs (TOPLEFT on BOTTOMLEFT 11, 2;
+    -- the tab's level is under the border's, so the border's bottom edge draws over its top).
+    local sizes = Theme.sizes or {}
     if i == 1 then
-        tab:SetPoint("TOPLEFT", f, "BOTTOMLEFT", 11, (Theme.sizes and Theme.sizes.tabOffsetY) or -8)
+        tab:SetPoint("TOPLEFT", f, "BOTTOMLEFT", 11, sizes.tabOffsetY or 2)
     else
-        tab:SetPoint("TOPLEFT", UI.tabs[i - 1].button, "TOPRIGHT", 3, 0)
+        tab:SetPoint("TOPLEFT", UI.tabs[i - 1].button, "TOPRIGHT", sizes.tabGap or 1, 0)
     end
     tab:SetScript("OnClick", function(self)
         PlaySound(SOUNDKIT.IG_CHARACTER_INFO_TAB or SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
@@ -348,6 +448,69 @@ local function MakeTabs(self, f)
     end
 end
 
+-- ---------------------------------------------------------------------------
+-- Ctrl+F focuses the search box (beta.9 part C; ToS watch-point W1, plans\v1.0.0\tos-beta9.md).
+-- The window takes keyboard input but passes every key on (propagation on). Only Ctrl+F,
+-- out of combat, stops that one key and turns propagation back on the next frame.
+-- SetPropagateKeyboardInput is restricted in combat: if combat started in between, the
+-- window stops taking keys at once (EnableKeyboard(false); if that fails, the window
+-- hides) and propagation comes back after combat. In combat Ctrl+F does nothing.
+UI.keys = { pending = false, waiting = false }
+
+local function InCombat() return InCombatLockdown and InCombatLockdown() and true or false end
+
+-- Out of combat only: pass keys on first, then take them (never the other way round).
+local function KeysOn(f)
+    f:SetPropagateKeyboardInput(true)
+    f:EnableKeyboard(true)
+end
+
+local keyWait   -- one event frame, only registered while waiting for combat to end
+local function AfterCombat(f)
+    UI.keys.waiting = true
+    if not keyWait then
+        keyWait = CreateFrame("Frame")
+        keyWait:SetScript("OnEvent", function(self)
+            if InCombat() then return end
+            self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+            UI.keys.waiting = false
+            KeysOn(f)
+        end)
+    end
+    keyWait:RegisterEvent("PLAYER_REGEN_ENABLED")
+end
+
+-- In combat with propagation off: stop taking keys now, so no key of the player's is eaten.
+local function KeysOff(f)
+    local ok = pcall(f.EnableKeyboard, f, false)
+    if not ok or (f.IsKeyboardEnabled and f:IsKeyboardEnabled()) then f:Hide() end
+    AfterCombat(f)
+end
+
+local function RestoreKeys(f)
+    UI.keys.pending = false
+    if InCombat() then KeysOff(f) return end
+    f:SetPropagateKeyboardInput(true)
+end
+
+function UI.OnKeyDown(f, key)
+    if key ~= "F" or not (IsControlKeyDown and IsControlKeyDown()) then return end   -- every other key: untouched
+    if InCombat() or UI.keys.pending or UI.keys.waiting then return end
+    UI.keys.pending = true
+    f:SetPropagateKeyboardInput(false)        -- this one key stays with us
+    if ns.SetList and ns.SetList.FocusSearch then ns.SetList:FocusSearch() end
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, function() RestoreKeys(f) end)
+    else
+        RestoreKeys(f)
+    end
+end
+
+local function SetupKeys(f)
+    f:SetScript("OnKeyDown", UI.OnKeyDown)
+    if InCombat() then AfterCombat(f) else KeysOn(f) end
+end
+
 function UI:Build()
     if self.frame then return end
     local f = Theme.CreateFrame("Frame", "GearSetFrame", UIParent, "window")
@@ -393,6 +556,10 @@ function UI:Build()
     self.gear = MakeGearButton(f)
     self.helpButton = MakeHelpButton(f)
     MakeTabs(self, f)
+    self.countBox = MakeCountBox(f)
+    if self.countBox and hooksecurefunc and ns.Progress.Invalidate then
+        hooksecurefunc(ns.Progress, "Invalidate", CountChanged)
+    end
 
     f:SetScript("OnShow", function()
         FitToScreen(f)
@@ -410,6 +577,7 @@ function UI:Build()
         PlaySound(SOUNDKIT.IG_CHARACTER_INFO_CLOSE)
     end)
 
+    SetupKeys(f)
     RestorePosition(f)
 end
 
@@ -442,11 +610,13 @@ function UI:RefreshAll()
     local set = ns.Data:GetSet(ns.db.lastSet)
     ns.Preview:ShowSet(set)
     ns.PieceList:ShowSet(set)
+    self:UpdateCountBox()
 end
 
 -- Owned states changed (bags, bank, equipment, collection).
 function UI:RefreshCounts()
     ns.SetList:Refresh()
     ns.PieceList:Refresh()
+    self:UpdateCountBox()
     if ns.Progress then ns.Progress:Refresh() end   -- only draws while its tab is shown
 end

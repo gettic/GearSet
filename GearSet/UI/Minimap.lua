@@ -88,31 +88,70 @@ end
 -- First icon the client can load. Icons files are square with a frame, so they are
 -- cropped and drawn at 17 px; other textures (the tracking symbol) have their own
 -- transparent edges and are drawn whole, filling the 20 px background circle.
-local function SetIcon(tex)
+-- Texcoords: normal, and pressed (zoomed in a little while the mouse is down, like LibDBIcon).
+local COORDS_ICONS, PRESS_ICONS = { 0.05, 0.95, 0.05, 0.95 }, { 0.12, 0.88, 0.12, 0.88 }
+local COORDS_WHOLE, PRESS_WHOLE = { 0, 1, 0, 1 }, { 0.1, 0.9, 0.1, 0.9 }
+
+-- Sizes: Theme.sizes.minimapButton (these values if a theme leaves it out).
+local SIZE_FALLBACK = { button = 31, border = 53, background = 20, iconCropped = 17, iconWhole = 20,
+    x = 7, y = -5, croppedY = -6 }
+local function Sizes() return Theme.sizes.minimapButton or SIZE_FALLBACK end
+
+-- First file of Theme.art.minimapIcon that loads on this tex (the last one is used anyway).
+local function PickIcon(tex)
     local list = Theme.art.minimapIcon
     for i, file in ipairs(list) do
         if i == #list or Theme.TryTexture(tex, file) then
             if i == #list then tex:SetTexture(file) end
-            tex:ClearAllPoints()
-            if file:lower():find("^interface\\icons\\") then
-                tex:SetSize(17, 17)
-                tex:SetPoint("TOPLEFT", 7, -6)
-                tex:SetTexCoord(0.05, 0.95, 0.05, 0.95)
-            else
-                tex:SetSize(20, 20)
-                tex:SetPoint("TOPLEFT", 7, -5)
-                tex:SetTexCoord(0, 1, 0, 1)
-            end
-            return
+            return file
         end
     end
+end
+
+-- The icon file the button uses (also the data-bar launcher's icon). Checked once on a
+-- hidden scratch texture when the button isn't built (button hidden).
+function MB.IconFile()
+    if MB.iconFile then return MB.iconFile end
+    local ok, file = pcall(function()
+        local holder = CreateFrame("Frame")
+        holder:Hide()
+        return PickIcon(holder:CreateTexture())
+    end)
+    if ok and type(file) == "string" then MB.iconFile = file end
+    return MB.iconFile
+end
+
+local function SetIcon(tex)
+    local file = PickIcon(tex)
+    if not file then return end
+    MB.iconFile = file
+    tex:ClearAllPoints()
+    local sz = Sizes()
+    if file:lower():find("^interface\\icons\\") then
+        tex:SetSize(sz.iconCropped, sz.iconCropped)
+        tex:SetPoint("TOPLEFT", sz.x, sz.croppedY)
+        tex.gsCoords, tex.gsPress = COORDS_ICONS, PRESS_ICONS
+    else
+        tex:SetSize(sz.iconWhole, sz.iconWhole)
+        tex:SetPoint("TOPLEFT", sz.x, sz.y)
+        tex.gsCoords, tex.gsPress = COORDS_WHOLE, PRESS_WHOLE
+    end
+    tex:SetTexCoord(unpack(tex.gsCoords))
+end
+
+-- Press feel: the icon zooms in while the mouse button is down.
+local function IconPressed(btn, down)
+    local icon = btn.icon
+    local c = icon and (down and icon.gsPress or icon.gsCoords)
+    if c then icon:SetTexCoord(unpack(c)) end
 end
 
 function MB:Build()
     if self.button or not Minimap then return end
     local art = Theme.art.minimapButton
+    local sz = Sizes()
     local btn = CreateFrame("Button", BUTTON_NAME, Minimap)
-    btn:SetSize(31, 31)
+    btn:SetSize(sz.button, sz.button)
     btn:SetFrameStrata("MEDIUM")
     btn:SetFrameLevel(Minimap:GetFrameLevel() + 8)
     btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
@@ -121,8 +160,8 @@ function MB:Build()
 
     local bg = btn:CreateTexture(nil, "BACKGROUND")
     bg:SetTexture(art.background)
-    bg:SetSize(20, 20)
-    bg:SetPoint("TOPLEFT", 7, -5)
+    bg:SetSize(sz.background, sz.background)
+    bg:SetPoint("TOPLEFT", sz.x, sz.y)
 
     local icon = btn:CreateTexture(nil, "ARTWORK")
     SetIcon(icon)   -- also sets size, point and texcoords for the chosen file
@@ -130,7 +169,7 @@ function MB:Build()
 
     local border = btn:CreateTexture(nil, "OVERLAY")
     border:SetTexture(art.border)
-    border:SetSize(53, 53)
+    border:SetSize(sz.border, sz.border)
     border:SetPoint("TOPLEFT")
 
     btn:SetScript("OnClick", function(_, mouse)
@@ -147,6 +186,8 @@ function MB:Build()
     end)
     btn:SetScript("OnEnter", function(self) ShowTooltip(self) end)
     btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    btn:SetScript("OnMouseDown", function(b) IconPressed(b, true) end)
+    btn:SetScript("OnMouseUp", function(b) IconPressed(b, false) end)
     btn:SetScript("OnDragStart", function(self)
         if Held(self) then return end
         GameTooltip:Hide()
@@ -154,6 +195,7 @@ function MB:Build()
     end)
     btn:SetScript("OnDragStop", function(self)
         self:SetScript("OnUpdate", nil)
+        IconPressed(self, false)
     end)
 
     self.button = btn

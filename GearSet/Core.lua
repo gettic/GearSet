@@ -109,6 +109,26 @@ ns.L = {
     G_STATE_account = "You have it: in the account bank",
     G_WIKI_TIP = "Shows a Warcraft Wiki search link for this piece.",
     WIKI_POPUP = "Press Ctrl+C to copy the link, then paste it into your browser.",
+    -- beta.9 Way button (Waypoint.lua; the chat lines follow "Gear Set:")
+    WAY_POPUP = "Press Ctrl+C to copy the position.",
+    WAY_TOMTOM = "TomTom waypoint set: %s",
+    WAY_MAP = "map pin set: %s",
+    WAY_COPY = "can't set a map pin there - the position is in the copy box: %s",
+    WAY_COMBAT = "in combat - the position is in the copy box: %s",
+    WAY_TIP_TITLE = "Show the way",
+    WAY_TIP_TOMTOM = "Click: sets a TomTom waypoint.",
+    WAY_TIP_MAP = "Click: sets a map pin and tracks it. It replaces your own map pin.",
+    WAY_TIP_COPY = "Click: shows the position to copy (no map pin can be set there).",
+    WAY_TIP_COMBAT = "In combat it only shows the position to copy.",
+    WAY_TIP_CLASSIC = "Position from classic, not checked on WoW Forever yet.",
+    WAY_ENTRANCE = "(entrance)",
+    WAY_AREA = "(roams around here)",
+    WAY_ALSO = "Also: %s",
+    WAY_FALLBACK = "Way",
+    -- beta.9 boss records on the guide page (GuideData boss: wing / n / rare / sum)
+    G_INSIDE = "Inside",
+    G_BOSS_N = "boss %s of %s",
+    G_RARE = "Rare spawn: not always there.",
     G_HOW = "How to get it",
     G_BEFORE = "Before you go",
     G_NEED_TEXT = "To get in you need the %s.",
@@ -211,10 +231,12 @@ ns.L = {
     S_MINIMAP = "Show the minimap button",
     S_MINIMAP_TIP = "Also /gs minimap.",
     S_HELP_NEXT = "Show help the next time I open Gear Set",
+    S_HELP_NEXT_TIP = "Shows the four help notes again the next time you open the window.",
     S_POS_LABEL = "Window position",
     S_RESET_POS = "Reset",
     S_RESET_POS_TIP = "Moves the window back to the middle of the screen.",
     S_SHOW_HIDDEN = "Show hidden sets in the list",
+    S_SHOW_HIDDEN_TIP = "Hidden sets show in grey with a \"hidden\" tag. Right-click a set in the list to hide or show it.",
     S_HIDDEN_LABEL = "Hidden sets",
     S_UNHIDE_ALL = "Show all (%d)",
     S_HELP_LABEL = "First-time help",
@@ -297,6 +319,7 @@ ns.L = {
     DONE_KEPT = "Stays finished, even after you upgrade pieces.",
     S_TIPS = "Tooltip and clicks",
     S_TOOLTIP_LINE = "Show the Gear Set line on item tooltips",
+    S_TOOLTIP_LINE_TIP = "On set pieces: how many pieces of the set you have, and whether you still need this one.",
     S_TOOLTIP_SHIFT = "Only while Shift is held",
     S_TOOLTIP_SHIFT_TIP = "Keeps tooltips short when you use other tooltip addons.",
     S_ALT_CLICK = "Alt-click an item to open its guide",
@@ -330,6 +353,12 @@ ns.L = {
     SHARE = "Share in chat",
     SHARE_FULL = "chat box too full",
     SHARE_LOADING = "item info still loading, try again",
+    SHARE_MORE = "+%d more",                 -- after the links when not all fit (Share.lua)
+    SHARE_FIT = "%d of %d pieces fit in one chat line",
+    -- ui-review-3: "Sets complete" count box under the title bar (UI\Main.lua)
+    COUNT_BOX = "Sets complete:",
+    COUNT_BOX_TIP = "Sets complete on this character",
+    COUNT_BOX_HINT = "Click: open the Progress tab.",
     P_SCOPE = "Count for",
     P_SCOPE_char = "This character",
     P_SCOPE_account = "Whole account",
@@ -350,7 +379,7 @@ ns.L = {
     P_LEFT_OUT_CHAR = "Not counted: sets your class can't wear, removed, other-faction, hidden and not-yet-released sets.",
     P_LINE = "%d%% of set pieces",
     P_LINE_TRACKED = "%d%% of set pieces, %d tracked pieces left",
-    MS_LINE = "Milestone: %s",
+    MS_LINE = "milestone reached - %s!",
     MS_first_set = "your first complete set",
     MS_sets_5 = "5 complete sets",
     MS_sets_10 = "10 complete sets",
@@ -586,12 +615,13 @@ local function CopyDialog(text)
 end
 
 local COPY_DIALOG = { name = "GEARSET_COPYNAME", wiki = "GEARSET_WIKI", probe = "GEARSET_PROBE",
-    report = "GEARSET_REPORT", selftest = "GEARSET_SELFTEST" }
+    report = "GEARSET_REPORT", selftest = "GEARSET_SELFTEST", way = "GEARSET_WAY" }
 
 StaticPopupDialogs.GEARSET_WIKI = CopyDialog(ns.L.WIKI_POPUP)
 StaticPopupDialogs.GEARSET_PROBE = CopyDialog(ns.L.PROBE_POPUP)   -- /gs probe results
 StaticPopupDialogs.GEARSET_SELFTEST = CopyDialog(ns.L.SELFTEST_POPUP) -- /gs selftest results
 StaticPopupDialogs.GEARSET_REPORT = CopyDialog(ns.L.REPORT_POPUP) -- Settings: Report a problem
+StaticPopupDialogs.GEARSET_WAY = CopyDialog(ns.L.WAY_POPUP)       -- guide Way button: "Zone 43.4, 52.2"
 
 local nameDialog = CopyDialog(ns.L.COPY_POPUP)
 nameDialog.button2 = ns.L.WIKI_LINK
@@ -648,7 +678,7 @@ function ns.ReportText()
     return ns.L.TITLE .. " ?"
 end
 
--- ns.ShowCopyBox(kind, text, alt): kind "name", "wiki", "probe", "report" or "selftest"; alt = the "Wiki link" text for "name".
+-- ns.ShowCopyBox(kind, text, alt): kind "name", "wiki", "probe", "report", "selftest" or "way"; alt = the "Wiki link" text for "name".
 function ns.ShowCopyBox(kind, text, alt)
     if not text or text == "" then return end
     local which = COPY_DIALOG[kind] or COPY_DIALOG.wiki

@@ -13,13 +13,21 @@ local PROBE_MAX = ns.COPY_MAX or 2000    -- the copy box's letter limit (Core)
 local PLANNED_ATLASES = {
     "Waypoint-MapPin-Untracked", "Waypoint-MapPin-Highlight", "UI-QuestTracker-Header",
     "common-icon-checkmark", "GM-icon-settings",
+    -- ui-review-3: Progress bars (ColoredProgressBarTemplate's art)
+    "common-stat-bar-BG", "common-stat-bar-white", "common-stat-bar-green", "common-stat-bar-Mask",
+    -- ui-review-3: bar behind each piece row
+    "PetList-ButtonBackground",
 }
 local PLANNED_TEMPLATES = {
     "PanelTabButtonTemplate", "MapCanvasPinTemplate", "MaximizeMinimizeButtonFrameTemplate",
     "MainHelpPlateButton", "WowStyle1DropdownTemplate", "GlowBoxTemplate", "UIPanelButtonTemplate",
     "TooltipBackdropTemplate",
+    -- ui-review-3: Progress bars, guide copy view, help arrow
+    "ColoredProgressBarTemplate", "InputScrollFrameTemplate", "GlowBoxArrowTemplate",
+    -- ui-review-3: "Sets complete" count box
+    "InsetFrameTemplate3",
 }
-local PLANNED_FONTS = { "ObjectiveTrackerLineFont", "GameFontHighlightSmall" }
+local PLANNED_FONTS = { "ObjectiveTrackerLineFont", "GameFontHighlightSmall", "GameFontNormalMed2" }
 
 local function IsFunc(f) return type(f) == "function" end
 local function YesNo(b) return b and "yes" or "no" end
@@ -144,7 +152,9 @@ local CHECKS = {
     end },
     { "Waypoint API", function()
         return Has({ "C_Map.SetUserWaypoint", "C_Map.CanSetUserWaypointOnMap",
-            "C_SuperTrack.SetSuperTrackedUserWaypoint", "UiMapPoint.CreateFromCoordinates" })
+            "C_SuperTrack.SetSuperTrackedUserWaypoint", "UiMapPoint.CreateFromCoordinates",
+            -- beta.9 Way button: runtime zone lookup (Forever-only zones) and map names
+            "C_Map.GetMapChildrenInfo", "C_Map.GetMapInfo" })
     end },
     { "Current map", function()
         local ok, mapID = Call("C_Map.GetBestMapForUnit", "player")

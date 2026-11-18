@@ -25,12 +25,26 @@ Theme.templates = {
     -- "This character / Whole account" choice (a plain button that switches if missing).
     tab        = { "PanelTabButtonTemplate" },
     dropdown   = { "WowStyle1DropdownTemplate" },
+    -- ui-review-3: "Sets complete" count box under the title bar (the journals' count box,
+    -- CollectionsCountTemplate inherits it; Mainline UIPanelTemplates.xml); a dark box if missing.
+    countBox   = { "InsetFrameTemplate3" },
+    -- ui-review-3: Progress bars (Forever's Skills / Reputation bar; our StatusBar if missing),
+    -- the guide's copy view (bordered multi-line box; plain ScrollFrame + EditBox if missing)
+    -- and the first-time help's arrow at the gear (same art by file, else the gold line).
+    progressBar = { "ColoredProgressBarTemplate" },
+    copyBox     = { "InputScrollFrameTemplate" },
+    helpArrow   = { "GlowBoxArrowTemplate" },
+    -- Inspect strip under Blizzard's inspect window: a tooltip box (colours.inspectBg box if missing).
+    inspectStrip = { "TooltipBackdropTemplate" },
 }
 
 Theme.art = {
     -- Piece rows (36 px, pet-list style).
     rowHover     = { atlas = "PetList-ButtonHighlight", file = "Interface\\QuestFrame\\UI-QuestTitleHighlight", blend = "ADD" },
     rowSelected  = { atlas = "PetList-ButtonSelect",    file = "Interface\\QuestFrame\\UI-QuestTitleHighlight" },
+    -- ui-review-3: bar behind each piece row (Mount/Pet journal and Wardrobe set rows);
+    -- a faint colour band if the atlas is missing (PieceList BuildRow).
+    rowBackground = { atlas = "PetList-ButtonBackground", color = { 1, 1, 1, 0.06 } },
     -- Set list rows (22 px text rows): Settings-list bars, else the pet-list art, else the quest file.
     listHover    = { atlases = { "Options_List_Hover", "PetList-ButtonHighlight" }, file = "Interface\\QuestFrame\\UI-QuestTitleHighlight", blend = "ADD" },
     listSelected = { atlases = { "Options_List_Active", "PetList-ButtonSelect" },   file = "Interface\\QuestFrame\\UI-QuestTitleHighlight" },
@@ -92,28 +106,58 @@ Theme.art = {
         icon      = "Interface\\common\\help-i",
         ring      = "Interface\\Minimap\\MiniMap-TrackingBorder",
         highlight = "Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight",
-        size = 64, iconSize = 46, ringX = 12, ringY = -13, screen = 22,
+        size = 64, iconSize = 46, ringX = 12, ringY = -13, screen = 24,
     },
     -- First-time help: line from the "4. Settings" note up to the gear button.
     helpLineWidth = 2,
+    -- First-time help: arrow on note 4 pointing up at the gear (GlowBoxArrowTemplate's down
+    -- arrow turned up with HelpPlateArrowUp's coords; without the template the same file is
+    -- drawn by hand). Coords = left, right, top, bottom.
+    helpArrow = { file = "Interface\\TalentFrame\\TalentFrame-Parts",
+        up     = { 0.78515625, 0.99218750, 0.58789063, 0.54687500 },
+        glowUp = { 0.40625000, 0.66015625, 0.82812500, 0.77343750 },
+        w = 53, h = 21, glowW = 65, glowH = 28, glowAlpha = 0.5 },
     -- beta.8 tracking star on set and piece rows: the auction house / pet journal favourite
     -- star, else the raid target star icon.
     star = { atlases = { "auctionhouse-icon-favorite", "PetJournal-FavoritesIcon" },
-        file = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_1", size = 12 },
-    -- beta.8 Progress page bars (review-ui 5): Blizzard's status bar texture, filled in
-    -- Theme.CountColorObj, dark backing with a 1 px darker edge.
-    progressBar = { file = "Interface\\TargetingFrame\\UI-StatusBar",
+        file = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_1", size = 14 },
+    -- Progress page bars (ui-review-3): ColoredProgressBarTemplate with its white fill tinted
+    -- in Theme.CountColor * tint (darker, so the white count stays readable), the darker
+    -- green atlas when complete. Without the template: our StatusBar with `file` on a dark
+    -- backing (`bg`) with a 1 px darker edge (`edge`), `height` px tall.
+    progressBar = { atlas = "common-stat-bar-white", complete = "common-stat-bar-green",
+        track = "common-stat-bar-BG", tint = 0.75, barHeight = 24,
+        file = "Interface\\TargetingFrame\\UI-StatusBar",
         bg = { 0, 0, 0, 0.45 }, edge = { 0, 0, 0, 0.9 }, height = 14 },
+    -- beta.9 guide Way button: the game's own map pin (Waypoint-MapPin-*), hover = its highlight
+    -- (ADD). No atlas on this client: the button shows the word L.WAY_FALLBACK ("Way") in link colours.
+    wayPin = { atlas = "Waypoint-MapPin-Untracked", hover = "Waypoint-MapPin-Highlight" },
 }
 
 Theme.sizes = {
     check = 24,        -- every check box
-    -- Bottom tabs: top edge 8 px under the window, below the metal border's bottom corners
-    -- (ButtonFrameTemplateNoPortrait layout: BottomLeft/RightCorner y = -8), so no tab sits
-    -- under the border art; tab 32 px + 8 = how far they hang below (FitToScreen, clamp).
-    tabOffsetY = -8,
-    tabOverhang = 40,
-    progressRow = 22,  -- one bar row on the Progress page
+    -- Bottom tabs hang from under the window's bottom border like CharacterFrame's
+    -- (TOPLEFT on the window's BOTTOMLEFT 11, +2; the tab's level is under the border's, so
+    -- the border draws over its top 2 px); tab 32 px - 2 = how far they hang below
+    -- (FitToScreen, clamp). tabGap = px between tabs (CharacterFrame: 1).
+    tabOffsetY = 2,
+    tabOverhang = 30,
+    tabGap = 1,
+    progressRow = 26,  -- one bar row on the Progress page (the template bar is 24 px)
+    way = 14,          -- guide page Way button (map pin), at the right edge of its row
+    wayGap = 4,        -- px between a row's text and the Way button column
+    -- Inspect strip: inset from the inspect window's sides, height, gap under it, text padding.
+    inspectStrip = { inset = 4, height = 24, gap = -2, pad = 10 },
+    -- List rows: piece rows (pet-list style) with a gap between them; set list text rows and
+    -- the fixed width of their "have/total" count (so the faction icons line up).
+    pieceRow = 36,
+    pieceRowGap = 2,
+    setRow = 22,
+    setCount = 32,
+    -- Minimap button (classic LibDBIcon layout): button, ring (border) and background circle;
+    -- icon size for Interface\Icons files (cropped) and for whole textures; offsets from TOPLEFT.
+    minimapButton = { button = 31, border = 53, background = 20, iconCropped = 17, iconWhole = 20,
+        x = 7, y = -5, croppedY = -6 },
 }
 
 Theme.fonts = {
@@ -122,72 +166,97 @@ Theme.fonts = {
     text     = "GameFontHighlight",
     small    = "GameFontHighlightSmall",
     disabled = "GameFontDisableSmall",
+    countLabel = "GameFontNormalSmall",     -- "Sets complete:" (gold)
+    countValue = "GameFontHighlightSmall",  -- "12 / 186" (white)
+    -- Guide page section headings (14 px gold); the normal font if the client lacks it.
+    guideHead = _G.GameFontNormalMed2 and "GameFontNormalMed2" or "GameFontNormal",
 }
 
 local function Color(global, r, g, b)
     return _G[global] or CreateColor(r, g, b, 1)
 end
 
--- Missing pieces are grey, like Blizzard's collections (red would read as "can't use").
+-- Palette: the few base colours (Blizzard's font colours, own values as fallback). Every
+-- role in Theme.colors below points at one of these, so a theme changes a colour here once.
+Theme.palette = {
+    gold      = Color("NORMAL_FONT_COLOR", 1, 0.82, 0),
+    white     = Color("HIGHLIGHT_FONT_COLOR", 1, 1, 1),
+    grey      = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),
+    lightGrey = Color("LIGHTGRAY_FONT_COLOR", 0.8, 0.8, 0.8),
+    green     = Color("GREEN_FONT_COLOR", 0.1, 1, 0.1),
+    orange    = Color("ORANGE_FONT_COLOR", 1, 0.5, 0.25),
+    blue      = Color("LIGHTBLUE_FONT_COLOR", 0.53, 0.67, 1),
+    link      = Color("LINK_FONT_COLOR", 0.4, 0.73, 1),
+}
+local P = Theme.palette
+
+-- Colour roles (what each colour is for). Missing pieces are grey, like Blizzard's
+-- collections (red would read as "can't use").
 Theme.colors = {
-    have      = Color("GREEN_FONT_COLOR", 0.1, 1, 0.1),
-    look      = Color("LIGHTBLUE_FONT_COLOR", 0.53, 0.67, 1),
-    need      = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),
-    partial   = Color("NORMAL_FONT_COLOR", 1, 0.82, 0),
-    none      = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),
-    text      = Color("HIGHLIGHT_FONT_COLOR", 1, 1, 1),
-    title     = Color("HIGHLIGHT_FONT_COLOR", 1, 1, 1),          -- tooltip titles
-    armorLine = Color("NORMAL_FONT_COLOR", 1, 0.82, 0),          -- armor type in tooltips
-    subtle    = Color("LIGHTGRAY_FONT_COLOR", 0.8, 0.8, 0.8),    -- secondary lines
-    loading   = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),         -- "Loading..."
-    hint      = Color("GREEN_FONT_COLOR", 0.1, 1, 0.1),          -- "Click: ..." lines
-    link      = Color("LINK_FONT_COLOR", 0.4, 0.73, 1),          -- link buttons ("Copy name", "Wiki link")
-    linkHover = Color("HIGHLIGHT_FONT_COLOR", 1, 1, 1),
-    removed   = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),         -- names of sets removed from the game
-    removedSelected = Color("LIGHTGRAY_FONT_COLOR", 0.8, 0.8, 0.8), -- removed set's name on the selected bar
-    menuChoice = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),        -- current choice after a filter-menu label
-    bonusTitle = Color("NORMAL_FONT_COLOR", 1, 0.82, 0),         -- "Set name (2/8)" atop the set bonus tooltip
-    bonusOn   = Color("GREEN_FONT_COLOR", 0.1, 1, 0.1),          -- set bonus in effect / enough pieces
-    bonusOff  = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),         -- set bonus not reached
+    -- beta.9 search results (Search.lua / SetList; part C): group header, grey "(place)", "n more" rows
+    searchHead = P.gold,
+    searchSub  = P.grey,
+    searchMore = P.link,
+    have      = P.green,
+    look      = P.blue,
+    need      = P.grey,
+    partial   = P.gold,
+    none      = P.grey,
+    text      = P.white,
+    title     = P.white,                -- tooltip titles
+    armorLine = P.gold,                 -- armor type in tooltips
+    subtle    = P.lightGrey,            -- secondary lines
+    loading   = P.grey,                 -- "Loading..."
+    hint      = P.green,                -- "Click: ..." lines
+    link      = P.link,                 -- link buttons ("Copy name", "Wiki link")
+    linkHover = P.white,
+    removed   = P.grey,                 -- names of sets removed from the game
+    removedSelected = P.lightGrey,      -- removed set's name on the selected bar
+    menuChoice = P.grey,                -- current choice after a filter-menu label
+    bonusTitle = P.gold,                -- "Set name (2/8)" atop the set bonus tooltip
+    bonusOn   = P.green,                -- set bonus in effect / enough pieces
+    bonusOff  = P.grey,                 -- set bonus not reached
     -- Guide page
-    guideHead  = Color("NORMAL_FONT_COLOR", 1, 0.82, 0),         -- section headings (gold)
-    guideSub   = Color("HIGHLIGHT_FONT_COLOR", 1, 1, 1),         -- "Boss Drop: Onyxia"
-    guideLabel = Color("NORMAL_FONT_COLOR", 1, 0.82, 0),         -- "Where", "Level" ... (gold, like PaperDoll labels)
-    guideText  = Color("HIGHLIGHT_FONT_COLOR", 1, 1, 1),         -- values and paragraphs
-    guideHere  = Color("GREEN_FONT_COLOR", 0.1, 1, 0.1),         -- the chain step for this piece
-    guideNote  = Color("LIGHTGRAY_FONT_COLOR", 0.8, 0.8, 0.8),   -- grey line under a bullet ("Drops from: ...")
-    guideHint  = Color("NORMAL_FONT_COLOR", 1, 0.82, 0),         -- copy view: "Text is selected ..."
+    guideHead  = P.gold,                -- section headings (gold)
+    guideSub   = P.white,               -- "Boss Drop: Onyxia"
+    guideLabel = P.gold,                -- "Where", "Level" ... (gold, like PaperDoll labels)
+    guideText  = P.white,               -- values and paragraphs
+    guideHere  = P.green,               -- the chain step for this piece
+    guideNote  = P.lightGrey,           -- grey line under a bullet ("Drops from: ...")
+    guideHint  = P.gold,                -- copy view: "Text is selected ..."
     copyHighlight = CreateColor(0.3, 0.55, 1, 0.5),              -- copy view: selected text (GetRGBA)
     -- WoW Forever flags (guide lines, list rows, tooltips)
-    flagClassic = Color("LIGHTGRAY_FONT_COLOR", 0.8, 0.8, 0.8),  -- "Not confirmed on WoW Forever yet"
-    flagChecked = Color("GREEN_FONT_COLOR", 0.1, 1, 0.1),        -- "Checked on WoW Forever"
-    flagLater   = Color("ORANGE_FONT_COLOR", 1, 0.5, 0.25),      -- "Not yet released on WoW Forever"
-    later       = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),       -- names/counts of sets and pieces not out yet
-    laterSelected = Color("LIGHTGRAY_FONT_COLOR", 0.8, 0.8, 0.8), -- a not-out-yet set's name on the selected bar
+    flagClassic = P.lightGrey,          -- "Not confirmed on WoW Forever yet"
+    flagChecked = P.green,              -- "Checked on WoW Forever"
+    flagLater   = P.orange,             -- "Not yet released on WoW Forever"
+    later       = P.grey,               -- names/counts of sets and pieces not out yet
+    laterSelected = P.lightGrey,        -- a not-out-yet set's name on the selected bar
     -- Hidden sets (listed only with "Show hidden sets")
-    hidden         = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),
-    hiddenSelected = Color("LIGHTGRAY_FONT_COLOR", 0.8, 0.8, 0.8),
+    hidden         = P.grey,
+    hiddenSelected = P.lightGrey,
     -- Stats tooltip: can your class wear it
-    fitYes = Color("GREEN_FONT_COLOR", 0.1, 1, 0.1),
-    fitNo  = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),
+    fitYes = P.green,
+    fitNo  = P.grey,
     -- First-time help
     helpDim    = CreateColor(0, 0, 0, 0.6),                       -- over the three panels (GetRGBA)
-    helpHead   = Color("NORMAL_FONT_COLOR", 1, 0.82, 0),          -- note headings (gold)
-    helpText   = Color("HIGHLIGHT_FONT_COLOR", 1, 1, 1),          -- note text (white)
-    helpLine   = Color("NORMAL_FONT_COLOR", 1, 0.82, 0),          -- line to the gear button
+    helpHead   = P.gold,                -- note headings (gold)
+    helpText   = P.white,               -- note text (white)
+    helpLine   = P.gold,                -- line to the gear button
     helpNoteBg = CreateColor(0.05, 0.05, 0.05, 0.92),             -- note box when no template exists
     -- Settings panel: grey data line
-    settingsData = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),
-    -- Item tooltip line / inspect line / broker (review-ui 8): "Gear Set:" gold, set name white,
-    -- count in CountColor, "- you need this" and "Needed by" grey
-    tipLabel = Color("NORMAL_FONT_COLOR", 1, 0.82, 0),
-    tipName  = Color("HIGHLIGHT_FONT_COLOR", 1, 1, 1),
-    tipNote  = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),
-    inspectBg = CreateColor(0, 0, 0, 0.6),                        -- strip under the inspect window (GetRGBA)
-    -- beta.8 Progress page / tracking / gold
-    progressHead = Color("NORMAL_FONT_COLOR", 1, 0.82, 0),       -- section headings (gold)
-    progressNote = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),      -- dates, "Not counted: ..."
-    gold         = Color("LIGHTGRAY_FONT_COLOR", 0.8, 0.8, 0.8), -- "12g" on piece rows
+    settingsData = P.grey,
+    -- Item tooltip line / inspect line / broker (review-ui 8, review 3): "Gear Set:" gold, set name
+    -- white, count in CountColor, "have" and "Needed by" grey, "- you need this" white
+    tipLabel = P.gold,
+    tipName  = P.white,
+    tipNote  = P.grey,
+    tipNeed  = P.white,                 -- "- you need this" (white, stands out from grey set bonuses)
+    inspectBg = CreateColor(0, 0, 0, 0.6),                        -- inspect strip without its template (GetRGBA)
+    -- beta.8 Progress page / tracking / money
+    progressHead = P.gold,              -- section headings (gold)
+    progressNote = P.grey,              -- dates, "Not counted: ..."
+    money        = P.lightGrey,         -- "12g" money text (was `gold`)
+    countBoxBg   = CreateColor(0, 0, 0, 0.5),                    -- count box when InsetFrameTemplate3 is missing (GetRGBA)
 }
 
 -- Effort word colours (Data:GetEffort level): 0 Done grey, 1 Low green, 2 Medium gold,
@@ -345,7 +414,9 @@ function Theme.SetModelBackground(tex)
 end
 
 function Theme.Font(fs, key)
-    fs:SetFontObject(Theme.fonts[key] or Theme.fonts.text)
+    local name = Theme.fonts[key] or Theme.fonts.text
+    if type(name) == "string" and _G[name] == nil then name = Theme.fonts.text end
+    fs:SetFontObject(name)
 end
 
 function Theme.ClassColor(classFile)
