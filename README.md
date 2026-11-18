@@ -4,7 +4,7 @@ Keeps track of all known armor sets in the game, in one window with three parts:
 
 A World of Warcraft addon for **WoW Forever**.
 
-> **Beta:** this is a beta (v1.0.0-beta.5). It has not been fully tested in the game yet, so things may not work as they should. Please tell us what you find.
+> **Beta:** this is a beta (v1.0.0-beta.6). It has not been fully tested in the game yet, so things may not work as they should. Please tell us what you find.
 
 ## Install
 
@@ -15,7 +15,7 @@ A World of Warcraft addon for **WoW Forever**.
 
 ## How to use
 
-Type `/gs` (or `/gearset`) to open or close the window. You can also click the minimap button, or pick **Gear Set** in the Addon Compartment (the addons button by the minimap). Esc closes the window (the X button also works in combat). The first time you open it, and after an update, four short notes explain the window; click **Got it**, click anywhere or press Esc to close them. Open them again with the **?** on the portrait or `/gs help`. You can drag the window to move it. The window is large (1060x620); on a small screen or at a large UI scale, it shrinks to fit. You can also set a key in Key Bindings > Gear Set > "Open/close Gear Set" (no key is set by default).
+Type `/gs` (or `/gearset`) to open or close the window. You can also click the minimap button, or pick **Gear Set** in the Addon Compartment (the addons button by the minimap). Esc closes the window (the X button also works in combat). The first time you open it, and after an update, four short notes explain the window; click **Got it**, click anywhere or press Esc to close them. Open them again with the **i** button in the top bar, left of the gear, or `/gs help`. You can drag the window to move it. The window is large (1060x620); on a small screen or at a large UI scale, it shrinks to fit. You can also set a key in Key Bindings > Gear Set > "Open/close Gear Set" (no key is set by default).
 
 ### Minimap button
 

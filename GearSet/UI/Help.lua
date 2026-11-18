@@ -112,7 +112,7 @@ function Help:Build()
         T("HELP_PIECES", "What you have and what you still need. Click a piece to see how to get it, step by step."))
     notes[3]:SetPoint("TOPLEFT", UI.right, "TOPLEFT", 14, -40)
     notes[4] = MakeNote(f, T("HELP_SETTINGS_H", "4. Settings"),
-        T("HELP_SETTINGS", "The gear button: minimap button, hidden sets, Report a problem. Reopen this help with ? or /gs help."))
+        T("HELP_SETTINGS", "The gear button: minimap button, hidden sets, Report a problem. Reopen this help with the i button or /gs help."))
     local gear = UI.gear
     if gear then
         -- Note 4 hangs below the gear button with a thin gold line up to it.

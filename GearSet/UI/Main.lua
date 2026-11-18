@@ -115,46 +115,37 @@ local function MakeGearButton(f)
     return b
 end
 
--- "?" on the portrait: our own button with Blizzard's help-plate art, else a "?" link.
+-- Help button in the title bar, just left of the gear: our own button with Blizzard's
+-- help-plate "i" art, else a "?" link.
 local function HelpOnClick()
     if ns.Help and ns.Help.Show then ns.Help:Show() end
 end
 local function HelpOnEnter(self)
-    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetOwner(self, "ANCHOR_LEFT")   -- like the gear's (the X is on its right)
     GameTooltip:SetText(T("HELP_BUTTON_TIP", "Show help"), Theme.colors.title:GetRGB())
     GameTooltip:Show()
 end
 
--- Where the "?" goes: the bottom-right of the portrait picture when it has a size,
--- else a fixed spot on the window (the portrait's corner on the classic layout).
-local PORTRAIT_SPOT_X, PORTRAIT_SPOT_Y = 52, -50
-local function PortraitRegion(f)
-    local pc = f.PortraitContainer
-    local list = { pc and pc.portrait, f.portrait, pc }
-    for i = 1, 3 do
-        local r = list[i]
-        if type(r) == "table" and r.GetWidth then
-            local w, h = r:GetWidth(), r:GetHeight()
-            if w and h and w > 1 and h > 1 then return r end
-        end
-    end
-end
-
-local function PlaceHelp(b, f, dx, dy, onWindow)
+-- Where it goes: right side on the gear's left side (HELP_GAP px apart, the gear's proven
+-- title-bar spot), else (no gear, or the gear has no position) where the gear's own
+-- fallback would put it, one button further left. Offsets in window pixels.
+local HELP_GAP = 4
+local HELP_FALLBACK_X, HELP_FALLBACK_Y = -54, -4
+local function PlaceHelp(b, f, onWindow)
     b:ClearAllPoints()
-    local region = not onWindow and PortraitRegion(f)
-    if region then
-        b:SetPoint("CENTER", region, "BOTTOMRIGHT", dx, dy)
+    local s = (b.GetScale and b:GetScale()) or 1   -- offsets count in the button's own scale
+    if not s or s <= 0 then s = 1 end
+    local gear = UI.gear
+    if gear and not onWindow then
+        b:SetPoint("RIGHT", gear, "LEFT", -HELP_GAP / s, 0)
     else
-        local s = (b.GetScale and b:GetScale()) or 1   -- offsets count in the button's own scale
-        if not s or s <= 0 then s = 1 end
-        b:SetPoint("CENTER", f, "TOPLEFT", PORTRAIT_SPOT_X / s, PORTRAIT_SPOT_Y / s)
+        b:SetPoint("TOPRIGHT", f, "TOPRIGHT", HELP_FALLBACK_X / s, HELP_FALLBACK_Y / s)
     end
 end
 
 local function MakeHelpLink(f, onWindow)
     local b = ns.Widgets.LinkButton(f, "?", HelpOnEnter, HelpOnClick, "link")
-    PlaceHelp(b, f, -6, 6, onWindow)
+    PlaceHelp(b, f, onWindow)
     b:SetFrameLevel(UI.TopLevelOf(f))
     b:Show()
     return b
@@ -169,7 +160,8 @@ local function MakeHelpButton(f)
     local b = CreateFrame("Button", nil, f)
     local size, iconSize = art.size or 64, art.iconSize or 46
     b:SetSize(size, size)
-    b:SetScale(art.scale or 0.6)
+    -- Drawn in the art's own 64 px layout, scaled to `screen` px in the window.
+    b:SetScale((art.screen or 22) / size)
     local icon = b:CreateTexture(nil, "BACKGROUND")
     icon:SetSize(iconSize, iconSize)
     icon:SetPoint("CENTER")
@@ -195,7 +187,7 @@ local function MakeHelpButton(f)
     b:SetScript("OnClick", HelpOnClick)
     b:SetScript("OnEnter", HelpOnEnter)
     b:SetScript("OnLeave", GameTooltip_Hide)
-    PlaceHelp(b, f, -2, 4)
+    PlaceHelp(b, f)
     b.gsArt = true
     b:SetFrameLevel(UI.TopLevelOf(f))
     b:Show()

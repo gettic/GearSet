@@ -229,7 +229,7 @@ ns.L = {
     HELP_PIECES_H = "3. Pieces",
     HELP_PIECES = "What you have and what you still need. Click a piece to see how to get it, step by step.",
     HELP_SETTINGS_H = "4. Settings",
-    HELP_SETTINGS = "The gear button: minimap button, hidden sets, Report a problem. Reopen this help with ? or /gs help.",
+    HELP_SETTINGS = "The gear button: minimap button, hidden sets, Report a problem. Reopen this help with the i button or /gs help.",
     MINIMAP_TIP_SETTINGS = "Right-click: settings.",
     -- Hidden sets
     HIDE_SET = "Hide this set",

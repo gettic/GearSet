@@ -92,6 +92,23 @@ local function ScreenRect(o)
     return { l = l * es, b = b * es, r = (l + w) * es, t = (b + h) * es, w = w, h = h }
 end
 
+-- The scroll frame that holds o as its scroll child, else nil.
+local function ScrollFrameOf(o)
+    local s1, parent = Read(o, "GetParent")
+    if s1 ~= "ok" or type(parent) ~= "table" then return nil end
+    local s2, child = Read(parent, "GetScrollChild")
+    if s2 == "ok" and child == o then return parent end
+    return nil
+end
+
+-- Screen position of a frame as "x,y wxh" (left, top, size in screen pixels), "?" if none.
+local function WhereText(o)
+    local r = o and ScreenRect(o)
+    if type(r) ~= "table" then return r == "secret" and "secret" or "?" end
+    return ("%d,%d %dx%d"):format(math.floor(r.l + 0.5), math.floor(r.t + 0.5),
+        math.floor(r.r - r.l + 0.5), math.floor(r.t - r.b + 0.5))
+end
+
 local function Overlap(a, b)
     local w = math.min(a.r, b.r) - math.max(a.l, b.l)
     local h = math.min(a.t, b.t) - math.max(a.b, b.b)
@@ -328,12 +345,15 @@ local function CheckPart(p, win, coverers)
     if st == "ok" and not vis then return Problem("UI", p.name, "shown but its parent is hidden") end
 
     -- Position (the beta.2 "?" bug: shown, but no usable anchor, so never drawn).
+    -- A scroll child (the copy view's text box) has only a size, no anchor of its own: the
+    -- game places it inside its scroll frame, so measure the scroll frame instead.
+    local geo = ScrollFrameOf(o) or o
     Count()
     local valid
-    st, valid = Read(o, "IsRectValid")
+    st, valid = Read(geo, "IsRectValid")
     if st == "secret" then return Skip(p.name, "(secret)") end
     if st == "ok" and valid == false then return Problem("UI", p.name, "no position") end
-    local rect = ScreenRect(o)
+    local rect = ScreenRect(geo)
     if rect == "secret" then return Skip(p.name, "(secret)") end
     if rect == nil then return Problem("UI", p.name, "no position") end
 
@@ -932,6 +952,13 @@ end
 
 local function StepMain()
     CheckGroup(ST.MainParts(), Win())
+    Guard("help where", function()
+        local UI = ns.UI or {}
+        local b = UI.helpButton
+        if b then
+            Info(("help %s at %s (window %s)"):format(b.gsArt and "art" or "link", WhereText(b), WhereText(Win())))
+        end
+    end)
     Guard("minimap", CheckMinimap)
     Guard("esc", CheckEsc, "window")
     if run.mode == "full" then return OpenGuide() end

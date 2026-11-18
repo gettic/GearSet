@@ -80,14 +80,15 @@ Theme.art = {
     },
     -- Gear button left of the window's close button (opens the settings).
     settingsIcon = { atlas = "GM-icon-settings", file = "Interface\\Buttons\\UI-OptionsButton", size = 20 },
-    -- "?" on the portrait: the art of Blizzard's MainHelpPlateButton by path (64 px layout:
-    -- "i" 46 px centred, ring 64 px at +12/-13, highlight 46 px at -1/+1), shown at `scale`.
+    -- Help button in the title bar left of the gear: the art of Blizzard's MainHelpPlateButton
+    -- by path (64 px layout: "i" 46 px centred, ring 64 px at +12/-13, highlight 46 px at
+    -- -1/+1), scaled so the 64 px box is `screen` px in the window.
     -- Main.lua uses a "?" text link if the "i" doesn't load.
     helpIcon = {
         icon      = "Interface\\common\\help-i",
         ring      = "Interface\\Minimap\\MiniMap-TrackingBorder",
         highlight = "Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight",
-        size = 64, iconSize = 46, ringX = 12, ringY = -13, scale = 0.6,
+        size = 64, iconSize = 46, ringX = 12, ringY = -13, screen = 22,
     },
     -- First-time help: line from the "4. Settings" note up to the gear button.
     helpLineWidth = 2,
