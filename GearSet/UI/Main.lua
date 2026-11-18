@@ -14,10 +14,16 @@ local function SavePosition(frame)
     if point then ns.db.point = { point, relPoint, x, y } end
 end
 
+-- Middle of the screen, window + bottom tabs together (the tabs hang below the window).
+local function Center(frame)
+    local o = (Theme.sizes and Theme.sizes.tabOverhang) or 0
+    frame:SetPoint("CENTER", UIParent, "CENTER", 0, o / 2)
+end
+
 function UI:ResetPosition()
     if not self.frame then return end
     self.frame:ClearAllPoints()
-    self.frame:SetPoint("CENTER")
+    Center(self.frame)
 end
 
 local function RestorePosition(frame)
@@ -30,15 +36,18 @@ local function RestorePosition(frame)
     end
     ns.db.point = nil
     frame:ClearAllPoints()
-    frame:SetPoint("CENTER")
+    Center(frame)
 end
 
 -- Shrink the window (never grow it) so it fits small or 4:3 screens at a large UI scale.
+-- The bottom tabs hang below the window (Theme.sizes.tabOverhang), so they count too.
 local FIT_MARGIN = 20
+local function TabOverhang() return (Theme.sizes and Theme.sizes.tabOverhang) or 32 end
 local function FitToScreen(frame)
     local w, h = frame:GetWidth(), frame:GetHeight()
     local sw, sh = UIParent:GetWidth(), UIParent:GetHeight()
     if not (w and h and sw and sh) or w <= 0 or h <= 0 then return end
+    h = h + TabOverhang()
     local scale = math.min(1, sw / (w + FIT_MARGIN), sh / (h + FIT_MARGIN))
     if scale > 0 and math.abs(frame:GetScale() - scale) > 0.001 then
         frame:SetScale(scale)
@@ -229,6 +238,116 @@ local function MakeInset(parent, x1, x2)
     return inset
 end
 
+-- ---------------------------------------------------------------------------
+-- Bottom tabs (review-ui 2/3): Blizzard's PanelTabButtonTemplate on our own window only,
+-- else plain panel buttons. Each tab shows its own frames; `onShow` runs after a switch.
+UI.tabs, UI.tabByKey = {}, {}
+
+local function PanelCall(name, ...)
+    local fn = _G[name]
+    if type(fn) == "function" then pcall(fn, ...) end
+end
+
+local function MakeTab(f, i, label)
+    local tab, tmpl = Theme.CreateFrame("Button", "GearSetFrameTab" .. i, f, "tab")
+    if not tmpl then
+        if tab then tab:Hide() end
+        tab = Theme.CreateFrame("Button", nil, f, "button")
+        tab:SetSize(100, 24)
+    end
+    tab.gsTemplate = tmpl ~= nil
+    tab:SetID(i)
+    tab:SetText(label)
+    if tab.gsTemplate then
+        PanelCall("PanelTemplates_TabResize", tab, 0)
+    else
+        local w = tab.GetTextWidth and tab:GetTextWidth()
+        if w and w > 0 then tab:SetWidth(math.max(90, w + 30)) end
+    end
+    if i == 1 then
+        tab:SetPoint("TOPLEFT", f, "BOTTOMLEFT", 11, (Theme.sizes and Theme.sizes.tabOffsetY) or -8)
+    else
+        tab:SetPoint("TOPLEFT", UI.tabs[i - 1].button, "TOPRIGHT", 3, 0)
+    end
+    tab:SetScript("OnClick", function(self)
+        PlaySound(SOUNDKIT.IG_CHARACTER_INFO_TAB or SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+        UI:ShowTab(self.gsKey)
+    end)
+    tab:Show()
+    return tab
+end
+
+-- frames: list of frames shown only on this tab (or a function returning it).
+function UI:AddTab(key, label, frames, onShow)
+    local f = self.frame
+    local i = #self.tabs + 1
+    local t = { key = key, frames = frames, onShow = onShow, index = i }
+    self.tabs[i] = t
+    self.tabByKey[key] = t
+    t.button = MakeTab(f, i, label)
+    t.button.gsKey = key
+    if t.button.gsTemplate then
+        f.numTabs = i
+        PanelCall("PanelTemplates_SetNumTabs", f, i)
+    end
+    return t
+end
+
+local function TabFrames(t)
+    local list = t.frames
+    if type(list) == "function" then list = list() end
+    return list or {}
+end
+
+-- Switch tab (default "sets"); the other tabs' frames hide.
+function UI:ShowTab(key)
+    self:Build()
+    local want = self.tabByKey[key] or self.tabs[1]
+    if not want then return end
+    self.tab = want.key
+    for _, t in ipairs(self.tabs) do
+        if t ~= want then
+            for _, fr in ipairs(TabFrames(t)) do fr:Hide() end
+        end
+    end
+    for _, fr in ipairs(TabFrames(want)) do fr:Show() end
+    local f = self.frame
+    if want.button.gsTemplate then
+        PanelCall("PanelTemplates_SetTab", f, want.index)
+    end
+    for _, t in ipairs(self.tabs) do
+        if not t.button.gsTemplate then
+            t.button:SetEnabled(t ~= want)          -- plain buttons: the open tab is greyed
+        end
+    end
+    if want.onShow then want.onShow() end
+end
+
+function UI:CurrentTab() return self.tab or "sets" end
+
+local function MakeTabs(self, f)
+    self:AddTab("sets", T("TAB_SETS", "Sets"), function()
+        local PV = ns.Preview or {}
+        return { self.left, self.mid, self.right, PV.reset, PV.check }
+    end, function() UI:RefreshAll() end)
+    if ns.Progress and ns.Progress.Build then
+        local page = MakeInset(f, 4, nil)
+        page:Hide()
+        self.progressPage = page
+        ns.Progress:Build(page)
+        self:AddTab("progress", T("TAB_PROGRESS", "Progress"), { page }, function() ns.Progress:Refresh() end)
+    end
+    -- Help notes point at the Sets tab's panels.
+    if ns.Help and ns.Help.Show and hooksecurefunc then
+        hooksecurefunc(ns.Help, "Show", function() if UI.tab ~= "sets" then UI:ShowTab("sets") end end)
+    end
+    self.tab = "sets"
+    PanelCall("PanelTemplates_SetTab", f, 1)
+    for _, t in ipairs(self.tabs) do
+        if not t.button.gsTemplate then t.button:SetEnabled(t.key ~= "sets") end
+    end
+end
+
 function UI:Build()
     if self.frame then return end
     local f = Theme.CreateFrame("Frame", "GearSetFrame", UIParent, "window")
@@ -237,6 +356,7 @@ function UI:Build()
     f:SetFrameStrata("HIGH")
     f:SetToplevel(true)
     f:SetClampedToScreen(true)
+    if f.SetClampRectInsets then f:SetClampRectInsets(0, 0, 0, -TabOverhang()) end   -- tabs stay on screen
     f:SetMovable(true)
     f:EnableMouse(true)
     f:RegisterForDrag("LeftButton")
@@ -272,6 +392,7 @@ function UI:Build()
 
     self.gear = MakeGearButton(f)
     self.helpButton = MakeHelpButton(f)
+    MakeTabs(self, f)
 
     f:SetScript("OnShow", function()
         FitToScreen(f)
@@ -282,6 +403,7 @@ function UI:Build()
         if f.SetPortraitToUnit then f:SetPortraitToUnit("player") end
         ns.Owned:Invalidate()
         UI:RefreshAll()
+        if UI.tab == "progress" and ns.Progress then ns.Progress:Refresh() end
         if ns.Help and ns.Help.MaybeShowFirstTime then ns.Help:MaybeShowFirstTime() end
     end)
     f:SetScript("OnHide", function()
@@ -307,6 +429,7 @@ end
 
 -- Pick a set (from the list) and show it in the preview and piece list.
 function UI:SelectSet(key)
+    if self.tab and self.tab ~= "sets" then self:ShowTab("sets") end
     ns.db.lastSet = key
     local set = ns.Data:GetSet(key)
     ns.SetList:Refresh()
@@ -325,4 +448,5 @@ end
 function UI:RefreshCounts()
     ns.SetList:Refresh()
     ns.PieceList:Refresh()
+    if ns.Progress then ns.Progress:Refresh() end   -- only draws while its tab is shown
 end

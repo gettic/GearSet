@@ -145,6 +145,12 @@ local function SetTooltip(row)
         GameTooltip:AddLine(L.REMOVED_TIP, r, g, b, true)
     end
     SetList.AddFlagLines(GameTooltip, set)
+    SetList.AddGoldLines(GameTooltip, set)
+    local TR = ns.Track
+    if TR and TR.IsSet(set) then
+        GameTooltip:AddLine(T("TRACKED", "Tracked"), Theme.colors.partial:GetRGB())
+    end
+    if TR then Theme.AddHint(GameTooltip, T("TRACK_HINT", "Shift-click: track this set")) end
     if IsHidden(set) then
         Theme.AddHint(GameTooltip, T("HIDDEN_TIP", "Hidden: right-click to show it again."))
     elseif ns.Data and ns.Data.SetHidden then
@@ -153,36 +159,60 @@ local function SetTooltip(row)
     GameTooltip:Show()
 end
 
+-- beta.8: "Gold still needed: 12g" (+ "n pieces can't be bought") from PART B's Gold.lua.
+function SetList.AddGoldLines(tip, set)
+    local P = ns.Progress
+    local text = P and P.SetCostText and P.SetCostText(set)
+    if text then
+        local r, g, b = Theme.colors.subtle:GetRGB()
+        tip:AddLine(text, r, g, b, true)
+    end
+end
+
 -- Hide or show a set (right-click menu), then redraw the list and the settings page.
 function SetList.ToggleHidden(set)
     local D = ns.Data
     if not (set and D and D.SetHidden) then return end
     D.SetHidden(set, not IsHidden(set))
+    if ns.Progress then ns.Progress:Invalidate() end    -- hidden sets aren't counted
     if GameTooltip and GameTooltip.Hide then GameTooltip:Hide() end
     SetList:Refresh()
     if ns.Settings and ns.Settings.Refresh then ns.Settings:Refresh() end
 end
 
--- Row right-click: Blizzard's context menu with the set name and Hide / Show this set.
+-- Row right-click: Blizzard's context menu with the set name, Track, Share in chat and
+-- Hide / Show this set.
 local function RowMenu(row)
     local set = row.set
-    if not (set and ns.Data and ns.Data.SetHidden) then return end
+    if not set then return end
     if not (MenuUtil and MenuUtil.CreateContextMenu) then return end
     local hidden = IsHidden(set)
+    local TR, P = ns.Track, ns.Progress
     MenuUtil.CreateContextMenu(row, function(_, root)
         if root.CreateTitle then root:CreateTitle(set.name) end
-        local text = hidden and T("SHOW_SET", "Show this set") or T("HIDE_SET", "Hide this set")
-        root:CreateButton(text, function() SetList.ToggleHidden(set) end)
+        if TR then
+            local text = TR.IsSet(set) and T("UNTRACK_SET", "Stop tracking this set") or T("TRACK_SET", "Track this set")
+            root:CreateButton(text, function() TR.ToggleSet(set) end)
+        end
+        if P and P.CanShare and P.CanShare() then
+            root:CreateButton(T("SHARE", "Share in chat"), function() P.Share(set) end)
+        end
+        if ns.Data and ns.Data.SetHidden then
+            local text = hidden and T("SHOW_SET", "Show this set") or T("HIDE_SET", "Hide this set")
+            root:CreateButton(text, function() SetList.ToggleHidden(set) end)
+        end
     end)
 end
 
--- Faction mark on a row (PvP / Arathi Basin sets); the name ends left of it.
-local function SetFactionIcon(row, faction, hidden)
+-- Right end of a row, from the right: count, faction mark, tracking star, "hidden" tag;
+-- the name ends left of the last one shown (so the name is cut, never the marks).
+local function SetFactionIcon(row, faction, hidden, tracked)
     local art = Theme.art.faction
     local entry = faction and art and art[faction]
     row.label:ClearAllPoints()
     row.label:SetPoint("LEFT", 8, 0)
     row.tag:ClearAllPoints()
+    row.star:ClearAllPoints()
     local anchor, gap
     if entry then
         Theme.SetArt(row.faction, entry)
@@ -191,6 +221,13 @@ local function SetFactionIcon(row, faction, hidden)
     else
         row.faction:Hide()
         anchor, gap = row.count, -6
+    end
+    if tracked then
+        row.star:SetPoint("RIGHT", anchor, "LEFT", gap, 0)
+        row.star:Show()
+        anchor, gap = row.star, -3
+    else
+        row.star:Hide()
     end
     -- A hidden set's "hidden" tag sits left of the icon / count; the name is cut, not the tag.
     if hidden then
@@ -234,10 +271,18 @@ local function InitRow(row, set)
         row.tag:SetJustifyH("RIGHT")
         row.tag:SetWordWrap(false)
         row.tag:Hide()
+        if ns.Track and ns.Track.MakeStar then
+            row.star = ns.Track.MakeStar(row, "ARTWORK")
+        else
+            row.star = row:CreateTexture(nil, "ARTWORK")
+            row.star:Hide()
+        end
         row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
         row:SetScript("OnClick", function(self, button)
             if button == "RightButton" then
                 RowMenu(self)
+            elseif self.set and IsShiftKeyDown and IsShiftKeyDown() and ns.Track then
+                ns.Track.ToggleSet(self.set)     -- shift-click: track / untrack (no chat link)
             elseif self.set then
                 PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
                 ns.UI:SelectSet(self.set.key)
@@ -264,7 +309,7 @@ local function InitRow(row, set)
         nameColor = selected and Theme.colors.laterSelected or Theme.colors.later
     end
     row.label:SetTextColor(nameColor:GetRGB())
-    SetFactionIcon(row, set.faction, hidden)
+    SetFactionIcon(row, set.faction, hidden, ns.Track and ns.Track.IsSet(set))
     local have, total = ns.Owned:SetCount(set)
     row.count:SetText(("%d/%d"):format(have, total))
     if set.unreleased then row.count:SetTextColor(Theme.colors.later:GetRGB())
@@ -275,10 +320,10 @@ end
 -- Filter defaults: Core.lua's defaults.filters (ns.FILTER_DEFAULTS). "Only my class"
 -- and "Only my faction" are on by default, so they only count as changed when off.
 local FALLBACK_DEFAULTS = { class = 0, armor = 0, usable = true, hideComplete = false,
-    showRemoved = false, kind = "", myFaction = true, showHidden = false }
+    showRemoved = false, kind = "", myFaction = true, showHidden = false, trackedOnly = false, tier = "" }
 local function Defaults() return ns.FILTER_DEFAULTS or FALLBACK_DEFAULTS end
 -- Filters this file knows even before Core's defaults list them (DB v2).
-local EXTRA_DEFAULTS = { showHidden = false }
+local EXTRA_DEFAULTS = { showHidden = false, trackedOnly = false, tier = "" }
 
 local function DiffersFrom(f, k, v)
     if type(v) == "boolean" then return (not f[k]) ~= (not v) end
@@ -416,7 +461,21 @@ local function SetupMenu(owner, root)
         kindMenu:CreateRadio(KindName(k), function() return f.kind == k end, function() f.kind = k; Changed() end)
     end
 
+    local tiers = SetList.TierList()
+    if #tiers > 0 then
+        local cur = (f.tier or "") ~= "" and TierName(f.tier) or L.ALL
+        local tierMenu = root:CreateButton(ChoiceLabel(T("TIER", "Tier"), cur))
+        tierMenu:CreateRadio(L.ALL, function() return (f.tier or "") == "" end, function() f.tier = ""; Changed() end)
+        for _, tag in ipairs(tiers) do
+            tierMenu:CreateRadio(TierName(tag), function() return f.tier == tag end, function() f.tier = tag; Changed() end)
+        end
+    end
+
     root:CreateDivider()
+    if ns.Track then
+        root:CreateCheckbox(T("TRACKED_ONLY", "Tracked only"), function() return f.trackedOnly end,
+            function() f.trackedOnly = not f.trackedOnly; Changed() end)
+    end
     root:CreateCheckbox(L.USABLE, function() return f.usable end, function() SetList.ToggleUsable(f); Changed() end)
     root:CreateCheckbox(L.MY_FACTION, function() return f.myFaction end, function() f.myFaction = not f.myFaction; Changed() end)
     root:CreateCheckbox(L.HIDE_COMPLETE, function() return f.hideComplete end, function() f.hideComplete = not f.hideComplete; Changed() end)
@@ -449,6 +508,8 @@ function SetList.EmptyReason(search, f)
     end
     if f.armor ~= 0 then parts[#parts + 1] = ns.Data.ArmorName(f.armor) or L.ARMOR end
     if type(f.kind) == "string" and f.kind ~= "" then parts[#parts + 1] = KindName(f.kind) or L.CONTENT end
+    if type(f.tier) == "string" and f.tier ~= "" then parts[#parts + 1] = TierName(f.tier) end
+    if f.trackedOnly then parts[#parts + 1] = T("TRACKED_ONLY", "Tracked only") end
     if f.usable then parts[#parts + 1] = L.USABLE end
     if f.myFaction then parts[#parts + 1] = L.MY_FACTION end
     if f.hideComplete then parts[#parts + 1] = L.HIDE_COMPLETE end
@@ -676,10 +737,49 @@ function SetList.SortMode()
     return SORTERS[mode] and mode or "owned"
 end
 
+-- beta.8 filters on top of Data:Filter: tier tag and "Tracked only".
+local function ExtraFilter(list, f)
+    local tier = type(f.tier) == "string" and f.tier ~= "" and f.tier or nil
+    local TR = f.trackedOnly and ns.Track or nil
+    if not (tier or TR) then return list end
+    local out = {}
+    for _, s in ipairs(list) do
+        if (not tier or s.tier == tier) and (not TR or TR.Touches(s)) then out[#out + 1] = s end
+    end
+    return out
+end
+
 -- Filtered and sorted list, as shown.
 local function BuildList()
-    local list = ns.Data:Filter(ns.db.search, ns.db.filters)
+    local list = ExtraFilter(ns.Data:Filter(ns.db.search, ns.db.filters), ns.db.filters)
     return SORTERS[SetList.SortMode()](list)
+end
+
+-- Tier tags that have sets, in the usual order (unknown tags after, by name).
+local TIER_ORDER = { "D1", "D2", "T1", "T2", "T3", "ZG", "AQ20", "AQ40", "PvP" }
+function SetList.TierList()
+    local have = {}
+    for _, s in ipairs(ns.Data:GetSets()) do
+        if type(s.tier) == "string" and s.tier ~= "" then have[s.tier] = true end
+    end
+    local out = {}
+    for _, t in ipairs(TIER_ORDER) do
+        if have[t] then out[#out + 1] = t; have[t] = nil end
+    end
+    local extra = {}
+    for t in pairs(have) do extra[#extra + 1] = t end
+    table.sort(extra)
+    for _, t in ipairs(extra) do out[#out + 1] = t end
+    return out
+end
+
+-- Progress page bar clicked: the Sets tab with only that content kind or tier.
+function SetList.ShowGroup(kind, tier)
+    local f = ns.db.filters
+    f.kind = kind or ""
+    f.tier = tier or ""
+    if ns.UI and ns.UI.ShowTab then ns.UI:ShowTab("sets") end
+    Changed()
 end
 
 local function IndexOf(list, key)

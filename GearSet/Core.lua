@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.DB_VERSION = 3
+ns.DB_VERSION = 4
 
 -- All user-facing text in one place (ready for translations later).
 ns.L = {
@@ -84,7 +84,7 @@ ns.L = {
     MINIMAP_TIP_HIDE = "Right-click: hide this button.",
     BIND_TOGGLE = "Open/close Gear Set",
     -- Piece list
-    PIECE_TIP_MOD = "Shift-click: put the link in chat. Ctrl-click: try it on in the dressing room.",
+    PIECE_TIP_MOD = "Shift-click: track this piece (while typing in chat: link it). Ctrl-click: try it on in the dressing room.",
     COPY = "Copy name",
     COPY_TIP = "Shows the name so you can copy it and look the piece up online.",
     COPY_POPUP = "Press Ctrl+C to copy the name, then search for it online.",
@@ -318,6 +318,51 @@ ns.L = {
     STATS_COMBAT = "Stats are read after combat.",
     FIT_YES = "You can wear it (%s).",
     FIT_NO = "Your class can't wear this armor (%s).",
+    -- beta.8: tabs, tracking, progress page, milestones (UI\Progress.lua)
+    TAB_SETS = "Sets",
+    TAB_PROGRESS = "Progress",
+    TRACK_SET = "Track this set",
+    UNTRACK_SET = "Stop tracking this set",
+    TRACK_HINT = "Shift-click: track this set",
+    TRACKED = "Tracked",
+    TRACKED_ONLY = "Tracked only",
+    TIER = "Tier",
+    SHARE = "Share in chat",
+    SHARE_FULL = "chat box too full",
+    SHARE_LOADING = "item info still loading, try again",
+    P_SCOPE = "Count for",
+    P_SCOPE_char = "This character",
+    P_SCOPE_account = "Whole account",
+    P_PCT = "%d%% of set pieces",
+    P_SUMMARY = "%d complete, %d started, %d / %d pieces",
+    P_TRACKED = "Tracked: %d sets and %d pieces, %d pieces still needed",
+    P_TRACKED_NONE = "Nothing tracked yet: shift-click a set or a piece to track it.",
+    P_BY_KIND = "By content",
+    P_BY_TIER = "By tier",
+    P_BAR_TIP = "%d of %d sets complete",
+    P_BAR_HINT = "Click: show these sets in the list",
+    P_RECENT = "Recently got",
+    P_RECENT_NONE = "Nothing new yet. Set pieces you get from now on show up here with the date.",
+    P_RECENT_WHO = "%s (%s)",
+    P_CHARS = "Your characters",
+    P_CHAR_LINE = "%s: %d complete, %d%%",
+    P_LEFT_OUT = "Not counted: removed, other-faction, hidden and not-yet-released sets.",
+    P_LEFT_OUT_CHAR = "Not counted: sets your class can't wear, removed, other-faction, hidden and not-yet-released sets.",
+    P_LINE = "%d%% of set pieces",
+    P_LINE_TRACKED = "%d%% of set pieces, %d tracked pieces left",
+    MS_LINE = "Milestone: %s",
+    MS_first_set = "your first complete set",
+    MS_sets_5 = "5 complete sets",
+    MS_sets_10 = "10 complete sets",
+    MS_sets_25 = "25 complete sets",
+    MS_pct_25 = "a quarter of all set pieces",
+    MS_pct_50 = "half of all set pieces",
+    MS_pct_75 = "three quarters of all set pieces",
+    MS_pct_100 = "every set piece",
+    S_PROGRESS = "Progress",
+    S_MILESTONES = "Milestone notes in chat",
+    S_MILESTONES_TIP = "One quiet chat line when you reach a milestone, like your first complete set. No sound.",
+    -- (gold texts GOLD_* live in PART B's Gold.lua)
 }
 
 -- Key Bindings menu texts (Bindings.xml, loaded by the game from the addon folder).
@@ -343,6 +388,8 @@ local defaults = {
         kind = "",               -- content: "" = all, else "d"/"r"/"p"/"c"/"w"/"f"
         myFaction = true,        -- hide the other faction's PvP / Arathi Basin sets
         showHidden = false,      -- DB v2: list hidden sets too (greyed)
+        trackedOnly = false,     -- DB v4: only tracked sets (or sets with a tracked piece)
+        tier = "",               -- DB v4: "" = all, else a tier tag ("T1"; Progress page bars set it)
     },
     sort = "owned",              -- set list order: "owned", "closest", "name", "effort" (v2)
     search = "",
@@ -368,6 +415,20 @@ local defaults = {
     tooltipLine = true,          -- Gear Set line on item tooltips
     tooltipShift = false,        -- only while Shift is held
     altClick = true,             -- Alt-click a set piece anywhere opens its guide
+    -- DB v4 (additive, UI\Progress.lua): tracked["Name-Realm"] = { ["set:<id>"] = true,
+    -- ["item:<id>"] = true } per character; progress.scope "char"/"account" (Progress page),
+    -- progress.got["Name-Realm"] = { [itemID] = epoch } (0 = had before Gear Set counted),
+    -- progress.marks["Name-Realm"] = { [milestone] = epoch } (0 = reached before beta.8).
+    tracked = {},
+    progress = {
+        scope = "char",
+        got = {},
+        marks = {},
+    },
+    milestoneNotes = true,       -- one quiet chat line per milestone (no sound)
+    -- DB v4 (additive, PART B's Prices.lua): prices[itemID] = { c = copper, x = "other cost", t = epoch },
+    -- vendor prices learned in game, account-wide. Never cleared by a migration.
+    prices = {},
 }
 
 -- Filter defaults, read by the set list's "Reset filters" (one place for both).
@@ -426,6 +487,10 @@ local function ValidateDB(db)
         if f.kind == k then kindOK = true end
     end
     if not kindOK then f.kind = d.kind end
+    if #f.tier > 8 or f.tier:match("[^%w]") then f.tier = d.tier end
+    if db.progress.scope ~= "char" and db.progress.scope ~= "account" then
+        db.progress.scope = defaults.progress.scope
+    end
     -- A class picked in the Class menu and "Only my class" can't both apply (empty list
     -- for any other class); the picked class wins, like in the menu.
     if f.class ~= 0 and f.usable then f.usable = false end
@@ -438,7 +503,7 @@ end
 function ns.PrepareDB(t)
     ApplyDefaults(t, defaults)
     ValidateDB(t)
-    -- Migrations (compare t.version). v1 -> v2 and v2 -> v3 only add keys (ApplyDefaults
+    -- Migrations (compare t.version). v1 -> v2, v2 -> v3 and v3 -> v4 only add keys (ApplyDefaults
     -- above). v3: a char record written in the planned beta.3 shape (one `items` string, no
     -- `places`) gets its items as bags; the old key stays. A newer version number is never
     -- lowered, so an older build opening newer data doesn't mark it as old.

@@ -143,6 +143,7 @@ function Int.InitBroker()
         OnTooltipShow = function(tt)
             if not (tt and tt.AddLine) then return end
             tt:AddLine(L.TITLE or "Gear Set", Theme.colors.title:GetRGB())
+            if ns.Progress and ns.Progress.AddTooltipLine then pcall(ns.Progress.AddTooltipLine, ns.Progress, tt) end
             Theme.AddHint(tt, L.BROKER_TIP_CLICK)
             Theme.AddHint(tt, L.BROKER_TIP_RIGHT)
         end,

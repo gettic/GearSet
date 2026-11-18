@@ -4,7 +4,7 @@ Keeps track of all known armor sets in the game, in one window with three parts:
 
 A World of Warcraft addon for **WoW Forever**.
 
-> **Beta:** this is a beta (v1.0.0-beta.7). It has not been fully tested in the game yet, so things may not work as they should. Please tell us what you find.
+> **Beta:** this is a beta (v1.0.0-beta.8). It has not been fully tested in the game yet, so things may not work as they should. Please tell us what you find.
 
 ## Install
 
@@ -42,6 +42,7 @@ Open them with the gear button at the top right of the window, a right-click on 
 | Show the Gear Set line on item tooltips | Turns the [tooltip line](#item-tooltips-and-alt-click) on or off (on by default) |
 | Only while Shift is held | Shows the tooltip line only while you hold Shift |
 | Alt-click an item to open its guide | Turns Alt-click on or off (on by default) |
+| Milestone notes in chat | One quiet chat line when you reach a [milestone](#tabs-and-progress) (on by default) |
 | Forget a character | Removes the saved pieces of one of your other characters |
 | Show help now | Opens the help |
 | Report a problem | Shows one line to copy for a bug report: addon and data version, game build, and the set and piece you looked at. No character name, realm or guild. Nothing is sent anywhere |
@@ -63,6 +64,11 @@ Open them with the gear button at the top right of the window, a right-click on 
 | Sort | In the filter menu: "Most owned first" (default), "Closest to finishing", "Least effort" or "Name" |
 | Order | "Most owned first": complete sets first, then sets you have some pieces of, then the rest. In each group, the sets you own most of come first, then A-Z. "Closest to finishing": sets missing the fewest pieces first, complete sets last. "Least effort": sets that need the least work for the pieces you still need first, then sets with unknown effort, complete sets last. The chosen set stays in view when the order changes |
 | Finished sets | A set you finished stays finished, even after you upgrade or sell pieces. Its tooltip shows the date you finished it |
+| Track a set | Shift-click it. A gold star shows on the row. Tracking is saved per character |
+| Right-click menu | Track, Share in chat, Hide |
+| Tracked only, Tier | In the filter menu: "Tracked only" lists only tracked sets (or sets with a tracked piece). "Tier" picks one tier tag |
+| Share in chat | Right-click a set and pick "Share in chat". It puts the set name and its item links into your chat box (up to 255 characters, whole links only). You press Enter to send. Gear Set never sends anything itself. If nothing can be added (chat box too full, or item info still loading), one "Gear Set:" line in chat says why |
+
 ### Preview (middle)
 
 Your character wearing the chosen set.
@@ -89,7 +95,8 @@ Next to "Set bonuses" are two more hovers:
 | Show on the preview | Tick the box by the piece. Untick it to take the piece off. Necklaces, rings and trinkets don't show on the model, so their box is greyed out |
 | See how to get it | Click the piece to open its guide page (see below) |
 | Look it up | On the guide page, "Copy name" (then Ctrl+C) and "Wiki link" (a Warcraft Wiki search link) are in the top bar |
-| Link in chat | Shift-click a piece |
+| Track it | Shift-click a piece. A gold star shows on the row. While you type in chat, Shift-click links the piece instead |
+| Gold cost | Under the state, the fixed gold it costs, when known. Pieces that bind when picked up say "can't be bought". See [Gold costs](#gold-costs) |
 | Try it on | Ctrl-click a piece to open the dressing room |
 | No source | "Source unknown" means the addon has no entry for that piece |
 
@@ -124,6 +131,29 @@ Anything the addon doesn't know says "not known". Guide text is in English only.
 | Needed by | "Needed by: Name 3/8" lists your other characters who started that set and still need the piece |
 | Alt-click | Alt-click a set piece (bags, chat links, loot, character window) to open Gear Set at that piece's guide. In combat it opens when the fight ends |
 | Turn them off | In the settings you can turn the tooltip line off, show it only while Shift is held, or turn Alt-click off |
+
+### Tabs and progress
+
+Two tabs sit at the bottom of the window: **Sets** (the window described above) and **Progress**.
+
+| What | How |
+|---|---|
+| Totals | The % of set pieces you have, and how many sets are complete or started |
+| Bars | One bar per content kind and tier. Click a bar to list those sets |
+| Recently got | Set pieces you got lately, with dates |
+| Characters | One line per saved character |
+| Count for | "This character" or "Whole account" (remembered). "This character" and each character's line count only the sets that class can wear. "Whole account" counts all sets |
+| Tracked | How many sets and pieces you track, and how many pieces are still needed |
+
+Removed, other-faction, hidden and not-yet-released sets are never counted. The minimap button and Titan Panel / data bar tooltips show a line such as "38% of set pieces, 12 tracked pieces left".
+
+**Milestones:** your first complete set, 5, 10 and 25 sets, and a quarter, half, three quarters and all of the pieces. Each gives one quiet chat line, once per character, with no sound. They are on by default; turn them off in Settings > Progress ("Milestone notes in chat"). Milestones you had already reached before the update are noted silently.
+
+### Gold costs
+
+A set shows "Gold still needed" for the fixed in-game gold it still needs on this character, such as the quest gold in the Dungeon Set 2 steps. Vendor prices count only where Gear Set has them. Auction prices are not used, and crafting materials are not priced. Pieces that bind when picked up are marked "can't be bought". The piece tooltip shows the cost line.
+
+When you open a vendor that sells set pieces (PvP rank, Arathi Basin), Gear Set remembers the prices shown (gold and honor or marks) for all your characters. They show as "Price seen at a vendor: ... (date)". It only reads the window and never buys anything.
 
 ### Your other characters
 
@@ -205,12 +235,17 @@ The addon is in the `GearSet` folder (`GearSet_Forever.toc`, interface 16001). S
 | `Tooltip.lua` | The Gear Set line on item tooltips |
 | `Inspect.lua` | The strip under the inspect window |
 | `Integrations.lua` | Alt-click, the data bar launcher and the functions for other addons |
+| `GoldData.lua` | The built-in fixed gold costs (from Warcraft Wiki) |
+| `Gold.lua` | Works out the gold still needed and what can't be bought |
+| `Prices.lua` | Learns vendor prices when you open a vendor |
+| `Share.lua` | Puts a set and its item links in your chat box |
 | `UI\Widgets.lua` | Shared UI helpers (buttons, tooltips, item names) |
 | `UI\Main.lua` | The main window |
 | `UI\SetList.lua` | The set list, search and filter |
 | `UI\Preview.lua` | The character preview |
 | `UI\PieceList.lua` | The list of pieces |
 | `UI\GuidePage.lua` | The guide page for one piece |
+| `UI\Progress.lua` | The Progress tab, tracking and milestones |
 | `UI\Settings.lua` | The settings page |
 | `UI\Help.lua` | The first-time help |
 | `UI\Minimap.lua` | The minimap button and the Addon Compartment entry |
@@ -219,7 +254,7 @@ The addon is in the `GearSet` folder (`GearSet_Forever.toc`, interface 16001). S
 
 Works with LibDataBroker displays such as Titan Panel if you have one installed; they are not included with Gear Set and keep their own licences.
 
-Set, item and source data, and the how-to-get guide text, gathered from Warcraft Wiki (https://warcraft.wiki.gg), whose text is available under CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). World of Warcraft and its content are trademarks and property of Blizzard Entertainment.
+Set, item, source and gold cost data, and the how-to-get guide text, gathered from Warcraft Wiki (https://warcraft.wiki.gg), whose text is available under CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). World of Warcraft and its content are trademarks and property of Blizzard Entertainment.
 
 ## License
 

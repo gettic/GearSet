@@ -90,6 +90,13 @@ local function PieceTooltip(row)
     GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
     GameTooltip:SetItemByID(p.itemID)
     pcall(AddAltTooltip, GameTooltip, p, ns.Owned:GetState(p))
+    -- beta.8: gold (PART B's Gold.lua) and tracking
+    local P = ns.Progress
+    local cost = P and P.PieceCostText and P.PieceCostText(p.itemID)
+    if cost then GameTooltip:AddLine(cost, Theme.colors.subtle:GetRGB()) end
+    if ns.Track and ns.Track.IsPiece(p.itemID) then
+        GameTooltip:AddLine(L.TRACKED or "Tracked", Theme.colors.partial:GetRGB())
+    end
     GameTooltip:AddLine(" ")
     Theme.AddHint(GameTooltip, L.PIECE_TIP)
     Theme.AddHint(GameTooltip, L.PIECE_TIP_MOD)
@@ -143,6 +150,11 @@ local function BuildRow(row)
     row.icon:SetPoint("TOPLEFT", ICON_LEFT, -3)
     row.icon:SetTexCoord(unpack(W.ICON_CROP))
     row.border, row.hasBorder = W.IconBorder(row, row.icon)
+    -- beta.8: tracking star on the icon's top-left corner.
+    if ns.Track and ns.Track.MakeStar then
+        row.star = ns.Track.MakeStar(row, "OVERLAY")
+        row.star:SetPoint("CENTER", row.icon, "TOPLEFT", 2, -2)
+    end
 
     -- Arrow at the right end: the row opens a page. ">" if the art is missing.
     local arrow = Theme.art.rowArrow
@@ -181,8 +193,12 @@ local function BuildRow(row)
     row:SetScript("OnClick", function(self)
         local p = self.piece
         if not p then return end
-        -- Shift-click: link into the open chat box; Ctrl-click: dressing room.
-        -- Only on the player's own click; nothing is ever sent to chat.
+        -- Shift-click: track / untrack (beta.8); while typing in chat it links the item
+        -- instead (never both). Ctrl-click: dressing room. Nothing is ever sent to chat.
+        if ns.Track and IsModifiedClick and IsModifiedClick("CHATLINK") and not PieceList.ChatOpen() then
+            ns.Track.TogglePiece(p.itemID)
+            return
+        end
         if W.HandleModifiedClick(p.itemID) then return end
         PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
         GameTooltip_Hide()
@@ -190,6 +206,14 @@ local function BuildRow(row)
     end)
     row:SetScript("OnEnter", PieceTooltip)
     row:SetScript("OnLeave", GameTooltip_Hide)
+end
+
+-- A chat edit box is open (shift-click then links the item instead of tracking it).
+function PieceList.ChatOpen()
+    local fn = (type(ChatFrameUtil) == "table" and ChatFrameUtil.GetActiveWindow) or ChatEdit_GetActiveWindow
+    if type(fn) ~= "function" then return false end
+    local ok, box = pcall(fn)
+    return ok and box ~= nil and box ~= false
 end
 
 -- Item loaded later: refill the row (Widgets only calls back while it still shows that item).
@@ -230,7 +254,13 @@ InitRow = function(row, piece)
         row.state:SetText(L["STATE_" .. state])
         row.state:SetTextColor(W.StateColor(state):GetRGB())
     end
-    PlaceAltLine(row, PieceList.AltLine(piece, state))
+    -- Under the state: the alt line, else (piece still needed) its fixed gold cost.
+    local extra = PieceList.AltLine(piece, state)
+    if not extra and not ns.Owned:IsHave(piece) and ns.Progress and ns.Progress.PieceMoney then
+        extra = ns.Progress.PieceMoney(itemID)
+    end
+    PlaceAltLine(row, extra)
+    if row.star then row.star:SetShown(ns.Track ~= nil and ns.Track.IsPiece(itemID)) end
 
     row.sel:SetShown(PieceList.lastItem == itemID)
 end

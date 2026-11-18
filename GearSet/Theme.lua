@@ -21,6 +21,10 @@ Theme.templates = {
     -- The "?" button is our own plain button with Blizzard's art (art.helpIcon): the
     -- MainHelpPlateButton template hides itself on WoW Forever.
     helpNote   = { "GlowBoxTemplate", "TooltipBackdropTemplate" },
+    -- beta.8: bottom tabs (Sets / Progress; plain buttons if missing) and the Progress page's
+    -- "This character / Whole account" choice (a plain button that switches if missing).
+    tab        = { "PanelTabButtonTemplate" },
+    dropdown   = { "WowStyle1DropdownTemplate" },
 }
 
 Theme.art = {
@@ -92,10 +96,24 @@ Theme.art = {
     },
     -- First-time help: line from the "4. Settings" note up to the gear button.
     helpLineWidth = 2,
+    -- beta.8 tracking star on set and piece rows: the auction house / pet journal favourite
+    -- star, else the raid target star icon.
+    star = { atlases = { "auctionhouse-icon-favorite", "PetJournal-FavoritesIcon" },
+        file = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_1", size = 12 },
+    -- beta.8 Progress page bars (review-ui 5): Blizzard's status bar texture, filled in
+    -- Theme.CountColorObj, dark backing with a 1 px darker edge.
+    progressBar = { file = "Interface\\TargetingFrame\\UI-StatusBar",
+        bg = { 0, 0, 0, 0.45 }, edge = { 0, 0, 0, 0.9 }, height = 14 },
 }
 
 Theme.sizes = {
-    check = 24,   -- every check box
+    check = 24,        -- every check box
+    -- Bottom tabs: top edge 8 px under the window, below the metal border's bottom corners
+    -- (ButtonFrameTemplateNoPortrait layout: BottomLeft/RightCorner y = -8), so no tab sits
+    -- under the border art; tab 32 px + 8 = how far they hang below (FitToScreen, clamp).
+    tabOffsetY = -8,
+    tabOverhang = 40,
+    progressRow = 22,  -- one bar row on the Progress page
 }
 
 Theme.fonts = {
@@ -166,6 +184,10 @@ Theme.colors = {
     tipName  = Color("HIGHLIGHT_FONT_COLOR", 1, 1, 1),
     tipNote  = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),
     inspectBg = CreateColor(0, 0, 0, 0.6),                        -- strip under the inspect window (GetRGBA)
+    -- beta.8 Progress page / tracking / gold
+    progressHead = Color("NORMAL_FONT_COLOR", 1, 0.82, 0),       -- section headings (gold)
+    progressNote = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),      -- dates, "Not counted: ..."
+    gold         = Color("LIGHTGRAY_FONT_COLOR", 0.8, 0.8, 0.8), -- "12g" on piece rows
 }
 
 -- Effort word colours (Data:GetEffort level): 0 Done grey, 1 Low green, 2 Medium gold,

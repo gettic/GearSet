@@ -472,6 +472,9 @@ function ST.MainParts()
         { name = "filter", obj = SL.filter }, { name = "search", obj = SL.search }, { name = "sets", obj = SL.box },
         { name = "model", obj = PV.model }, { name = "reset", obj = PV.reset }, { name = "onlySet", obj = PV.check },
     }
+    for i, t in ipairs(UI.tabs or {}) do
+        parts[#parts + 1] = { name = "tab" .. i, obj = t.button }
+    end
     local guideOpen = ns.GuidePage and ns.GuidePage.IsOpen and ns.GuidePage:IsOpen()
     if not guideOpen then
         local list = {
@@ -485,6 +488,39 @@ function ST.MainParts()
         for _, p in ipairs(list) do parts[#parts + 1] = p end
     end
     return parts
+end
+
+-- beta.8 Progress tab (checked while it is shown).
+function ST.ProgressParts()
+    local UI, P = ns.UI or {}, ns.Progress or {}
+    local parts = {
+        { name = "pPage", obj = UI.progressPage }, { name = "pPct", obj = P.pct },
+        { name = "pScope", obj = P.scope }, { name = "pTotal", obj = P.total },
+        { name = "pList", obj = P.scroll }, { name = "pNote", obj = P.note },
+    }
+    for i, b in ipairs(P.bars or {}) do
+        parts[#parts + 1] = { name = "pBar" .. i, obj = b, shownOnly = true }
+    end
+    return parts
+end
+
+-- Bottom tabs hang under the window, below its border art (never under it), on screen.
+local function CheckTabs()
+    local UI = ns.UI or {}
+    local win = UI.frame
+    for i, t in ipairs(UI.tabs or {}) do
+        Count()
+        local r, w = ScreenRect(t.button), ScreenRect(win)
+        if r == "secret" or w == "secret" then
+            Skip("tab" .. i, "(secret)")
+        elseif type(r) == "table" and type(w) == "table" then
+            if r.t > w.b + SCREEN_SLACK then
+                Problem("UI", "tab" .. i, ("under the window border (%d px)"):format(math.floor(r.t - w.b)))
+            elseif r.l < w.l - SCREEN_SLACK or r.r > w.r + SCREEN_SLACK then
+                Problem("UI", "tab" .. i, "not under the window")
+            end
+        end
+    end
 end
 
 function ST.GuideParts()
@@ -611,6 +647,16 @@ local V3_SAMPLE = {
     tooltipLine = false, tooltipShift = true, altClick = false,
 }
 
+-- beta.8 (DB v4): tracking, progress choice, recently got, milestones (made-up "A" again).
+local V4_SAMPLE = {
+    version = 4, filters = { trackedOnly = true, tier = "T2" },
+    tracked = { ["A-Realm"] = { ["set:204"] = true, ["item:16820"] = true } },
+    progress = { scope = "account", got = { ["A-Realm"] = { [16820] = 0, [16821] = 1200 } },
+        marks = { ["A-Realm"] = { first_set = 0 } } },
+    milestoneNotes = false,
+    prices = { [16820] = { c = 120000, t = 1300 }, [16821] = { c = 0, x = "2805 Honor Points", t = 1300 } },
+}
+
 local function CheckSaved()
     local prep = ns.PrepareDB
     Count()
@@ -688,8 +734,38 @@ local function CheckSaved()
     if not ok then
         Problem("DB", "v3", Short(err))
     else
-        local lost = Lost(V3_SAMPLE, v3)
-        if lost then Problem("DB", "v3", "changed " .. lost) end
+        local lost = Lost(V3_SAMPLE, v3, nil, 0, { version = true })
+        if lost then Problem("DB", "v3", "changed " .. lost)
+        elseif type(v3.tracked) ~= "table" or type(v3.progress) ~= "table" or v3.progress.scope ~= "char"
+            or type(v3.progress.got) ~= "table" or type(v3.progress.marks) ~= "table" or v3.milestoneNotes ~= true
+            or v3.filters.trackedOnly ~= false or v3.filters.tier ~= "" or type(v3.prices) ~= "table" then
+            Problem("DB", "v3", "v4 keys not added")
+        elseif v3.version ~= ns.DB_VERSION then Problem("DB", "v3", "version not raised") end
+    end
+    -- 3c. v4 data (beta.8) goes through unchanged; a bad tier / scope falls back.
+    Count()
+    local v4 = DeepCopy(V4_SAMPLE)
+    ok, err = pcall(prep, v4)
+    if not ok then
+        Problem("DB", "v4", Short(err))
+    else
+        local lost = Lost(V4_SAMPLE, v4)
+        if lost then Problem("DB", "v4", "changed " .. lost) end
+    end
+    Count()
+    local bad4 = { version = 4, filters = { tier = "T1; drop" }, progress = { scope = "x", got = { keep = 1 } } }
+    ok, err = pcall(prep, bad4)
+    if not ok then
+        Problem("DB", "bad v4", Short(err))
+    elseif bad4.filters.tier ~= "" or bad4.progress.scope ~= "char" or bad4.progress.got.keep ~= 1 then
+        Problem("DB", "bad v4", "not fixed or data lost")
+    end
+
+    -- Learned vendor prices (Prices.lua): a count only.
+    if type(db.prices) == "table" then
+        local n = 0
+        for _ in pairs(db.prices) do n = n + 1 end
+        Info(("prices learned: %d"):format(n))
     end
 
     -- 4. Live hidden-set keys and last set point at known sets.
@@ -763,6 +839,165 @@ local function CheckAlts()
         else text = text .. ", no bank visit yet" end
         if (checked or 0) > 0 and A.DateText then text = text .. " (" .. tostring(A.DateText(checked)) .. ")" end
         Info(text)
+    end
+end
+
+-- ---------------------------------------------------------------------------
+-- beta.8: tracking, progress, milestones, gold, chat share (made-up data + live counts only)
+
+local function GroupSums(s)
+    local h, t, n = 0, 0, 0
+    for _, g in pairs(s.kinds) do h, t, n = h + g.have, t + g.total, n + g.sets end
+    return h, t, n
+end
+
+-- Progress numbers that must add up (any summary, live or made up). nil = fine.
+local function SumProblem(s)
+    if type(s) ~= "table" then return "no summary" end
+    if s.have > s.total or s.have < 0 then return "have > total" end
+    if s.complete + s.started > s.sets then return "complete + started > sets" end
+    local h, t, n = GroupSums(s)
+    if h ~= s.have or t ~= s.total or n ~= s.sets then return "kinds don't add up" end
+    for _, g in pairs(s.tiers) do
+        if g.have > g.total or g.total > s.total then return "tier bigger than total" end
+    end
+    local pct = s.total > 0 and math.floor(s.have * 100 / s.total) or 0
+    if s.pct ~= pct then return "percent wrong" end
+end
+
+local function CheckProgress()
+    local TR, P = ns.Track, ns.Progress
+    if not (TR and P and TR.ToggleIn and P.Summarize) then return Skip("progress", "(not loaded)") end
+    -- tracking round trip on a copy of the made-up v4 data
+    Count()
+    local tbl = DeepCopy(V4_SAMPLE.tracked)
+    tbl["X-Realm"] = "keep"
+    local a = TR.ToggleIn(tbl, "B-Realm", "set:1")
+    local b = TR.IsIn(tbl, "B-Realm", "set:1")
+    local c = TR.ToggleIn(tbl, "B-Realm", "set:1")
+    local d = TR.IsIn(tbl, "B-Realm", "set:1")
+    local e = TR.ToggleIn(tbl, "X-Realm", "set:1")
+    if not (a == true and b and c == false and not d and e == nil and tbl["X-Realm"] == "keep"
+            and TR.IsIn(tbl, "A-Realm", "set:204") and Lost(V4_SAMPLE.tracked, tbl) == nil) then
+        Problem("PRG", "track", "round trip wrong")
+    end
+    -- a broken entry: only the given (own) character's one is repaired
+    if TR.FixMine then
+        tbl["Y-Realm"] = 5
+        local f1 = TR.FixMine(tbl, "X-Realm")
+        local f2 = TR.FixMine(tbl, "X-Realm")
+        local f3 = TR.FixMine(tbl, "A-Realm")
+        if not (f1 == true and f2 == false and f3 == false and type(tbl["X-Realm"]) == "table"
+                and tbl["Y-Realm"] == 5 and TR.ToggleIn(tbl, "X-Realm", "set:1") == true
+                and TR.IsIn(tbl, "A-Realm", "set:204")) then
+            Problem("PRG", "track", "broken entry repair wrong")
+        end
+    end
+    -- counting rules on made-up sets: removed, other faction, hidden, not out yet left out
+    Count()
+    local sets = {
+        { key = "a", kind = "d", tier = "D1", n = 2, t = 4 }, { key = "b", kind = "d", n = 4, t = 4 },
+        { key = "c", kind = "r", tier = "T1", n = 0, t = 8 }, { key = "r", kind = "d", removed = true, n = 1, t = 1 },
+        { key = "f", kind = "p", faction = "H", n = 1, t = 1 }, { key = "h", kind = "d", n = 1, t = 1 },
+        { key = "u", kind = "r", unreleased = true, n = 0, t = 8 },
+    }
+    local s = P.Summarize(sets, function(set) return set.n, set.t end, "A", function(set) return set.key == "h" end)
+    if s.total ~= 16 or s.have ~= 6 or s.complete ~= 1 or s.started ~= 1 or s.sets ~= 3 or s.pct ~= 37
+        or not (s.tiers.T1 and s.tiers.D1) or SumProblem(s) then
+        Problem("PRG", "rules", ("made-up sum %d/%d %d%%"):format(s.have, s.total, s.pct))
+    end
+    -- "This character": only sets the class can wear (here: not "c")
+    Count()
+    local sc = P.Summarize(sets, function(set) return set.n, set.t end, "A", function(set) return set.key == "h" end,
+        function(set) return set.key ~= "c" end)
+    if sc.total ~= 8 or sc.have ~= 6 or sc.sets ~= 2 or sc.tiers.T1 or SumProblem(sc) then
+        Problem("PRG", "class", ("made-up class sum %d/%d"):format(sc.have, sc.total))
+    end
+    -- live: both scopes add up; this character's class sets are part of the account's
+    local live = {}
+    for _, scope in ipairs({ "char", "account" }) do
+        Count()
+        local ok, got = pcall(P.Get, P, scope)
+        if not ok then
+            Problem("PRG", scope, Short(got))
+        elseif got then
+            live[scope] = got
+            local why = SumProblem(got)
+            if why then Problem("PRG", scope, why) end
+            Info(("progress %s %d%% (%d/%d, %d complete)"):format(scope, got.pct, got.have, got.total, got.complete))
+        end
+    end
+    Count()
+    if live.char and live.account and (live.char.total > live.account.total or live.char.sets > live.account.sets) then
+        Problem("PRG", "class", "this character counts more sets than the account")
+    end
+    Count()
+    local okL, line = pcall(P.LineText, P)
+    if not okL then Problem("PRG", "line", Short(line))
+    elseif type(line) ~= "string" then Skip("progress line", "(no data)") end
+    -- milestones: first look is silent, each one once only
+    Count()
+    local marks = {}
+    local s0 = { have = 0, total = 10, complete = 0 }
+    local s1 = { have = 3, total = 10, complete = 1 }
+    local m0 = P.NewMilestones(marks, "A-Realm", s0, 100)
+    local m1 = P.NewMilestones(marks, "A-Realm", s1, 200)
+    local m2 = P.NewMilestones(marks, "A-Realm", s1, 300)
+    local mB = P.NewMilestones(marks, "B-Realm", s1, 300)
+    local has = {}
+    for _, id in ipairs(m1) do has[id] = true end
+    if not (#m0 == 0 and #m1 == 2 and has.first_set and has.pct_25 and #m2 == 0 and #mB == 0
+            and marks["A-Realm"].first_set == 200 and marks["B-Realm"].first_set == 0) then
+        Problem("PRG", "milestone", "not once only")
+    end
+    -- recently got: first look stores 0, then dates
+    Count()
+    local got = {}
+    local g0 = P.UpdateGot(got, "A-Realm", { [1] = true }, 100)
+    local g1 = P.UpdateGot(got, "A-Realm", { [1] = true, [2] = true }, 200)
+    if not (#g0 == 0 and #g1 == 1 and got["A-Realm"][1] == 0 and got["A-Realm"][2] == 200) then
+        Problem("PRG", "got", "wrong")
+    end
+    -- PART B's gold + chat share (skipped when the files aren't there)
+    local G, SH = ns.Gold, ns.Share
+    if G and G.PieceCost then
+        Count()
+        local okC, copper = pcall(G.PieceCost, G, 21996)
+        if not okC then Problem("GOLD", "piece", Short(copper))
+        elseif copper ~= 200000 then Problem("GOLD", "piece", "21996 = " .. tostring(copper)) end
+    else
+        Skip("gold", "(missing)")
+    end
+    if SH and SH.Text then
+        Count()
+        local setID
+        local D = ns.Data
+        for _, set in ipairs((D and D.GetSets and D:GetSets()) or {}) do
+            if set.id and #set.pieces >= 6 then setID = set.id; break end
+        end
+        if setID then
+            local okT, text = pcall(SH.Text, setID, 255)
+            local me = UnitName and UnitName("player")
+            if not okT then Problem("SHARE", "text", Short(text))
+            elseif type(text) ~= "string" or #text > 255 then Problem("SHARE", "text", "longer than 255")
+            elseif type(me) == "string" and me ~= "" and text:find(me, 1, true) then
+                Problem("SHARE", "text", "has the character name")
+            else
+                Info(("share %d chars"):format(#text))
+            end
+        end
+    else
+        Skip("share", "(missing)")
+    end
+    -- the "Gear Set:" note when a share can't go into the chat box
+    if P.ShareNote then
+        Count()
+        local full, loading = P.ShareNote(false, "full"), P.ShareNote(false, "loading")
+        if not (P.ShareNote(true, "full") == nil and type(full) == "string" and full ~= ""
+                and type(loading) == "string" and loading ~= "" and full ~= loading
+                and P.ShareNote(false, nil) == nil) then
+            Problem("SHARE", "note", "wrong failure note")
+        end
     end
 end
 
@@ -1117,6 +1352,8 @@ local function OpenGuide()
     Later(2, StepGuide)
 end
 
+local OpenProgress
+
 local function StepMain()
     CheckGroup(ST.MainParts(), Win())
     Guard("help where", function()
@@ -1128,8 +1365,33 @@ local function StepMain()
     end)
     Guard("minimap", CheckMinimap)
     Guard("esc", CheckEsc, "window")
-    if run.mode == "full" then return OpenGuide() end
+    Guard("tabs", CheckTabs)
+    OpenProgress()
+end
+
+-- beta.8: the Progress tab, then back to the Sets tab (guide + help need it).
+local function StepProgress()
+    CheckGroup(ST.ProgressParts(), Win())
+    Guard("progress tab", function()
+        local P = ns.Progress
+        Count()
+        local text = P and P.pct and P.pct:GetText()
+        if not (type(text) == "string" and text:find("%d")) then Problem("PRG", "page", "no number shown") end
+    end)
+    ns.UI:ShowTab("sets")
+    if run.mode == "full" then return Later(1, OpenGuide) end
     Finish()
+end
+
+OpenProgress = function()
+    local UI = ns.UI
+    if not (UI and UI.ShowTab and UI.tabByKey and UI.tabByKey.progress) then
+        Skip("progress tab", "(missing)")
+        if run.mode == "full" then return OpenGuide() end
+        return Finish()
+    end
+    UI:ShowTab("progress")
+    Later(2, StepProgress)
 end
 
 -- ---------------------------------------------------------------------------
@@ -1176,6 +1438,8 @@ local function Restore()
             end
         end
     end)
+    -- The tab the user had open.
+    if s.tab and UI and UI.ShowTab and UI.tab ~= s.tab then Try("tab", UI.ShowTab, UI, s.tab) end
     -- The window last, while Help.quiet still keeps help.seen as it was.
     if s.openedWindow and UI and UI.frame then Try("window", UI.frame.Hide, UI.frame) end
     if H then H.quiet = s.helpQuiet end
@@ -1258,6 +1522,7 @@ function ST:Start(mode)
     -- Checks that need no window.
     Guard("db", CheckSaved)
     Guard("alts", CheckAlts)
+    Guard("progress", CheckProgress)
     Guard("data", CheckData)
     Guard("hooks", CheckHooks)
     Guard("theme", CheckTheme)
@@ -1269,6 +1534,11 @@ function ST:Start(mode)
         if not UI.frame:IsShown() then
             run.state.openedWindow = true
             UI.frame:Show()
+        end
+        -- The Sets tab first (the main parts live there); the user's tab comes back at the end.
+        if UI.ShowTab and UI.tab and UI.tab ~= "sets" then
+            run.state.tab = UI.tab
+            UI:ShowTab("sets")
         end
     end)
     if not ok then

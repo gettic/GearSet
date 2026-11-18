@@ -23,6 +23,7 @@ local VAR = {
     tooltipLine  = "GearSet_TooltipLine",     -- beta.7 (Tooltip.lua / Integrations.lua)
     tooltipShift = "GearSet_TooltipShift",
     altClick     = "GearSet_AltClick",
+    milestoneNotes = "GearSet_MilestoneNotes", -- beta.8 (UI\Progress.lua)
 }
 
 local function DB() return ns.db end
@@ -96,6 +97,11 @@ local VALUES = {
     altClick = {
         get = function() local db = DB(); return not (db and db.altClick == false) end,
         set = function(v) local db = DB(); if db then db.altClick = v and true or false end end,
+        default = true,
+    },
+    milestoneNotes = {
+        get = function() local db = DB(); return not (db and db.milestoneNotes == false) end,
+        set = function(v) local db = DB(); if db then db.milestoneNotes = v and true or false end end,
         default = true,
     },
 }
@@ -205,6 +211,7 @@ local function UnhideAll()
     local D = ns.Data
     if HiddenCount() == 0 or not (D and D.ShowAllHidden) then return end
     pcall(D.ShowAllHidden)
+    if ns.Progress then ns.Progress:Invalidate() end
     if ns.SetList and ns.SetList.Refresh then ns.SetList:Refresh() end
     S:Refresh()
 end
@@ -359,6 +366,11 @@ function S:Init()
         T("S_TOOLTIP_SHIFT_TIP", "Keeps tooltips short when you use other tooltip addons."))
     self.settings.altClick = Checkbox(category, "altClick", T("S_ALT_CLICK", "Alt-click an item to open its guide"),
         T("S_ALT_CLICK_TIP", "Works on bag items, chat links, loot and the character window."))
+
+    Header(layout, T("S_PROGRESS", "Progress"))
+    self.settings.milestoneNotes = Checkbox(category, "milestoneNotes",
+        T("S_MILESTONES", "Milestone notes in chat"),
+        T("S_MILESTONES_TIP", "One quiet chat line when you reach a milestone, like your first complete set. No sound."))
 
     Header(layout, T("S_CHARS", "Characters"))
     self.forgetInit = Button(category, layout, ForgetLabel(), T("S_FORGET", "Forget a character"),
