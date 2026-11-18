@@ -60,7 +60,8 @@ end
 Search.Match = Match
 
 -- ---------------------------------------------------------------------------
--- Index (lazy, built once): sources = { {kind, label, lower, sub, items = {[itemID] = true}} },
+-- Index (lazy, built once): sources = { {kind, label, lower, sub, find, items = {[itemID] = true},
+-- inSet = {[set] = true}} }, known = {[set] = true} (sets inSet covers),
 -- names = {[itemID] = lower name} for items whose name the client already had.
 local index
 
@@ -76,17 +77,20 @@ end
 
 local function Has(s) return type(s) == "string" and s ~= "" end
 
--- Quest givers from the guide data's quest record ("giver|Name" rows).
+-- Quest givers from the guide data's quest record ("giver|Name" rows), read straight from
+-- the record string (same rows Data.GuideRecord gives, without filling its parse cache).
 local function Givers(quest)
-    local D = ns.Data
-    if not (Has(quest) and D and D.GuideRecord) then return nil end
-    local ok, rows = pcall(D.GuideRecord, "quest", quest)
-    if not ok or type(rows) ~= "table" then return nil end
+    if not Has(quest) then return nil end
+    local g = ns.GuideData
+    local t = type(g) == "table" and g.quest
+    local raw = type(t) == "table" and t[quest]
+    if type(raw) ~= "string" then return nil end
     local out
-    for _, r in ipairs(rows) do
-        if r.key == "giver" and Has(r[1]) then
+    for part in raw:gmatch("[^;]+") do
+        local f = Fields(part)
+        if f[1] == "giver" and Has(f[2]) then
             out = out or {}
-            out[#out + 1] = r[1]
+            out[#out + 1] = f[2]
         end
     end
     return out
@@ -151,8 +155,28 @@ function Search.Index()
     end
     table.sort(idx.sources, BySourceLabel)
     -- A boss / NPC also matches on its place ("stratholme" lists the bosses there too).
-    for _, s in ipairs(idx.sources) do
-        s.find = s.sub and (s.lower .. "\n" .. s.sub:lower()) or s.lower
+    -- inSet[set] = true when the set has a piece from this source (Find then checks sets,
+    -- not every piece); idx.known = the sets this was worked out for.
+    idx.known = {}
+    local setsOf = {}   -- [itemID] = { set, ... } (only while building)
+    for _, s in ipairs(sets) do
+        idx.known[s] = true
+        for _, p in ipairs(s.shown or s.pieces or {}) do
+            local id = p.itemID
+            if id then
+                local l = setsOf[id]
+                if not l then l = {}; setsOf[id] = l end
+                l[#l + 1] = s
+            end
+        end
+    end
+    for _, src in ipairs(idx.sources) do
+        src.find = src.sub and (src.lower .. "\n" .. src.sub:lower()) or src.lower
+        local inSet = {}
+        for id in pairs(src.items) do
+            for _, s in ipairs(setsOf[id] or {}) do inSet[s] = true end
+        end
+        src.inSet = inSet
     end
     index = idx
     return idx
@@ -161,22 +185,33 @@ end
 -- Drops the index (tests; data reloads).
 function Search.Reset() index = nil end
 
--- Lower-case item name if the client already has the item cached, else nil.
+-- Item name if the client already has the item cached, else nil.
 -- Never asks the server for the item (IsItemDataCachedByID first).
-local function NameOf(idx, itemID)
-    local n = idx.names[itemID]
-    if n then return n end
+local function ItemName(itemID)
     local CI = C_Item
     if not (CI and CI.GetItemNameByID) then return nil end
     if CI.IsItemDataCachedByID and not CI.IsItemDataCachedByID(itemID) then return nil end
     local ok, name = pcall(CI.GetItemNameByID, itemID)
-    if ok and type(name) == "string" and name ~= "" then
-        n = { lower = name:lower(), name = name }
-        idx.names[itemID] = n
-        return n
+    if ok and type(name) == "string" and name ~= "" then return name end
+end
+
+-- Lower-case item name (cached in idx.names; only the lower-case text is kept), else nil.
+local function LowerName(idx, itemID)
+    local lower = idx.names[itemID]
+    if lower then return lower end
+    local name = ItemName(itemID)
+    if name then
+        lower = name:lower()
+        idx.names[itemID] = lower
+        return lower
     end
 end
-Search.NameOf = function(itemID) return NameOf(Search.Index(), itemID) end
+
+-- { lower, name } for an item whose name the client has, else nil.
+Search.NameOf = function(itemID)
+    local lower = LowerName(Search.Index(), itemID)
+    if lower then return { lower = lower, name = ItemName(itemID) or lower } end
+end
 
 local function SetLower(s)
     local t = s.name and s.name:lower() or ""
@@ -213,21 +248,27 @@ function Search.Find(text, sets, expanded)
         for _, p in ipairs(s.shown or s.pieces or {}) do
             local id = p.itemID
             if id and not pieceSeen[id] then
-                local n = NameOf(idx, id)
-                if n and Match(n.lower, words) then
+                local lower = LowerName(idx, id)
+                if lower and Match(lower, words) then
                     pieceSeen[id] = true
-                    found.piece[#found.piece + 1] = { kind = "piece", label = n.name, itemID = id, piece = p, set = s }
+                    found.piece[#found.piece + 1] = { kind = "piece", label = ItemName(id) or lower, itemID = id, piece = p, set = s }
                 end
             end
         end
     end
 
+    local known = idx.known or {}
     for _, src in ipairs(idx.sources) do
         if Match(src.find or src.lower, words) then
             local list = {}
+            local inSet = src.inSet or {}
             for _, s in ipairs(sets) do
-                for _, p in ipairs(s.shown or s.pieces or {}) do
-                    if p.itemID and src.items[p.itemID] then list[#list + 1] = s; break end
+                if known[s] then
+                    if inSet[s] then list[#list + 1] = s end
+                else   -- a set the index wasn't built from: look at its pieces
+                    for _, p in ipairs(s.shown or s.pieces or {}) do
+                        if p.itemID and src.items[p.itemID] then list[#list + 1] = s; break end
+                    end
                 end
             end
             if #list > 0 then

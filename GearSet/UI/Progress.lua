@@ -341,20 +341,31 @@ function Progress:Chars()
     return out
 end
 
--- Piece object by item ID (needed for Owned:GetState on tracked pieces).
-local pieceIndex
+-- Piece object by item ID (needed for Owned:GetState on tracked pieces): the piece of the
+-- first set in list order that has it. No own index: the tooltip's item index names the set
+-- (one set -> look only there); items in several sets walk the list.
+local function FindIn(set, itemID)
+    for _, p in ipairs(set and (set.shown or set.pieces) or {}) do
+        if p.itemID == itemID then return p end
+    end
+end
+
 local function PieceOf(itemID)
-    if not pieceIndex then
-        local sets = AllSets()
-        if not sets then return nil end
-        pieceIndex = {}
-        for _, set in ipairs(sets) do
-            for _, p in ipairs(set.shown or set.pieces) do
-                if not pieceIndex[p.itemID] then pieceIndex[p.itemID] = p end
-            end
+    local Tip, D = ns.Tooltip, ns.Data
+    if Tip and Tip.Lookup and D and D.GetSet then
+        local okL, v = pcall(Tip.Lookup, itemID)
+        if okL and v == nil then return nil end
+        if okL and type(v) == "number" then
+            local okS, set = pcall(D.GetSet, D, "c" .. v)
+            return okS and FindIn(set, itemID) or nil
         end
     end
-    return pieceIndex[itemID]
+    local sets = AllSets()
+    if not sets then return nil end
+    for _, set in ipairs(sets) do
+        local p = FindIn(set, itemID)
+        if p then return p end
+    end
 end
 Progress.PieceOf = PieceOf
 

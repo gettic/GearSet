@@ -165,12 +165,14 @@ end
 local function SetMapPin(p)
     local ok = pcall(function()
         C_Map.SetUserWaypoint(_G.UiMapPoint.CreateFromCoordinates(p.m, p.x / 100, p.y / 100))
-        local st = _G.C_SuperTrack
-        if st and st.SetSuperTrackedUserWaypoint then
-            st.SetSuperTrackedUserWaypoint(true)
-        end
     end)
-    return ok
+    if not ok then return false end
+    -- The pin is set; tracking it is a quiet extra (a failure here doesn't undo the pin).
+    local st = _G.C_SuperTrack
+    if st and st.SetSuperTrackedUserWaypoint then
+        pcall(st.SetSuperTrackedUserWaypoint, true)
+    end
+    return true
 end
 
 function Way:Go(p)

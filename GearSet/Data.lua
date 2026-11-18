@@ -49,11 +49,6 @@ function Data.ClassBit(classID)
     return lshift(1, classID - 1)
 end
 
--- Display rule: classMask 0 = every class (the tooltip/header use the hint separately).
-function Data.SetHasClass(set, classID)
-    return set.classMask == 0 or band(set.classMask, Data.ClassBit(classID)) ~= 0
-end
-
 -- Heaviest armor each class can wear at level 60 (1 cloth .. 4 plate; warcraft.wiki.gg/wiki/Armor).
 -- Classes not listed (none in this game) are never hidden by the armor rule.
 local CLASS_MAX_ARMOR = {
@@ -174,11 +169,6 @@ function Data.SourceFlags(itemID)
     if type(raw) ~= "string" then return out end
     for part in (raw .. ";"):gmatch("([^;]*);") do out[#out + 1] = part end
     return out
-end
-
-function Data.SourceChecked(itemID, index)
-    local f = Data.SourceFlags(itemID)[index]
-    return f ~= nil and f:find("f", 1, true) ~= nil
 end
 
 -- True when the item has sources and every one of them is flagged "not out yet".
@@ -490,7 +480,9 @@ local function LinesFromHiddenTooltip(itemID)
     local out
     if ok then
         out = {}
-        for i = 1, tip:NumLines() or 0 do
+        local n = tip:NumLines()
+        if IsSecret(n) or type(n) ~= "number" then n = 0 end
+        for i = 1, n do
             local left = _G["GearSetScanTooltipTextLeft" .. i]
             local right = _G["GearSetScanTooltipTextRight" .. i]
             local raw = left and left:GetText()
@@ -1660,8 +1652,4 @@ function Data:GetSetStats(set, onReady)
     end
     sync = false
     return result
-end
-
-function Data:ClearSetStats()
-    wipe(statsCache)
 end

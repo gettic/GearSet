@@ -79,6 +79,11 @@ function Tip.Lookup(itemID)
     return (index or Tip.BuildIndex())[itemID]
 end
 
+-- The index itself (built on first use); also Alts.SetItems' "is a set piece" table.
+function Tip.Index()
+    return index or Tip.BuildIndex()
+end
+
 -- New list of set IDs for an item (empty when it is no set piece). Not for the hot path.
 function Tip.SetIDsOf(itemID)
     local v = Tip.Lookup(itemID)

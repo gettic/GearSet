@@ -326,16 +326,6 @@ function Theme.AtlasExists(atlas)
     return atlas and C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(atlas) ~= nil
 end
 
--- Use the atlas if the client has it, otherwise the fallback file (never a green box).
-function Theme.SetAtlasOr(tex, atlas, file)
-    if Theme.AtlasExists(atlas) then
-        tex:SetAtlas(atlas)
-        return true
-    end
-    if file then tex:SetTexture(file) end
-    return false
-end
-
 -- Apply a Theme.art entry: first atlas the client has ({atlas=} or {atlases={...}}),
 -- else its file; then its blend mode. Returns the atlas used (nil = file or nothing).
 function Theme.SetArt(tex, entry)

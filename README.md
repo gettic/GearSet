@@ -4,7 +4,7 @@ Keeps track of all known armor sets in the game, in one window with three parts:
 
 A World of Warcraft addon for **WoW Forever**.
 
-> **Beta:** this is a beta (v1.0.0-beta.9). It has not been fully tested in the game yet, so things may not work as they should. Please tell us what you find.
+> **Beta:** this is a beta (v1.0.0-beta.10). It has not been fully tested in the game yet, so things may not work as they should. Please tell us what you find.
 
 ## Install
 
@@ -224,7 +224,7 @@ Most of the data is classic data, not yet checked on WoW Forever. The guide page
 | `/gs help` | List the commands in chat and show the help on the window |
 | `/gs check` | Show the data version, last-checked date, WoW Forever build, data sources and how many sets and sources are checked on Forever, then check the built-in set list against the game and print any problems |
 | `/gs probe` | List which game features this client has (waypoints, current map, tooltips, lockouts, reputation, keyring, account bank, journals, art) and put the result in a copy box to paste into a bug report |
-| `/gs selftest` | The addon checks its own window, buttons, art, saved settings (on copies, yours are never changed) and data, then puts one line in a copy box to paste into a bug report. The line also says how many characters are saved and whether the account bank could be read. It has no character name, realm, guild or web address. In combat it waits until the fight ends |
+| `/gs selftest` | The addon checks its own window, buttons, art, saved settings (on copies, yours are never changed) and data, then puts one line in a copy box to paste into a bug report. The line also says how many characters are saved, whether the account bank could be read, and how much memory the addon uses (for example "memory: 2500 KB"; left out if the game can't tell). It has no character name, realm, guild or web address. In combat it waits until the fight ends |
 | `/gs selftest full` | The same, and it also opens and closes a guide page and the help |
 
 ## Where the sets come from
@@ -281,8 +281,8 @@ The addon is in the `GearSet` folder (`GearSet_Forever.toc`, interface 16001). S
 
 Works with LibDataBroker displays such as Titan Panel and with TomTom if you have them installed; they are not included with Gear Set and keep their own licences.
 
-Set, item, source, position and gold cost data, and the how-to-get guide text, gathered from Warcraft Wiki (https://warcraft.wiki.gg), whose text is available under CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). World of Warcraft and its content are trademarks and property of Blizzard Entertainment.
+Set, item, source, position and gold cost data, and the how-to-get guide text, gathered and adapted from Warcraft Wiki (https://warcraft.wiki.gg), whose text is available under CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). World of Warcraft and its content are trademarks and property of Blizzard Entertainment.
 
 ## License
 
-Code: all rights reserved. Wiki-derived data files: CC BY-SA 4.0. See `LICENSE`.
+Code: all rights reserved. Wiki-derived data files: CC BY-SA 4.0. See `LICENSE` (a copy is also inside the addon, in `GearSet\LICENSE`).

@@ -1,4 +1,4 @@
--- Data gathered from Warcraft Wiki (https://warcraft.wiki.gg), CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Facts only; game content (c) Blizzard Entertainment.
+-- Data gathered from Warcraft Wiki (https://warcraft.wiki.gg) and adapted, CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Facts only; game content (c) Blizzard Entertainment.
 -- Gear Set: bundled classic item sets (IDs only).
 -- [itemSetID] = { c = classMask, [h = classHint,] k = kind, [t = tier,] [f = faction,] [r = 1,] i = { itemID, ... } }
 -- t: tier tag D1, D2, T1, T2, T3, ZG, AQ20, AQ40 or PvP (rank sets); missing = no tier.

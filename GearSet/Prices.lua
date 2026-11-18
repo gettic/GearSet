@@ -41,7 +41,7 @@ local function IsSetPiece(id)
     local A = ns.Alts
     if A and A.SetItems then
         local ok, items = pcall(A.SetItems)
-        if ok and type(items) == "table" then return items[id] == true end
+        if ok and type(items) == "table" then return items[id] ~= nil end
     end
     return false
 end

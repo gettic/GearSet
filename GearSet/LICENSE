@@ -1,0 +1,18 @@
+Copyright (c) 2026 gettic. All rights reserved.
+
+This addon and its source code belong to the copyright holder. You may
+download it and use it to play World of Warcraft. You may not copy, change,
+redistribute or publish it, or any part of it, without written permission
+from the copyright holder.
+
+Third-party libraries included with the addon (for example in its Libs
+folder) are not covered by this notice. They keep their own licences, which
+are included next to them.
+
+Game data in the data files (SetsData.lua, SourcesData.lua, GuideData.lua,
+PlacesData.lua, GoldData.lua and any later data file marked so in its first
+line) was gathered from Warcraft Wiki (https://warcraft.wiki.gg) and adapted.
+That data is available under CC BY-SA 4.0
+(https://creativecommons.org/licenses/by-sa/4.0/), not under the notice above;
+the addon's code stays all rights reserved. World of Warcraft and its content
+are trademarks and property of Blizzard Entertainment.

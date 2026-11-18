@@ -39,9 +39,19 @@ local function Num(v) return type(v) == "number" and v == v and v or nil end
 -- Set items and id strings
 
 local setItems
--- itemID -> true for every piece in the bundled set table (built once, no API calls).
+-- itemID -> a true value for every piece in the bundled set table (built once, no API calls).
+-- Shares the tooltip's item index (values there are set IDs) instead of a second copy;
+-- own table of `true` only when Tooltip.lua isn't loaded.
 function Alts.SetItems()
     if setItems then return setItems end
+    local Tip = ns.Tooltip
+    if Tip and type(Tip.Index) == "function" then
+        local ok, idx = pcall(Tip.Index)
+        if ok and type(idx) == "table" then
+            setItems = idx
+            return setItems
+        end
+    end
     setItems = {}
     local tbl = ns.ClassicSets
     if type(tbl) == "table" then

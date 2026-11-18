@@ -8,7 +8,7 @@
 -- frame is checked with issecretvalue before it is compared ("skipped (secret)"). In
 -- combat it waits; if combat starts mid-run it stops and puts everything back.
 -- Never reads tooltip data or calls Data:GetSetStats. Never writes the saved data.
-local _, ns = ...
+local ADDON_NAME, ns = ...
 
 local ST = {}
 ns.SelfTest = ST
@@ -1191,10 +1191,24 @@ local function CheckSearch()
     end
 end
 
+-- Info "memory: N KB" = this addon's Lua memory as the game counts it (read-only; out of combat).
+local function MemoryInfo()
+    if InCombat() then return end
+    local update = (C_AddOns and C_AddOns.UpdateAddOnMemoryUsage) or _G.UpdateAddOnMemoryUsage
+    local get = (C_AddOns and C_AddOns.GetAddOnMemoryUsage) or _G.GetAddOnMemoryUsage
+    if type(update) ~= "function" or type(get) ~= "function" then return Skip("memory", "(no API)") end
+    local ok = pcall(update)
+    local okG, kb = pcall(get, ADDON_NAME)
+    if ok and okG and type(kb) == "number" and not IsSecret(kb) then
+        Info(("memory: %d KB"):format(math.floor(kb + 0.5)))
+    end
+end
+
 local function CheckData()
     local D = ns.Data
     Count()
     if not D then return Problem("DATA", "Data", "missing") end
+    MemoryInfo()
     local t0 = Now()
     local sets = D:GetSets()
     Count()

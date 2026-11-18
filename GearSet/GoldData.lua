@@ -1,4 +1,4 @@
--- Data gathered from Warcraft Wiki (https://warcraft.wiki.gg), CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Facts only; game content (c) Blizzard Entertainment.
+-- Data gathered from Warcraft Wiki (https://warcraft.wiki.gg) and adapted, CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Facts only; game content (c) Blizzard Entertainment.
 -- Gear Set: fixed in-game gold costs of set pieces (no auction prices; crafting materials not priced).
 -- quest[quest name] = whole gold the quest (or its step) asks for; counted once per set by Gold.lua.
 -- piece[itemID]     = whole gold for one piece bought from a vendor.

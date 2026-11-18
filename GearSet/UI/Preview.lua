@@ -29,16 +29,23 @@ function Preview:Build(parent, bar)
     -- Drag to turn, mouse wheel to zoom.
     model:EnableMouse(true)
     model:EnableMouseWheel(true)
-    model:SetScript("OnMouseDown", function(m, button)
-        if button == "LeftButton" then m.dragX = GetCursorPosition() end
-    end)
-    model:SetScript("OnMouseUp", function(m) m.dragX = nil end)
-    model:SetScript("OnUpdate", function(m)
+    -- The turning OnUpdate runs only while the left button is held (no per-frame call otherwise).
+    local function DragTurn(m)
         if not m.dragX then return end
         local x = GetCursorPosition()
         Preview.facing = Preview.facing + (x - m.dragX) * 0.01
         m.dragX = x
         m:SetFacing(Preview.facing)
+    end
+    model:SetScript("OnMouseDown", function(m, button)
+        if button == "LeftButton" then
+            m.dragX = GetCursorPosition()
+            m:SetScript("OnUpdate", DragTurn)
+        end
+    end)
+    model:SetScript("OnMouseUp", function(m)
+        m.dragX = nil
+        m:SetScript("OnUpdate", nil)
     end)
     model:SetScript("OnMouseWheel", function(m, delta)
         Preview.zoom = math.max(0, math.min(MAX_ZOOM, Preview.zoom + delta * 0.1))

@@ -530,6 +530,9 @@ end
 -- Defaults, checks and migrations on any table (InitDB's saved data; /gs selftest runs
 -- it on copies only). Never removes the user's keys.
 function ns.PrepareDB(t)
+    -- A numeric-looking string version ("5") counts by its number before ApplyDefaults,
+    -- which would otherwise swap the wrong type for the default and lower a newer version.
+    if type(t.version) == "string" and Finite(t.version) then t.version = tonumber(t.version) end
     ApplyDefaults(t, defaults)
     ValidateDB(t)
     -- Migrations (compare t.version). v1 -> v2, v2 -> v3 and v3 -> v4 only add keys (ApplyDefaults
