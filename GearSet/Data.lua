@@ -193,6 +193,7 @@ local function AllSourcesLater(itemID)
     end
     return true
 end
+Data.AllSourcesLater = AllSourcesLater   -- Alts: set pieces without building the set list
 
 local function BuildClassic(out)
     local tbl = ClassicTable()
@@ -857,8 +858,8 @@ function AddRows(out, rows, ctx)
                 done.mat = true
                 Add(out, "row", table.concat(mats, ", "), L.G_MATS)
             end
-        elseif not Has(a) then
-            -- empty value: nothing to show
+        elseif not Has(a) then -- luacheck: ignore 542
+            -- empty value: nothing to show (the branch stops the rows below)
         elseif k == "giver" then Add(out, "row", NpcText(a, mine), L.G_GIVER)
         elseif k == "rep" then Add(out, "row", Has(b) and (a .. " " .. b) or a, L.G_NEEDS)
         elseif k == "rank" then Add(out, "row", Has(b) and L.G_RANK:format(a, b) or L.G_RANK_N:format(a), L.G_NEEDS)
@@ -1395,8 +1396,14 @@ function Data:GetEffort(set)
     local hit = effortCache[set.key]
     if hit then return hit end
     local L, mine = ns.L, Data.PlayerFaction()
+    -- beta.7: a finished set stays finished (even after upgrading pieces away).
+    if ns.Alts and ns.Alts.IsCompleted and set.id and ns.Alts:IsCompleted(set.id) then
+        local done = { level = 0, word = L.EFFORT_0, points = 0, reasons = {}, need = 0 }
+        effortCache[set.key] = done
+        return done
+    end
     local total = { places = {}, gold = 0, reps = {}, chains = {}, quests = {}, special = {} }
-    local need = 0
+    local need, known = 0, 0
     for _, piece in ipairs(set.pieces) do
         if not (ns.Owned and ns.Owned:IsHave(piece)) then
             need = need + 1
@@ -1410,6 +1417,7 @@ function Data:GetEffort(set)
                 end
             end
             if best then
+                known = known + 1
                 for name, pl in pairs(best.places) do total.places[name] = pl end
                 total.world = total.world or best.world
                 total.craft = total.craft or best.craft
@@ -1452,7 +1460,16 @@ function Data:GetEffort(set)
     if steps > 0 then reasons[#reasons + 1] = L.EFFORT_CHAIN:format(steps) end
     if total.craft then reasons[#reasons + 1] = L.EFFORT_CRAFT end
     if total.world then reasons[#reasons + 1] = L.EFFORT_WORLD end
-    local out = { level = level, word = L["EFFORT_" .. level], points = points, reasons = reasons, need = need }
+    local word = L["EFFORT_" .. level]
+    -- beta.7: no needed piece has a usable source in the data (e.g. a Forever set with no
+    -- source rows): effort is unknown, not "Low". Level 5 = unknown (grey, effortColor[0]).
+    local unknown = need > 0 and known == 0 or nil
+    if unknown then
+        level, word = 5, L.EFFORT_UNKNOWN or "unknown"
+        reasons = { L.EFFORT_NO_DATA or "No source data for these pieces yet." }
+    end
+    local out = { level = level, word = word, points = points, reasons = reasons, need = need,
+        unknown = unknown }
     effortCache[set.key] = out
     return out
 end
@@ -1461,11 +1478,13 @@ function Data:ClearEffort()
     wipe(effortCache)
 end
 
--- Sort key for "Least effort": lower first; complete sets last, sets not out yet before them.
+-- Sort key for "Least effort": lower first; complete sets last, sets not out yet before them,
+-- sets with unknown effort (no source data) after the known ones and before those.
 function Data:EffortRank(set)
     local e = self:GetEffort(set)
     if not e or e.need == 0 then return 1e9 end
     if set.unreleased then return 1e8 + e.points end
+    if e.unknown then return 5e7 + e.need end
     return e.points + e.need * 0.01
 end
 

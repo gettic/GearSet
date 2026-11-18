@@ -19,11 +19,77 @@ local INFO_TOP = -32       -- header: title at -10, armor/classes, then "Have x 
 local COUNT_TOP = -50
 local LIST_TOP = -74        -- where the scroll list starts below the header
 
+-- beta.7 alt memory (Alts.lua). Mailbox / keyring / account bank state: "seen N days ago";
+-- a piece this character lacks: "Also on: Bankalt (bank)" (+n more). nil = no line.
+local ALT_MAX_W = 170
+local SEEN_STATES = { mail = true, keyring = true, account = true }
+local function Alts() return ns.Alts end
+
+function PieceList.AltLine(piece, state)
+    local A = Alts()
+    if not (A and piece) then return nil end
+    if SEEN_STATES[state] then
+        local ok, _, seen = pcall(A.MyPlace, A, piece.itemID)
+        return ok and A.SeenText(seen) or nil
+    end
+    if state ~= "need" and state ~= "look" then return nil end
+    local ok, list = pcall(A.OthersHolding, A, piece.itemID)
+    if not ok or type(list) ~= "table" or #list == 0 then return nil end
+    local h = list[1]
+    local text = L.ALT_HOLDER:format(tostring(h.name), A.WhereText(h.where))
+    if #list > 1 then text = L.ALT_MORE:format(text, #list - 1) end
+    return L.ALT_ALSO_ON:format(text)
+end
+
+-- Shows the line under the state (both move up/down a bit) and keeps the name left of the wider one.
+local function PlaceAltLine(row, text)
+    if not row.alt then return end
+    if not text then
+        row.alt:Hide()
+        row.state:SetPoint("RIGHT", row.marker, "LEFT", -6, 0)
+        row.name:SetPoint("RIGHT", row.state, "LEFT", -6, 0)
+        return
+    end
+    row.alt:SetWidth(0)
+    row.alt:SetText(text)
+    local w = row.alt:GetStringWidth() or 0
+    if w > ALT_MAX_W then row.alt:SetWidth(ALT_MAX_W); w = ALT_MAX_W end
+    row.alt:Show()
+    row.state:SetPoint("RIGHT", row.marker, "LEFT", -6, 7)
+    local wider = w > (row.state:GetStringWidth() or 0) and row.alt or row.state
+    row.name:SetPoint("RIGHT", wider, "LEFT", -6, 0)
+end
+
+-- Tooltip lines: where this character keeps it outside bags/bank, and the other characters.
+local function AddAltTooltip(tip, piece, state)
+    local A = Alts()
+    if not (A and A.GetHolders) then return end
+    local ok, list = pcall(A.OthersHolding, A, piece.itemID)
+    local sr, sg, sb = Theme.colors.subtle:GetRGB()
+    if SEEN_STATES[state] then
+        local okP, _, seen = pcall(A.MyPlace, A, piece.itemID)
+        local s = okP and A.SeenText(seen)
+        tip:AddLine(L["STATE_" .. state] .. (s and (", " .. s) or ""), sr, sg, sb)
+    end
+    if not ok or type(list) ~= "table" or #list == 0 then return end
+    tip:AddLine(L.ALT_TIP_HEAD, Theme.colors.title:GetRGB())
+    for i, h in ipairs(list) do
+        if i > 6 then
+            tip:AddLine(("+%d"):format(#list - 6), sr, sg, sb)
+            break
+        end
+        local s = A.SeenText(h.seen)
+        tip:AddLine("  " .. L.ALT_HOLDER:format(tostring(h.name), A.WhereText(h.where))
+            .. (s and (", " .. s) or ""), sr, sg, sb)
+    end
+end
+
 local function PieceTooltip(row)
     local p = row.piece
     if not p then return end
     GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
     GameTooltip:SetItemByID(p.itemID)
+    pcall(AddAltTooltip, GameTooltip, p, ns.Owned:GetState(p))
     GameTooltip:AddLine(" ")
     Theme.AddHint(GameTooltip, L.PIECE_TIP)
     Theme.AddHint(GameTooltip, L.PIECE_TIP_MOD)
@@ -95,6 +161,14 @@ local function BuildRow(row)
     Theme.Font(row.state, "small")
     row.state:SetPoint("RIGHT", row.marker, "LEFT", -6, 0)
     row.state:SetJustifyH("RIGHT")
+    -- beta.7: small grey line under the state: "Also on: Bankalt (bank)" or "seen 3 days ago".
+    row.alt = row:CreateFontString(nil, "OVERLAY")
+    Theme.Font(row.alt, "small")
+    row.alt:SetPoint("RIGHT", row.marker, "LEFT", -6, -7)
+    row.alt:SetJustifyH("RIGHT")
+    if row.alt.SetWordWrap then row.alt:SetWordWrap(false) end
+    row.alt:SetTextColor(Theme.colors.subtle:GetRGB())
+    row.alt:Hide()
     -- Name: up to 2 lines (fits the 36 px row), so long names aren't cut.
     row.name = row:CreateFontString(nil, "OVERLAY")
     Theme.Font(row.name, "text")
@@ -156,6 +230,7 @@ InitRow = function(row, piece)
         row.state:SetText(L["STATE_" .. state])
         row.state:SetTextColor(W.StateColor(state):GetRGB())
     end
+    PlaceAltLine(row, PieceList.AltLine(piece, state))
 
     row.sel:SetShown(PieceList.lastItem == itemID)
 end
@@ -397,8 +472,25 @@ end
 -- "Have x / y" tooltip: what you have, split by where it is.
 local BREAKDOWN = {
     { "equipped", "STATE_equipped" }, { "bags", "STATE_bags" }, { "bank", "STATE_bank" },
+    { "mail", "STATE_mail" }, { "keyring", "STATE_keyring" }, { "account", "STATE_account" },
     { "look", "APPEARANCE_ONLY" }, { "need", "STATE_need" },
 }
+-- "Finished on 2026-11-18" (+ "Stays finished ..." when pieces were upgraded away).
+-- Also used by the set list tooltip. Returns true when a line was added.
+function PieceList.AddDoneLines(tip, set)
+    local O, A = ns.Owned, Alts()
+    if not (O and O.CompletedOn and A and set) then return false end
+    local ok, t = pcall(O.CompletedOn, O, set)
+    if not ok or not t then return false end
+    local r, g, b = Theme.colors.have:GetRGB()
+    tip:AddLine(L.DONE_ON:format(A.DateText(t) or "?"), r, g, b)
+    local bd = O:SetBreakdown(set)
+    if (bd.need or 0) > 0 then
+        tip:AddLine(L.DONE_KEPT, Theme.colors.subtle:GetRGB())
+    end
+    return true
+end
+
 local function CountTooltip(self)
     local set = PieceList.set
     if not set then return end
@@ -406,7 +498,7 @@ local function CountTooltip(self)
     GameTooltip:SetOwner(self, "ANCHOR_BOTTOMLEFT")
     GameTooltip:SetText(L.HAVE_COUNT:format(ns.Owned:SetCount(set)), 1, 1, 1)
     for _, e in ipairs(BREAKDOWN) do
-        if b[e[1]] > 0 then
+        if (b[e[1]] or 0) > 0 then
             local r, g, bl = W.StateColor(e[1]):GetRGB()
             GameTooltip:AddDoubleLine(L[e[2]] or e[2], b[e[1]], r, g, bl, 1, 1, 1)
         end
@@ -415,6 +507,7 @@ local function CountTooltip(self)
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine(L.APPEARANCE_NOTE, Theme.colors.subtle:GetRGB())
     end
+    PieceList.AddDoneLines(GameTooltip, set)
     -- WoW Forever lines: pieces not out yet (not in "Have x / y"), checked / not confirmed.
     if ns.SetList and ns.SetList.AddFlagLines then ns.SetList.AddFlagLines(GameTooltip, set) end
     GameTooltip:Show()

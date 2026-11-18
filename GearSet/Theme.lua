@@ -160,6 +160,12 @@ Theme.colors = {
     helpNoteBg = CreateColor(0.05, 0.05, 0.05, 0.92),             -- note box when no template exists
     -- Settings panel: grey data line
     settingsData = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),
+    -- Item tooltip line / inspect line / broker (review-ui 8): "Gear Set:" gold, set name white,
+    -- count in CountColor, "- you need this" and "Needed by" grey
+    tipLabel = Color("NORMAL_FONT_COLOR", 1, 0.82, 0),
+    tipName  = Color("HIGHLIGHT_FONT_COLOR", 1, 1, 1),
+    tipNote  = Color("GRAY_FONT_COLOR", 0.5, 0.5, 0.5),
+    inspectBg = CreateColor(0, 0, 0, 0.6),                        -- strip under the inspect window (GetRGBA)
 }
 
 -- Effort word colours (Data:GetEffort level): 0 Done grey, 1 Low green, 2 Medium gold,
@@ -185,6 +191,9 @@ Theme.stateColor = {
     equipped = Theme.colors.have,
     bags     = Theme.colors.have,
     bank     = Theme.colors.have,
+    mail     = Theme.colors.have,      -- beta.7 (Alts.lua)
+    keyring  = Theme.colors.have,
+    account  = Theme.colors.have,
     look     = Theme.colors.look,
     need     = Theme.colors.need,
 }

@@ -4,7 +4,7 @@ Keeps track of all known armor sets in the game, in one window with three parts:
 
 A World of Warcraft addon for **WoW Forever**.
 
-> **Beta:** this is a beta (v1.0.0-beta.6). It has not been fully tested in the game yet, so things may not work as they should. Please tell us what you find.
+> **Beta:** this is a beta (v1.0.0-beta.7). It has not been fully tested in the game yet, so things may not work as they should. Please tell us what you find.
 
 ## Install
 
@@ -39,6 +39,10 @@ Open them with the gear button at the top right of the window, a right-click on 
 | Reset window position | Puts the window back in the middle |
 | Show hidden sets in the list | Same as "Show hidden sets" in the filter menu |
 | Show all | Un-hides every hidden set |
+| Show the Gear Set line on item tooltips | Turns the [tooltip line](#item-tooltips-and-alt-click) on or off (on by default) |
+| Only while Shift is held | Shows the tooltip line only while you hold Shift |
+| Alt-click an item to open its guide | Turns Alt-click on or off (on by default) |
+| Forget a character | Removes the saved pieces of one of your other characters |
 | Show help now | Opens the help |
 | Report a problem | Shows one line to copy for a bug report: addon and data version, game build, and the set and piece you looked at. No character name, realm or guild. Nothing is sent anywhere |
 | Data version | Shown at the bottom |
@@ -57,8 +61,8 @@ Open them with the gear button at the top right of the window, a right-click on 
 | Hide a set | Right-click it and pick "Hide this set". "Show hidden sets" in the filter menu lists hidden sets again in grey with a "hidden" tag; right-click one and pick "Show this set". "Reset filters" turns "Show hidden sets" off. Hidden sets are kept through `/reload` and updates |
 | Tier | The set tooltip shows the tier tag (Dungeon Set 1/2, Tier 1-3, Zul'Gurub, Ruins / Temple of Ahn'Qiraj, PvP), for example "Tier: Tier 2" |
 | Sort | In the filter menu: "Most owned first" (default), "Closest to finishing", "Least effort" or "Name" |
-| Order | "Most owned first": complete sets first, then sets you have some pieces of, then the rest. In each group, the sets you own most of come first, then A-Z. "Closest to finishing": sets missing the fewest pieces first, complete sets last. "Least effort": sets that need the least work for the pieces you still need first, complete sets last. The chosen set stays in view when the order changes |
-
+| Order | "Most owned first": complete sets first, then sets you have some pieces of, then the rest. In each group, the sets you own most of come first, then A-Z. "Closest to finishing": sets missing the fewest pieces first, complete sets last. "Least effort": sets that need the least work for the pieces you still need first, then sets with unknown effort, complete sets last. The chosen set stays in view when the order changes |
+| Finished sets | A set you finished stays finished, even after you upgrade or sell pieces. Its tooltip shows the date you finished it |
 ### Preview (middle)
 
 Your character wearing the chosen set.
@@ -73,12 +77,12 @@ Your character wearing the chosen set.
 
 ### Pieces (right)
 
-The set's pieces. At the top: the set name (arrows beside it go to the previous or next set), its armor type and classes, and "Have x / y". Hover "Have x / y" to see how many pieces are equipped, in your bags, in the bank, or only collected as an appearance. Next to it, "Set bonuses (2/3)" shows the bonuses in effect out of all (grey when the set has none). Only pieces you wear count. Hover it to see "Set name (worn/total)" and each bonus; a bonus is green when you wear enough pieces. Each piece shows where it is: Equipped, In bags, In bank, Appearance or Need.
+The set's pieces. At the top: the set name (arrows beside it go to the previous or next set), its armor type and classes, and "Have x / y". Hover "Have x / y" to see how many pieces are equipped, in your bags, bank, mailbox, keyring or account bank, or only collected as an appearance. Next to it, "Set bonuses (2/3)" shows the bonuses in effect out of all (grey when the set has none). Only pieces you wear count. Hover it to see "Set name (worn/total)" and each bonus; a bonus is green when you wear enough pieces. Each piece shows where it is: Equipped, In bags, In bank, In mailbox, On keyring, Account bank, Appearance or Need. The mailbox, keyring and account bank are only checked when you open the mailbox or bank, so those pieces show a grey date, such as "seen 3 days ago". The account bank only counts if the game lets addons read it. For pieces your other characters have, see [Your other characters](#your-other-characters).
 
 Next to "Set bonuses" are two more hovers:
 
 - **Stats:** whether your class can wear the set, and the stats of all its pieces added up from the game's own item tooltips. It is read only for the set you look at, and only out of combat.
-- **Effort:** Low, Medium, High or Very high, worked out from Gear Set's own data for the pieces you still need (dungeons and raids to run, with 40-player raids counting more; quests inside dungeons; reputation; gold; quest chains; crafting; world drops; special events). Hover it to see the reasons.
+- **Effort:** Low, Medium, High or Very high, worked out from Gear Set's own data for the pieces you still need (dungeons and raids to run, with 40-player raids counting more; quests inside dungeons; reputation; gold; quest chains; crafting; world drops; special events). Hover it to see the reasons. "Effort: unknown" means Gear Set has no source data for the pieces you need yet.
 
 | What | How |
 |---|---|
@@ -112,6 +116,29 @@ The guide covers:
 
 Anything the addon doesn't know says "not known". Guide text is in English only.
 
+### Item tooltips and Alt-click
+
+| What | How |
+|---|---|
+| Tooltip line | Set pieces get one line on their item tooltip, for example "Gear Set: Nightslayer 3/8 - you need this" |
+| Needed by | "Needed by: Name 3/8" lists your other characters who started that set and still need the piece |
+| Alt-click | Alt-click a set piece (bags, chat links, loot, character window) to open Gear Set at that piece's guide. In combat it opens when the fight ends |
+| Turn them off | In the settings you can turn the tooltip line off, show it only while Shift is held, or turn Alt-click off |
+
+### Your other characters
+
+Gear Set remembers which set pieces each of your characters has: equipped, in bags, bank, mailbox and on the keyring. It saves them when you log out or close the bank. Piece rows show "Also on: Bankalt (bank)", and set tooltips show your other characters' progress. Only your own characters are saved, and only on your computer.
+
+To remove an old character, use Settings > Characters > "Forget a character", or `/gs forget`.
+
+### Inspect
+
+After you inspect someone, a strip under the inspect window shows the set they wear most, for example "Gear Set: Stabby wears Bloodfang 6/8". Hover it to see all their sets. Nothing about other players is saved.
+
+### Data bars
+
+If you use Titan Panel or another LibDataBroker bar, it shows a "Gear Set" launcher. Click it to open the window, right-click for the settings. Gear Set bundles no libraries: the launcher only shows when such a bar addon is installed.
+
 ### Checked on WoW Forever
 
 Most of the data is classic data, not yet checked on WoW Forever. The guide page and set tooltips say which:
@@ -126,7 +153,7 @@ Most of the data is classic data, not yet checked on WoW Forever. The guide page
 
 | Colour | Pieces (right) | Sets (left) and "Have x / y" |
 |---|---|---|
-| Green | You have it: equipped, in bags or in bank | You have every piece |
+| Green | You have it: equipped, in bags, bank, mailbox, keyring or account bank | You have every piece |
 | Blue | Appearance collected (counts as have) | - |
 | Gold | - | You have some pieces |
 | Grey | You still need it | You have none |
@@ -139,10 +166,11 @@ Most of the data is classic data, not yet checked on WoW Forever. The guide page
 | `/gs reset` | Put the window back in the middle of the screen |
 | `/gs minimap` | Show or hide the minimap button |
 | `/gs config` | Open the settings |
+| `/gs forget` | Pick one of your other characters to forget (removes its saved pieces) |
 | `/gs help` | List the commands in chat and show the help on the window |
 | `/gs check` | Show the data version, last-checked date, WoW Forever build, data sources and how many sets and sources are checked on Forever, then check the built-in set list against the game and print any problems |
 | `/gs probe` | List which game features this client has (waypoints, current map, tooltips, lockouts, reputation, keyring, account bank, journals, art) and put the result in a copy box to paste into a bug report |
-| `/gs selftest` | The addon checks its own window, buttons, art, saved settings (on copies, yours are never changed) and data, then puts one line in a copy box to paste into a bug report. It has no character name, realm, guild or web address. In combat it waits until the fight ends |
+| `/gs selftest` | The addon checks its own window, buttons, art, saved settings (on copies, yours are never changed) and data, then puts one line in a copy box to paste into a bug report. The line also says how many characters are saved and whether the account bank could be read. It has no character name, realm, guild or web address. In combat it waits until the fight ends |
 | `/gs selftest full` | The same, and it also opens and closes a guide page and the help |
 
 ## Where the sets come from
@@ -151,7 +179,15 @@ The classic armor sets come from a list built into the addon. Set names come fro
 
 ## For developers
 
-The addon is in the `GearSet` folder (`GearSet_Forever.toc`, interface 16001). Settings are saved account-wide in `GearSetDB`. Broken or hand-edited settings go back to their defaults at login.
+The addon is in the `GearSet` folder (`GearSet_Forever.toc`, interface 16001). Settings, and the set pieces your characters have, are saved account-wide in `GearSetDB`. Broken or hand-edited settings go back to their defaults at login.
+
+### For other addons
+
+| Function | What it does |
+|---|---|
+| `GearSet_IsSetPiece(item)` | `item` is an item ID or link. Returns `true` and the set ID for a set piece, else `false` |
+| `GearSet_ShowItem(item)` | Opens Gear Set at that piece's guide (after combat if you are in one). Returns `true` if it opens |
+
 
 | File | What it does |
 |---|---|
@@ -165,6 +201,10 @@ The addon is in the `GearSet` folder (`GearSet_Forever.toc`, interface 16001). S
 | `Probe.lua` | `/gs probe` and the data info shown by `/gs check` |
 | `SelfTest.lua` | `/gs selftest` |
 | `Owned.lua` | Works out whether you have each piece |
+| `Alts.lua` | Remembers your characters' set pieces, mailbox, keyring and account bank |
+| `Tooltip.lua` | The Gear Set line on item tooltips |
+| `Inspect.lua` | The strip under the inspect window |
+| `Integrations.lua` | Alt-click, the data bar launcher and the functions for other addons |
 | `UI\Widgets.lua` | Shared UI helpers (buttons, tooltips, item names) |
 | `UI\Main.lua` | The main window |
 | `UI\SetList.lua` | The set list, search and filter |
@@ -176,6 +216,8 @@ The addon is in the `GearSet` folder (`GearSet_Forever.toc`, interface 16001). S
 | `UI\Minimap.lua` | The minimap button and the Addon Compartment entry |
 
 ## Credits
+
+Works with LibDataBroker displays such as Titan Panel if you have one installed; they are not included with Gear Set and keep their own licences.
 
 Set, item and source data, and the how-to-get guide text, gathered from Warcraft Wiki (https://warcraft.wiki.gg), whose text is available under CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). World of Warcraft and its content are trademarks and property of Blizzard Entertainment.
 

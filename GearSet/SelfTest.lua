@@ -8,7 +8,7 @@
 -- frame is checked with issecretvalue before it is compared ("skipped (secret)"). In
 -- combat it waits; if combat starts mid-run it stops and puts everything back.
 -- Never reads tooltip data or calls Data:GetSetStats. Never writes the saved data.
-local ADDON, ns = ...
+local _, ns = ...
 
 local ST = {}
 ns.SelfTest = ST
@@ -570,14 +570,14 @@ local function Lost(old, new, path, depth, ignore)
     for k, v in pairs(old) do
         local p = path and (path .. "." .. tostring(k)) or tostring(k)
         local n = new[k]
-        if ignore and ignore[p] then
-            -- expected to change
-        elseif type(v) == "table" then
-            if type(n) ~= "table" then return p end
-            local deeper = Lost(v, n, p, depth + 1, ignore)
-            if deeper then return deeper end
-        elseif not Same(v, n) then
-            return p
+        if not (ignore and ignore[p]) then      -- ignored paths are expected to change
+            if type(v) == "table" then
+                if type(n) ~= "table" then return p end
+                local deeper = Lost(v, n, p, depth + 1, ignore)
+                if deeper then return deeper end
+            elseif not Same(v, n) then
+                return p
+            end
         end
     end
     return nil
@@ -589,6 +589,26 @@ local V1_SAMPLE = {
         kind = "r", myFaction = false },
     sort = "closest", search = "x", lastSet = "c1", onlySet = true,
     minimap = { angle = 45, hide = true }, custom = "keep",
+}
+
+local V2_SAMPLE = {
+    version = 2, point = { "CENTER", "CENTER", 5, 5 },
+    filters = { class = 0, armor = 0, usable = true, hideComplete = false, showRemoved = false,
+        kind = "", myFaction = true, showHidden = true },
+    sort = "effort", search = "", lastSet = "c1", onlySet = false, minimap = { angle = 90, hide = false },
+    hidden = { ["set:1"] = true }, help = { seen = true }, custom = "keep",
+}
+
+-- Two made-up characters (never the user's own data); "A" and "B" only.
+local V3_SAMPLE = {
+    version = 3, chars = {
+        ["A-Realm"] = { name = "A", realm = "Realm", class = "ROGUE", seen = 1000,
+            places = { equipped = "16820,16821", bags = "", bank = "16822", mail = "16823", keyring = "" },
+            dates = { equipped = 1000, bank = 900, mail = 800 }, done = { [204] = 950 } },
+        ["B-Realm"] = { name = "B", realm = "Realm", seen = 500, places = { bank = "16820" } },
+    },
+    account = { bank = "16824", date = 700, readable = true, checked = 700 },
+    tooltipLine = false, tooltipShift = true, altClick = false,
 }
 
 local function CheckSaved()
@@ -648,6 +668,30 @@ local function CheckSaved()
         if #wrong > 0 then Problem("DB", "bad", "not fixed: " .. table.concat(wrong, ", ")) end
     end
 
+    -- 3b. v2 data (beta.2-6): every value kept, the v3 keys added (chars, account, tooltip
+    -- settings); a v3 alt record goes through unchanged.
+    Count()
+    local v2 = DeepCopy(V2_SAMPLE)
+    ok, err = pcall(prep, v2)
+    if not ok then
+        Problem("DB", "v2", Short(err))
+    else
+        local lost = Lost(V2_SAMPLE, v2, nil, 0, { version = true })
+        if lost then Problem("DB", "v2", "lost " .. lost)
+        elseif type(v2.chars) ~= "table" or type(v2.account) ~= "table" or v2.tooltipLine ~= true
+            or v2.tooltipShift ~= false or v2.altClick ~= true then Problem("DB", "v2", "v3 keys not added")
+        elseif v2.version ~= ns.DB_VERSION then Problem("DB", "v2", "version not raised") end
+    end
+    Count()
+    local v3 = DeepCopy(V3_SAMPLE)
+    ok, err = pcall(prep, v3)
+    if not ok then
+        Problem("DB", "v3", Short(err))
+    else
+        local lost = Lost(V3_SAMPLE, v3)
+        if lost then Problem("DB", "v3", "changed " .. lost) end
+    end
+
     -- 4. Live hidden-set keys and last set point at known sets.
     Count()
     local D = ns.Data
@@ -659,6 +703,66 @@ local function CheckSaved()
         end
         if unknown > 0 then Info(("hidden keys not in the data: %d"):format(unknown)) end
         if db.lastSet and not D:GetSet(db.lastSet) then Info("last set not in the data") end
+    end
+end
+
+-- ---------------------------------------------------------------------------
+-- Alt memory (Alts.lua): pure checks on made-up data + counts of the live data.
+-- No character names ever go into the result (counts and yes/no only).
+
+local function CheckAlts()
+    local A = ns.Alts
+    Count()
+    if not (A and A.BuildIndex and A.Encode and A.Decode) then return Problem("ALT", "module", "missing") end
+    -- id strings: sorted, no doubles, junk ignored
+    Count()
+    local s = A.Encode(A.Decode("16822,16820,16820,x"))
+    if s ~= "16820,16822" then Problem("ALT", "ids", "encode gave " .. tostring(s)) end
+    -- index on a copy of the made-up v3 data, as if "Me-Realm" were logged in
+    Count()
+    local copy = DeepCopy(V3_SAMPLE)
+    local okI, idx, per, acc = pcall(A.BuildIndex, copy, "Me-Realm",
+        { bags = { [16825] = true }, dates = { bags = 1 } }, { items = { [16824] = true }, date = 700 })
+    if not okI then
+        Problem("ALT", "index", Short(idx))
+    else
+        local h = idx[16820]
+        local wrong
+        if not (h and #h == 2 and h[1].key == "A-Realm" and h[1].where == "equipped" and h[2].where == "bank") then
+            wrong = "16820"
+        elseif not (idx[16823] and idx[16823][1].where == "mail" and idx[16823][1].seen == 800) then
+            wrong = "mail"
+        elseif not (idx[16825] and idx[16825][1].key == "Me-Realm" and idx[16825][1].where == "bags") then
+            wrong = "live"
+        elseif not (idx[16824] and idx[16824][1].where == "account" and acc[16824]) then
+            wrong = "account"
+        elseif not (per["B-Realm"] and per["B-Realm"][16820]) then
+            wrong = "per char"
+        end
+        if wrong then Problem("ALT", "index", "wrong " .. wrong) end
+        if Lost(V3_SAMPLE, copy) then Problem("ALT", "index", "changed its input") end
+    end
+    -- live calls answer without errors (results not shown: they hold names)
+    Count()
+    local okL, err = pcall(function()
+        assert(type(A:GetHolders(16827)) == "table", "GetHolders")
+        assert(type(A:Chars()) == "table", "Chars")
+        local have, total = A:GetSetProgress(1)
+        assert(type(have) == "number" and type(total) == "number", "GetSetProgress")
+    end)
+    if not okL then Problem("ALT", "live", Short(err)) end
+    -- counts + account bank state (so nobody has to test it at a bank by hand)
+    local okS, n, ids = pcall(A.Stats, A)
+    if okS then Info(("alts %d saved (%d pieces)"):format(n or 0, ids or 0)) end
+    local okA, api, now, last, checked = pcall(A.AccountStatus, A)
+    if okA then
+        local text = "account bank: " .. (api and "API yes" or "API no")
+        if now ~= nil then text = text .. (now and ", readable now" or ", NOT readable now") end
+        if last == true then text = text .. ", readable at the last bank visit"
+        elseif last == false then text = text .. ", not readable at the last bank visit"
+        else text = text .. ", no bank visit yet" end
+        if (checked or 0) > 0 and A.DateText then text = text .. " (" .. tostring(A.DateText(checked)) .. ")" end
+        Info(text)
     end
 end
 
@@ -846,6 +950,69 @@ local function CheckHooks()
                 end
             end
         end
+    end
+
+    -- beta.7 (Tooltip.lua / Integrations.lua): tooltip post-call, the line text built for a
+    -- set piece (builder called directly, no real tooltip; text not shown, it may hold
+    -- names), public calls, Alt-click hook target, broker launcher.
+    local Tip, Int = ns.Tooltip, ns.Integrations
+    local SET_ITEM, OTHER_ITEM = 16827, 6948     -- a Nightslayer piece, the Hearthstone
+    if not Tip then
+        Skip("tooltip", "(not loaded)")
+    else
+        local TDP = _G.TooltipDataProcessor
+        Count()
+        if type(TDP) == "table" and type(TDP.AddTooltipPostCall) == "function" then
+            if not Tip.hooked then Problem("HOOK", "tooltip", "line not hooked") end
+        else
+            Skip("tooltip", "(no TooltipDataProcessor)")
+        end
+        if type(Tip.LinesFor) == "function" and type(Tip.Lookup) == "function" then
+            Count()
+            local okP, isPiece = pcall(Tip.Lookup, SET_ITEM)
+            if okP and isPiece ~= nil then
+                local okL, lines = pcall(Tip.LinesFor, SET_ITEM)
+                if not okL then Problem("HOOK", "tooltip", "line for " .. SET_ITEM .. ": " .. Short(lines))
+                elseif type(lines) ~= "table" or type(lines[1]) ~= "string" or lines[1] == "" then
+                    Problem("HOOK", "tooltip", "no line for " .. SET_ITEM)
+                end
+            else
+                Info(SET_ITEM .. " is not a set piece in the data")
+            end
+            Count()
+            local okO, other = pcall(Tip.LinesFor, OTHER_ITEM)
+            if not okO or type(other) ~= "table" or #other > 0 then
+                Problem("HOOK", "tooltip", "line on a non-set item")
+            end
+        end
+    end
+    if not Int then
+        Skip("public calls", "(not loaded)")
+    elseif type(GearSet_IsSetPiece) ~= "function" or type(GearSet_ShowItem) ~= "function" then
+        Count()
+        Problem("HOOK", "public calls", "missing")
+    else
+        Count()
+        local okA, a = pcall(GearSet_IsSetPiece, SET_ITEM)
+        local okB, b = pcall(GearSet_IsSetPiece, OTHER_ITEM)
+        local inData = Tip and Tip.Lookup and Tip.Lookup(SET_ITEM) ~= nil
+        if not (okA and okB) or b ~= false or (inData and a ~= true) then
+            Problem("HOOK", "public calls", "GearSet_IsSetPiece wrong")
+        end
+    end
+    if Int then
+        Count()
+        local click = type(Int.OnItemClick) == "function" and type(HandleModifiedItemClick) == "function"
+        if not click then Problem("HOOK", "alt-click", "no hook target") end
+        local LS = _G.LibStub
+        local ldb
+        if LS ~= nil then
+            local okD, l = pcall(LS, "LibDataBroker-1.1", true)
+            ldb = okD and type(l) == "table" and type(l.NewDataObject) == "function" and l or nil
+        end
+        Count()
+        if ldb and not Int.broker then Problem("HOOK", "broker", "LibDataBroker loaded but no launcher")
+        else Info("broker launcher " .. (Int.broker and "yes" or "no (no LibDataBroker)")) end
     end
 end
 
@@ -1090,6 +1257,7 @@ function ST:Start(mode)
     run = ST.NewRun(mode)
     -- Checks that need no window.
     Guard("db", CheckSaved)
+    Guard("alts", CheckAlts)
     Guard("data", CheckData)
     Guard("hooks", CheckHooks)
     Guard("theme", CheckTheme)

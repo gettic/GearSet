@@ -10,7 +10,16 @@ local GetItemCount = (C_Item and C_Item.GetItemCount) or GetItemCount
 
 local stateCache, countCache, equipped = {}, {}, nil
 
-Owned.HAVE = { equipped = true, bags = true, bank = true, look = true }
+-- beta.7: mail / keyring / account bank (Alts.lua) count as have too.
+Owned.HAVE = { equipped = true, bags = true, bank = true, look = true, mail = true, keyring = true, account = true }
+
+-- Mailbox / keyring / account bank, from Alts' last read (nil = not there or no Alts).
+local function OtherPlace(id)
+    local A = ns.Alts
+    if not (A and A.MyPlace) then return nil end
+    local ok, where = pcall(A.MyPlace, A, id)
+    return ok and where or nil
+end
 
 local function EquippedSet()
     if equipped then return equipped end
@@ -49,6 +58,8 @@ function Owned:GetState(piece)
             s = "bags"
         elseif (GetItemCount(id, true) or 0) > bags then
             s = "bank"
+        elseif OtherPlace(id) then
+            s = OtherPlace(id)
         elseif LookCollected(piece) then
             s = "look"
         else
@@ -63,22 +74,41 @@ function Owned:IsHave(piece)
     return self.HAVE[self:GetState(piece)] == true
 end
 
--- have, total for a set (cached).
+-- have, total for a set (cached). beta.7: a set once complete stays complete (Alts keeps the
+-- date per character), so upgrading pieces away doesn't make it "unfinished" again.
 function Owned:SetCount(set)
     local c = countCache[set.key]
     if c then return c[1], c[2] end
-    local have = 0
+    local have, total = 0, #set.pieces
     for _, p in ipairs(set.pieces) do
         if self:IsHave(p) then have = have + 1 end
     end
-    countCache[set.key] = { have, #set.pieces }
-    return have, #set.pieces
+    local A = ns.Alts
+    if A and set.id and total > 0 then
+        if have >= total then
+            if not set.unreleased then pcall(A.MarkCompleted, A, set.id) end
+        else
+            local ok, done = pcall(A.IsCompleted, A, set.id)
+            if ok and done then have = total end
+        end
+    end
+    countCache[set.key] = { have, total }
+    return have, total
+end
+
+-- Completion date (epoch) of a set for this character, nil if not finished.
+function Owned:CompletedOn(set)
+    local A = ns.Alts
+    if not (A and set and set.id) then return nil end
+    self:SetCount(set)        -- marks it when complete right now
+    local ok, t = pcall(A.IsCompleted, A, set.id)
+    return ok and t or nil
 end
 
 -- How many of a set's pieces are in each state: { equipped = n, bags = n, bank = n,
--- look = n, need = n } (uses the same per-item cache, so cheap after SetCount).
+-- mail = n, keyring = n, account = n, look = n, need = n } (same per-item cache).
 function Owned:SetBreakdown(set)
-    local out = { equipped = 0, bags = 0, bank = 0, look = 0, need = 0 }
+    local out = { equipped = 0, bags = 0, bank = 0, mail = 0, keyring = 0, account = 0, look = 0, need = 0 }
     for _, p in ipairs(set.pieces) do
         local s = self:GetState(p)
         out[s] = (out[s] or 0) + 1

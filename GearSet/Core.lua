@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.DB_VERSION = 2
+ns.DB_VERSION = 3
 
 -- All user-facing text in one place (ready for translations later).
 ns.L = {
@@ -39,6 +39,9 @@ ns.L = {
     STATE_bank = "In bank",
     STATE_look = "Appearance",
     STATE_need = "Need",
+    STATE_mail = "In mailbox",
+    STATE_keyring = "On keyring",
+    STATE_account = "Account bank",
     ALL_CLASSES = "All classes",
     UNKNOWN_SET = "Set %d",
     ANY_CAN_WEAR = "(any class can wear it)",
@@ -72,7 +75,7 @@ ns.L = {
     BONUS_ACTIVE = "Set: %s",
     BONUS_NONE = "No set bonus.",
     -- One command per line (HandleSlash prints each line on its own).
-    HELP = "/gs - open or close the window\n/gs reset - move the window back to the middle\n/gs minimap - show or hide the minimap button\n/gs check - show the data version and test the set list (for bug reports)\n/gs probe - test what this game client supports (for bug reports)\n/gs selftest - the addon checks itself (/gs selftest full also opens a guide page and the help)\n/gs config - open the settings\n/gs help - show this list and the help on the window",
+    HELP = "/gs - open or close the window\n/gs reset - move the window back to the middle\n/gs minimap - show or hide the minimap button\n/gs check - show the data version and test the set list (for bug reports)\n/gs probe - test what this game client supports (for bug reports)\n/gs selftest - the addon checks itself (/gs selftest full also opens a guide page and the help)\n/gs config - open the settings\n/gs forget - forget one of your other characters\n/gs help - show this list and the help on the window",
     POS_RESET = "Window moved back to the middle.",
     MINIMAP_TIP_CLICK = "Click: open or close the window.",
     MINIMAP_TIP_DRAG = "Drag: move this button.",
@@ -101,6 +104,9 @@ ns.L = {
     G_STATE_bank = "You have it: in your bank",
     G_STATE_look = "You have its appearance",
     G_STATE_need = "You need this piece",
+    G_STATE_mail = "You have it: in your mailbox",
+    G_STATE_keyring = "You have it: on your keyring",
+    G_STATE_account = "You have it: in the account bank",
     G_WIKI_TIP = "Shows a Warcraft Wiki search link for this piece.",
     WIKI_POPUP = "Press Ctrl+C to copy the link, then paste it into your browser.",
     G_HOW = "How to get it",
@@ -235,7 +241,6 @@ ns.L = {
     HIDE_SET = "Hide this set",
     SHOW_SET = "Show this set",
     SHOW_HIDDEN = "Show hidden sets",
-    HIDDEN_SUFFIX = " (hidden)",
     HIDDEN_TIP = "Hidden: right-click to show it again.",
     HIDDEN_TAG = "hidden",                   -- small tag on a hidden set's row
     HIDE_HINT = "Right-click: hide this set",
@@ -270,6 +275,40 @@ ns.L = {
     EFFORT_CRAFT = "Crafted",
     EFFORT_WORLD = "Random world drop",
     EFFORT_HINT = "Click a piece to see how to get it.",
+    EFFORT_UNKNOWN = "unknown",            -- beta.7: no source data for the needed pieces
+    EFFORT_NO_DATA = "No source data for these pieces yet.",
+    -- beta.7: alt memory (Alts.lua). Names shown here stay on screen only.
+    ALT_ALSO_ON = "Also on: %s",
+    ALT_HOLDER = "%s (%s)",                -- "Bankalt (bank)"
+    ALT_MORE = "%s +%d",
+    ALT_TIP_HEAD = "Your other characters:",
+    ALT_ACCOUNT = "Account bank",
+    ALT_WHERE_equipped = "equipped",
+    ALT_WHERE_bags = "bags",
+    ALT_WHERE_bank = "bank",
+    ALT_WHERE_mail = "mailbox",
+    ALT_WHERE_keyring = "keyring",
+    ALT_WHERE_account = "account bank",
+    ALT_SEEN_TODAY = "seen today",
+    ALT_SEEN_1 = "seen yesterday",
+    ALT_SEEN_N = "seen %d days ago",
+    ALT_SET_LINE = "%s: %d/%d",            -- set tooltip, one line per other character
+    DONE_ON = "Finished on %s",
+    DONE_KEPT = "Stays finished, even after you upgrade pieces.",
+    S_TIPS = "Tooltip and clicks",
+    S_TOOLTIP_LINE = "Show the Gear Set line on item tooltips",
+    S_TOOLTIP_SHIFT = "Only while Shift is held",
+    S_TOOLTIP_SHIFT_TIP = "Keeps tooltips short when you use other tooltip addons.",
+    S_ALT_CLICK = "Alt-click an item to open its guide",
+    S_ALT_CLICK_TIP = "Works on bag items, chat links, loot and the character window.",
+    S_CHARS = "Characters",
+    S_FORGET_LABEL = "Saved characters (%d)",
+    S_FORGET = "Forget a character",
+    S_FORGET_TIP = "Removes what Gear Set remembers about one of your other characters.",
+    S_FORGET_NONE = "Gear Set has no other characters saved yet. Log in on an alt to add it.",
+    S_FORGET_MENU = "Forget which character?",
+    S_FORGET_ASK = "Forget %s? Gear Set removes the pieces it remembered for this character. It is saved again the next time you log in on it.",
+    S_FORGET_DONE = "Forgot %s.",
     -- Fit facts (Data:GetSetStats)
     STATS = "Stats",
     STATS_TITLE = "%s: stats",
@@ -314,12 +353,21 @@ local defaults = {
         hide = false,
     },
     -- DB v2 (additive): hidden["set:<itemSetID>"] = true (Entries keys); help.seen = first-time
-    -- help shown. Beta.3 adds chars["Name-Realm"] = { class, faction, seen, items = "id,id,..." }
-    -- for this account's own characters only (never other players' data).
+    -- help shown.
     hidden = {},
     help = {
         seen = false,
     },
+    -- DB v3 (additive, Alts.lua): chars["Name-Realm"] = { name, realm, class, seen,
+    -- places = { equipped/bags/bank/mail/keyring = "id,id" }, dates = { place = epoch },
+    -- done = { [setID] = epoch } } for this account's own characters only (never other
+    -- players' data); account = { bank = "id,id", date, readable, checked } (account bank).
+    chars = {},
+    account = {},
+    -- DB v3: tooltip line and Alt-click (Tooltip.lua / Integrations.lua, settings page).
+    tooltipLine = true,          -- Gear Set line on item tooltips
+    tooltipShift = false,        -- only while Shift is held
+    altClick = true,             -- Alt-click a set piece anywhere opens its guide
 }
 
 -- Filter defaults, read by the set list's "Reset filters" (one place for both).
@@ -390,10 +438,18 @@ end
 function ns.PrepareDB(t)
     ApplyDefaults(t, defaults)
     ValidateDB(t)
-    -- Migrations (compare t.version). v1 -> v2 only adds keys (ApplyDefaults above),
-    -- so there is nothing to convert. A newer version number is never lowered, so an older
-    -- build opening newer data doesn't mark it as old.
+    -- Migrations (compare t.version). v1 -> v2 and v2 -> v3 only add keys (ApplyDefaults
+    -- above). v3: a char record written in the planned beta.3 shape (one `items` string, no
+    -- `places`) gets its items as bags; the old key stays. A newer version number is never
+    -- lowered, so an older build opening newer data doesn't mark it as old.
     local v = tonumber(t.version) or 0
+    if v < 3 then
+        for _, rec in pairs(t.chars) do
+            if type(rec) == "table" and type(rec.items) == "string" and rec.places == nil then
+                rec.places = { bags = rec.items }
+            end
+        end
+    end
     if v < ns.DB_VERSION then t.version = ns.DB_VERSION end
     return t
 end
@@ -547,6 +603,7 @@ events:SetScript("OnEvent", function(self, event, name)
     if event == "ADDON_LOADED" and name == ADDON then
         ns.InitDB()
         if ns.Owned and ns.Owned.Init then ns.Owned:Init() end
+        if ns.Alts and ns.Alts.Init then pcall(ns.Alts.Init, ns.Alts) end
         if ns.MinimapButton then ns.MinimapButton:Init() end
         if ns.Settings and ns.Settings.Init then pcall(ns.Settings.Init, ns.Settings) end
         self:UnregisterEvent("ADDON_LOADED")
@@ -576,6 +633,10 @@ local function HandleSlash(msg)
         local S = ns.Settings
         local opened = S and S.Open and S:Open()
         if not opened and not (S and S.IsAvailable and S:IsAvailable()) then ns.Print(ns.L.SETTINGS_MISSING) end
+    elseif msg:match("^forget%s*%d*$") then
+        -- Same menu as the settings button; "/gs forget 2" picks from the numbered list it
+        -- prints when the game has no menu.
+        if ns.Settings and ns.Settings.ForgetMenu then ns.Settings.ForgetMenu(tonumber(msg:match("(%d+)$"))) end
     else
         for line in ns.L.HELP:gmatch("[^\n]+") do ns.Print(line) end
         if msg == "help" and ns.Help and ns.Help.Show then ns.Help:Show() end

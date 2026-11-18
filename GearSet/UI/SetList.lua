@@ -92,6 +92,28 @@ function SetList.AddFlagLines(tip, set)
     tip:AddLine(D.FlagText(set.checked and "FLAG_CHECKED" or "FLAG_CLASSIC"), r, g, b, true)
 end
 
+-- beta.7: one line per other saved character that has some of the set ("Stabby: 5/8"),
+-- at most MAX_ALTS. Names stay on screen only.
+local MAX_ALTS = 5
+function SetList.AddAltLines(tip, set)
+    local A = ns.Alts
+    if not (A and A.Chars and A.GetSetProgress and set and set.id) then return end
+    local ok, chars = pcall(A.Chars, A)
+    if not ok or type(chars) ~= "table" then return end
+    local shown = 0
+    for _, c in ipairs(chars) do
+        if not c.me then
+            local okP, have, total = pcall(A.GetSetProgress, A, set.id, c.key)
+            if okP and type(have) == "number" and have > 0 and (total or 0) > 0 then
+                if shown == MAX_ALTS then return end
+                if shown == 0 then tip:AddLine(L.ALT_TIP_HEAD, Theme.colors.subtle:GetRGB()) end
+                shown = shown + 1
+                tip:AddLine("  " .. L.ALT_SET_LINE:format(tostring(c.name), have, total), Theme.CountColor(have, total))
+            end
+        end
+    end
+end
+
 local function SetTooltip(row)
     local set = row.set
     if not set then return end
@@ -115,6 +137,8 @@ local function SetTooltip(row)
     end
     local have, total = ns.Owned:SetCount(set)
     GameTooltip:AddLine(L.HAVE_COUNT:format(have, total), Theme.CountColor(have, total))
+    if ns.PieceList and ns.PieceList.AddDoneLines then pcall(ns.PieceList.AddDoneLines, GameTooltip, set) end
+    SetList.AddAltLines(GameTooltip, set)
     SetList.AddEffortLines(GameTooltip, set, MAX_REASONS)
     if set.removed then
         local r, g, b = Theme.colors.removed:GetRGB()
