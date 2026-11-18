@@ -202,6 +202,7 @@ function Help:OnHidden()
     self.hiding = nil
     self.layoutToken = nil
     W.PopEsc(FRAME_NAME)
+    if self.quiet then return end   -- /gs selftest opened it: help.seen stays as it was
     local h = HelpTable()
     if h and not h.seen then
         h.seen = true
@@ -210,8 +211,9 @@ function Help:OnHidden()
 end
 
 -- Main window's OnShow: the help once (help.seen false = new, or an older version's user).
+-- Help.quiet (set by /gs selftest while it runs): no first-time help, help.seen untouched.
 function Help:MaybeShowFirstTime()
-    if self.opening then return end
+    if self.opening or self.quiet then return end
     local h = HelpTable()
     if h and not h.seen then self:Show() end
 end

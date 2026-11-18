@@ -81,6 +81,9 @@ local VALUES = {
     },
 }
 
+-- Read by /gs selftest (setting value == saved data).
+S.VARS, S.VALUES = VAR, VALUES
+
 function S:IsAvailable()
     return self.category ~= nil
 end

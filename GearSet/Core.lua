@@ -72,7 +72,7 @@ ns.L = {
     BONUS_ACTIVE = "Set: %s",
     BONUS_NONE = "No set bonus.",
     -- One command per line (HandleSlash prints each line on its own).
-    HELP = "/gs - open or close the window\n/gs reset - move the window back to the middle\n/gs minimap - show or hide the minimap button\n/gs check - show the data version and test the set list (for bug reports)\n/gs probe - test what this game client supports (for bug reports)\n/gs config - open the settings\n/gs help - show this list and the help on the window",
+    HELP = "/gs - open or close the window\n/gs reset - move the window back to the middle\n/gs minimap - show or hide the minimap button\n/gs check - show the data version and test the set list (for bug reports)\n/gs probe - test what this game client supports (for bug reports)\n/gs selftest - the addon checks itself (/gs selftest full also opens a guide page and the help)\n/gs config - open the settings\n/gs help - show this list and the help on the window",
     POS_RESET = "Window moved back to the middle.",
     MINIMAP_TIP_CLICK = "Click: open or close the window.",
     MINIMAP_TIP_DRAG = "Drag: move this button.",
@@ -187,6 +187,13 @@ ns.L = {
     PROBE_HEAD = "Probe, Gear Set %s",
     PROBE_COPY = "The probe text is in the copy box: press Ctrl+C and paste it into your bug report.",
     PROBE_POPUP = "Press Ctrl+C to copy the probe results, then paste them into your bug report.",
+    -- /gs selftest (SelfTest.lua)
+    SELFTEST_OK = "Self-check: OK (%d checks). The result line is in the copy box.",
+    SELFTEST_BAD = "Self-check: %d problem(s) found (%d checks). Copy the line in the box (Ctrl+C) and paste it into your bug report.",
+    SELFTEST_STOPPED = "Self-check stopped: combat started. The results so far are in the copy box.",
+    SELFTEST_COMBAT = "The self-check runs when combat ends.",
+    SELFTEST_BUSY = "The self-check is already running.",
+    SELFTEST_POPUP = "Press Ctrl+C to copy the self-check results, then paste them into your bug report.",
     -- beta.2: settings panel (UI\Settings.lua)
     SETTINGS = "Settings",
     SETTINGS_TIP_HINT = "Also: /gs config",
@@ -378,15 +385,22 @@ local function ValidateDB(db)
     if not Finite(db.minimap.angle) then db.minimap.angle = defaults.minimap.angle end
 end
 
-function ns.InitDB()
-    if type(GearSetDB) ~= "table" then GearSetDB = {} end
-    ApplyDefaults(GearSetDB, defaults)
-    ValidateDB(GearSetDB)
-    -- Migrations (compare GearSetDB.version). v1 -> v2 only adds keys (ApplyDefaults above),
+-- Defaults, checks and migrations on any table (InitDB's saved data; /gs selftest runs
+-- it on copies only). Never removes the user's keys.
+function ns.PrepareDB(t)
+    ApplyDefaults(t, defaults)
+    ValidateDB(t)
+    -- Migrations (compare t.version). v1 -> v2 only adds keys (ApplyDefaults above),
     -- so there is nothing to convert. A newer version number is never lowered, so an older
     -- build opening newer data doesn't mark it as old.
-    local v = tonumber(GearSetDB.version) or 0
-    if v < ns.DB_VERSION then GearSetDB.version = ns.DB_VERSION end
+    local v = tonumber(t.version) or 0
+    if v < ns.DB_VERSION then t.version = ns.DB_VERSION end
+    return t
+end
+
+function ns.InitDB()
+    if type(GearSetDB) ~= "table" then GearSetDB = {} end
+    ns.PrepareDB(GearSetDB)
     ns.db = GearSetDB
 end
 
@@ -451,10 +465,11 @@ local function CopyDialog(text)
 end
 
 local COPY_DIALOG = { name = "GEARSET_COPYNAME", wiki = "GEARSET_WIKI", probe = "GEARSET_PROBE",
-    report = "GEARSET_REPORT" }
+    report = "GEARSET_REPORT", selftest = "GEARSET_SELFTEST" }
 
 StaticPopupDialogs.GEARSET_WIKI = CopyDialog(ns.L.WIKI_POPUP)
 StaticPopupDialogs.GEARSET_PROBE = CopyDialog(ns.L.PROBE_POPUP)   -- /gs probe results
+StaticPopupDialogs.GEARSET_SELFTEST = CopyDialog(ns.L.SELFTEST_POPUP) -- /gs selftest results
 StaticPopupDialogs.GEARSET_REPORT = CopyDialog(ns.L.REPORT_POPUP) -- Settings: Report a problem
 
 local nameDialog = CopyDialog(ns.L.COPY_POPUP)
@@ -512,7 +527,7 @@ function ns.ReportText()
     return ns.L.TITLE .. " ?"
 end
 
--- ns.ShowCopyBox(kind, text, alt): kind "name", "wiki", "probe" or "report"; alt = the "Wiki link" text for "name".
+-- ns.ShowCopyBox(kind, text, alt): kind "name", "wiki", "probe", "report" or "selftest"; alt = the "Wiki link" text for "name".
 function ns.ShowCopyBox(kind, text, alt)
     if not text or text == "" then return end
     local which = COPY_DIALOG[kind] or COPY_DIALOG.wiki
@@ -554,6 +569,8 @@ local function HandleSlash(msg)
         ns.Data:CheckClassic()
     elseif msg == "probe" then
         if ns.Probe then ns.Probe:Run() end
+    elseif msg == "selftest" or msg == "selftest full" then
+        if ns.SelfTest then ns.SelfTest:Start(msg == "selftest full" and "full" or "quick") end
     elseif msg == "config" or msg == "settings" or msg == "options" then
         -- Settings:Open() handles combat itself; the "missing" line only when the panel can't exist.
         local S = ns.Settings
@@ -565,6 +582,7 @@ local function HandleSlash(msg)
     end
 end
 
+ns.HandleSlash = HandleSlash   -- /gs selftest checks that /gs still reaches it
 SLASH_GEARSET1 = "/gearset"
 SLASH_GEARSET2 = "/gs"
 SlashCmdList.GEARSET = HandleSlash

@@ -349,6 +349,10 @@ local function ShortError(err)
     return "error: " .. s:sub(1, 80)
 end
 
+-- Shared with /gs selftest (SelfTest.lua), read-only helpers.
+Probe.Safe, Probe.ShortError, Probe.AtlasOK = Safe, ShortError, AtlasOK
+Probe.AddonVersion, Probe.MissingList = AddonVersion, MissingList
+
 -- Runs every check; returns the list of "Label: text" lines. Never errors.
 function Probe.Lines()
     local L = ns.L
