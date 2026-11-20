@@ -4,14 +4,15 @@ Keeps track of all known armor sets in the game, in one window with three parts:
 
 A World of Warcraft addon for **WoW Forever**.
 
-> **Beta:** this is a beta (v1.0.0-beta.10). It has not been fully tested in the game yet, so things may not work as they should. Please tell us what you find.
+Current version: **v1.0.0**.
 
 ## Install
 
 1. Open your addon manager.
-2. Turn on beta versions (the beta channel). Betas are not shown without it.
-3. Find **Gear Set** in the list and install it. If it's not there, restart the addon manager.
-4. Start the game, or type `/reload` if it's already running.
+2. Find **Gear Set** in the list and install it. If it's not there, restart the addon manager.
+3. Start the game, or type `/reload` if it's already running.
+
+Betas of newer versions, when there are any, are on the addon manager's beta channel.
 
 ## How to use
 
