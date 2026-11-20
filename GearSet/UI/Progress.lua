@@ -1003,22 +1003,13 @@ function Progress:Build(page)
     scroll:SetPoint("TOPLEFT", RIGHT_X, -74)
     scroll:SetPoint("BOTTOMRIGHT", -30, 30)
     self.scroll, self.child = scroll, child
-    -- 1.1 beta.2: shopping list for crafted pieces of tracked sets / pieces (top, only when any).
-    self.shopHead = Head(child, T("SHOP_HEAD", "Shopping list"))
-    self.shopRows = {}
-    self.shopTotal = child:CreateFontString(nil, "OVERLAY")
-    Theme.Font(self.shopTotal, "small")
-    self.shopTotal:SetJustifyH("LEFT")
-    self.shopTotal:SetWordWrap(false)
-    self.shopTotalMoney = child:CreateFontString(nil, "OVERLAY")
-    Theme.Font(self.shopTotalMoney, "small")
-    self.shopTotalMoney:SetJustifyH("RIGHT")
-    self.shopTotalMoney:SetWordWrap(false)
-    self.shopNote = child:CreateFontString(nil, "OVERLAY")
-    Theme.Font(self.shopNote, "small")
-    self.shopNote:SetTextColor(Theme.colors.shopWhere:GetRGB())
-    self.shopNote:SetJustifyH("LEFT")
-    self.shopNote:SetWordWrap(false)
+    -- 1.1 beta.4 (P1): the shopping list lives on the Plan tab; here one pointer line.
+    -- A link (ui-b4 #10): click opens the Plan tab; hidden when nothing is left to get.
+    self.shopPointer = W.LinkButton(child, "", T("SHOP_POINTER_TIP", "Click: open the Plan tab."), function()
+        PlaySound(SOUNDKIT.IG_CHARACTER_INFO_TAB or SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+        if ns.UI and ns.UI.tabByKey and ns.UI.tabByKey.plan then ns.UI:ShowTab("plan") end
+    end, "link")
+    self.shopPointer:Hide()
     self.recentHead = Head(child, T("P_RECENT", "Recently got"))
     self.recentNone = child:CreateFontString(nil, "OVERLAY")
     Theme.Font(self.recentNone, "small")
@@ -1306,7 +1297,28 @@ local function PricesOff()
     return type(db) == "table" and db.priceSource == "off"
 end
 
--- The shopping list section from y; returns the new y (unchanged when nothing to craft).
+-- Shopping parts on a host (Plan tab: `host.child` is its scroll child).
+function Progress.BuildShop(host, child)
+    host.shopHead = Head(child, T("SHOP_HEAD", "Shopping list"))
+    host.shopRows = {}
+    host.shopTotal = child:CreateFontString(nil, "OVERLAY")
+    Theme.Font(host.shopTotal, "small")
+    host.shopTotal:SetJustifyH("LEFT")
+    host.shopTotal:SetWordWrap(false)
+    host.shopTotalMoney = child:CreateFontString(nil, "OVERLAY")
+    Theme.Font(host.shopTotalMoney, "small")
+    host.shopTotalMoney:SetJustifyH("RIGHT")
+    host.shopTotalMoney:SetWordWrap(false)
+    host.shopNote = child:CreateFontString(nil, "OVERLAY")
+    Theme.Font(host.shopNote, "small")
+    host.shopNote:SetTextColor(Theme.colors.shopWhere:GetRGB())
+    host.shopNote:SetJustifyH("LEFT")
+    host.shopNote:SetWordWrap(false)
+end
+Progress.Head, Progress.ShowHead, Progress.ItemText, Progress.ItemIcon = Head, ShowHead, ItemText, ItemIcon
+
+-- The shopping list section from y on a host (Progress.BuildShop); returns the new y
+-- (unchanged when nothing to craft) and whether item names are still loading.
 local function LayShopping(self, y, width)
     local S = ns.Shopping
     local ok, list = false, nil
@@ -1419,11 +1431,34 @@ local function LayShopping(self, y, width)
     return y + 12, missing
 end
 
+Progress.LayShopping = LayShopping
+
+-- "Shopping list: 4 mats to get - see the Plan tab" (nil when there is nothing to craft).
+function Progress.ShopPointerText()
+    local S = ns.Shopping
+    if not (S and S.List) then return nil end
+    local ok, list = pcall(S.List, S)
+    if not ok or not list then return nil end
+    local left = 0
+    for _, m in ipairs(list.mats) do if m.left > 0 or m.unknown > 0 then left = left + 1 end end
+    if left == 0 then return nil end   -- everything in hand: no "0 mats" line
+    return T("SHOP_POINTER", "Shopping list: %d mats to get - see the Plan tab"):format(left)
+end
+
 local function LayRight(self, scope)
     local width = (self.scroll:GetWidth() or 0)
     if width < 50 then width = 470 end
     self.child:SetWidth(width)
-    local y, missing = LayShopping(self, 0, width)
+    local y, missing = 0, false
+    local ptr = Progress.ShopPointerText()
+    self.shopPointer:SetShown(ptr ~= nil)
+    if ptr then
+        self.shopPointer:SetLinkText(ptr)
+        self.shopPointer:ClearAllPoints()
+        self.shopPointer:SetPoint("TOPLEFT", self.child, "TOPLEFT", 4, 0)
+        if self.shopPointer:GetWidth() > width - 8 then self.shopPointer:SetWidth(width - 8) end
+        y = 20
+    end
     local function PlaceHead(head)
         head:ClearAllPoints()
         head:SetPoint("TOPLEFT", self.child, "TOPLEFT", 0, -y)

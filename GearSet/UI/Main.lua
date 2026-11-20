@@ -428,7 +428,9 @@ function UI:CurrentTab() return self.tab or "sets" end
 local function MakeTabs(self, f)
     self:AddTab("sets", T("TAB_SETS", "Sets"), function()
         local PV = ns.Preview or {}
-        return { self.left, self.mid, self.right, PV.reset, PV.check }
+        local list = { self.left, self.mid, self.right, PV.reset, PV.check }
+        for _, b in ipairs(PV.slotButtons or {}) do list[#list + 1] = b end   -- hide-slot buttons: Sets tab only
+        return list
     end, function() UI:RefreshAll() end)
     if ns.Progress and ns.Progress.Build then
         local page = MakeInset(f, 4, nil)
@@ -436,6 +438,14 @@ local function MakeTabs(self, f)
         self.progressPage = page
         ns.Progress:Build(page)
         self:AddTab("progress", T("TAB_PROGRESS", "Progress"), { page }, function() ns.Progress:Refresh() end)
+    end
+    -- 1.1 beta.4: the Plan tab (UI\Plan.lua), full-width inset like the Progress page.
+    if ns.Plan and ns.Plan.Build then
+        local page = MakeInset(f, 4, nil)
+        page:Hide()
+        self.planPage = page
+        ns.Plan:Build(page)
+        self:AddTab("plan", T("TAB_PLAN", "Plan"), { page }, function() ns.Plan:Refresh() end)
     end
     -- Help notes point at the Sets tab's panels.
     if ns.Help and ns.Help.Show and hooksecurefunc then
@@ -585,6 +595,16 @@ function UI:IsShown()
     return self.frame and self.frame:IsShown()
 end
 
+-- Open the window on a tab (/gs plan).
+function UI:OpenTab(key)
+    self:Build()
+    if not self.frame:IsShown() then
+        PlaySound(SOUNDKIT.IG_CHARACTER_INFO_OPEN)
+        self.frame:Show()
+    end
+    self:ShowTab(key)
+end
+
 function UI:Toggle()
     self:Build()
     if self.frame:IsShown() then
@@ -619,4 +639,5 @@ function UI:RefreshCounts()
     ns.PieceList:Refresh()
     self:UpdateCountBox()
     if ns.Progress then ns.Progress:Refresh() end   -- only draws while its tab is shown
+    if ns.Plan and ns.Plan.Refresh then ns.Plan:Refresh() end   -- the same
 end

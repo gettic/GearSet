@@ -394,7 +394,12 @@ end
 --   alts, via } } } }, need = pieces this character needs here that are out now }.
 -- `entered` = optional [itemID] = true captured on entering (got pieces stay listed, ticked).
 function Runs.View(instName, mapID, entered)
-    local view = { title = instName, runs = Runs.RunsIn(instName, mapID), bosses = {}, need = 0 }
+    return Runs.ViewRuns(Runs.RunsIn(instName, mapID), instName, entered)
+end
+
+-- The same view for a list of run names (the Plan tab: one run each).
+function Runs.ViewRuns(runs, title, entered)
+    local view = { title = title, runs = runs, bosses = {}, need = 0 }
     if #view.runs == 0 then return view end
     local inRun = {}
     for _, r in ipairs(view.runs) do inRun[r] = true end
@@ -414,6 +419,7 @@ function Runs.View(instName, mapID, entered)
     end
     local function AddPiece(itemID, s, isMine, later, alts)
         local b = Boss(s.boss or "", s.boss == nil)
+        if not b.wing and not b.trash and Has(s.wing) then b.wing = s.wing end
         if b.ids[itemID] then return end
         b.ids[itemID] = true
         b.pieces[#b.pieces + 1] = { itemID = itemID, later = later or nil, mine = isMine or nil,
@@ -461,6 +467,7 @@ function Runs.View(instName, mapID, entered)
         if (a.trash and true or false) ~= (b.trash and true or false) then return not a.trash end
         local oa, ob = a.order or 1000, b.order or 1000
         if oa ~= ob then return oa < ob end
+        if (a.wing or "") ~= (b.wing or "") then return (a.wing or "") < (b.wing or "") end
         return (a.name or "") < (b.name or "")
     end)
     view.bosses = list
@@ -470,6 +477,310 @@ end
 -- Drops the wanted-list cache (post-hooked on Owned.Invalidate and Progress.Invalidate in Init).
 function Runs.Invalidate()
     wantedCache = nil
+    if Runs.OnInvalidate then pcall(Runs.OnInvalidate) end
+end
+
+-- ---------------------------------------------------------------------------
+-- 1.1 beta.4: the Plan tab (plans\v1.1.0\b4-plan.md; data b4-interface.md). Pure parts take
+-- their inputs; the readers are pcall'd and secret-guarded. ToS B1 (lockouts read only, the
+-- server request is the Plan tab's on-open one), B4 (group notes: static text), B5 (LFG line:
+-- copy box only), W8 (own characters only).
+
+local function Secret(v)
+    if type(issecretvalue) ~= "function" then return false end
+    local ok, s = pcall(issecretvalue, v)
+    return ok and s and true or false
+end
+local function Whole(v) v = tonumber(v); return v and v == math.floor(v) and v > 0 and v < 2 ^ 31 and v or nil end
+
+-- Place facts: { size, lo, hi, kind, keys = { { id, part } }, attq = { ids }, attitem = { ids },
+-- notes = { text } }.
+function Runs.Facts(run, mine)
+    local r = Runs.Rec("place", run, mine) or {}
+    local f = { kind = r.kind, size = Whole(r.size), keys = {}, attq = {}, attitem = {}, notes = {} }
+    local lo, hi = tostring(r.level or ""):match("^(%d+)%s*%-%s*(%d+)$")
+    f.lo, f.hi = Whole(lo) or Whole(r.level), Whole(hi) or Whole(r.level)
+    for _, v in ipairs(r.key_all or {}) do
+        local id = Whole(v)
+        if id then f.keys[#f.keys + 1] = { id = id } end
+    end
+    -- keypart|id|text: the text is the 3rd field (own small parse of the raw record)
+    local g = ns.GuideData
+    local raw = type(g) == "table" and type(g.place) == "table" and g.place[run]
+    if type(raw) == "string" then
+        for id, text in raw:gmatch("keypart|(%d+)|([^;|]*)") do
+            f.keys[#f.keys + 1] = { id = tonumber(id), part = Trim(text) }
+        end
+    end
+    for _, v in ipairs(r.attq_all or {}) do local id = Whole(v); if id then f.attq[#f.attq + 1] = id end end
+    for _, v in ipairs(r.attitem_all or {}) do local id = Whole(v); if id then f.attitem[#f.attitem + 1] = id end end
+    for _, v in ipairs(r.grp_all or {}) do if Has(v) then f.notes[#f.notes + 1] = v end end
+    return f
+end
+
+-- Where this character has an item: "keyring" / "bags" / "bank" / nil (own counts only).
+function Runs.ItemPlace(itemID)
+    local A = ns.Alts
+    local want = { [itemID] = true }
+    if A and A.ScanKeyring then
+        local ok, k = pcall(A.ScanKeyring, want)
+        if ok and type(k) == "table" and k[itemID] then return "keyring" end
+    end
+    local C = C_Item
+    local count = (C and C.GetItemCount) or _G.GetItemCount
+    if type(count) ~= "function" then return nil end
+    local okB, bags = pcall(count, itemID)
+    if okB and type(bags) == "number" and not Secret(bags) and bags > 0 then return "bags" end
+    local okA, all = pcall(count, itemID, true)
+    if okA and type(all) == "number" and not Secret(all) and all > 0 then return "bank" end
+    return nil
+end
+
+-- Attuned? true / false / nil (no attunement in the data).
+function Runs.Attuned(facts)
+    if #facts.attq == 0 and #facts.attitem == 0 then return nil end
+    local Q = _G.C_QuestLog
+    local done = Q and Q.IsQuestFlaggedCompleted
+    for _, q in ipairs(facts.attq) do
+        if type(done) == "function" then
+            local ok, v = pcall(done, q)
+            if ok and v == true then return true end
+        end
+    end
+    for _, id in ipairs(facts.attitem) do
+        if Runs.ItemPlace(id) then return true end
+    end
+    return false
+end
+
+-- Saved raids: { { name, mapID, reset, resetAt, isRaid, done, total, killed = { [boss] = true } | nil } }.
+function Runs.ReadLockouts(now)
+    local out = {}
+    local num, info = _G.GetNumSavedInstances, _G.GetSavedInstanceInfo
+    if type(num) ~= "function" or type(info) ~= "function" then return out end
+    local okN, n = pcall(num)
+    if not okN or type(n) ~= "number" or Secret(n) then return out end
+    now = now or time()
+    local enc = _G.GetSavedInstanceEncounterInfo
+    for i = 1, math.min(n, 40) do
+        local ok, name, _, reset, _, locked, _, _, isRaid, _, _, total, done, _, mapID = pcall(info, i)
+        if ok and type(name) == "string" and not Secret(name) and not Secret(reset) and locked ~= false
+            and (tonumber(reset) or 0) > 0 then   -- reset 0: just expired, not refreshed yet = not locked
+            local row = { name = name, mapID = Whole(mapID), reset = tonumber(reset) or 0, isRaid = isRaid and true or false,
+                done = tonumber(done) or 0, total = tonumber(total) or 0 }
+            row.resetAt = now + row.reset
+            if type(enc) == "function" and row.total > 0 then
+                local killed, any = {}, false
+                for j = 1, math.min(row.total, 40) do
+                    local okE, boss, _, isKilled = pcall(enc, i, j)
+                    if okE and type(boss) == "string" and not Secret(boss) and not Secret(isKilled) then
+                        any = true
+                        if isKilled then killed[boss] = true end
+                    end
+                end
+                if any then row.killed = killed end
+            end
+            out[#out + 1] = row
+        end
+    end
+    return out
+end
+
+-- The lockout row of a run (map ID first, then the name).
+function Runs.MatchLock(locks, run)
+    local m = Runs.PlaceMap(run)
+    for _, l in ipairs(locks or {}) do
+        if m and l.mapID then
+            if l.mapID == m then return l end
+        elseif Runs.PlaceMatches(run, l.name, l.mapID) or (Has(l.name) and l.name:lower() == run:lower()) then
+            return l
+        end
+    end
+    return nil
+end
+
+-- Display name of a run: general places that stand for several wings get a label
+-- (pretest finding 1; data stays as it is).
+local DISPLAY = { ["Blackrock Spire"] = "RUN_NAME_BRS", ["Scarlet Monastery"] = "RUN_NAME_SM" }
+local DISPLAY_FALLBACK = { RUN_NAME_BRS = "Blackrock Spire (Lower or Upper)", RUN_NAME_SM = "Scarlet Monastery (any wing)" }
+function Runs.DisplayName(run)
+    local key = DISPLAY[run]
+    if not key then return run end
+    local L = ns.L or {}
+    return L[key] or DISPLAY_FALLBACK[key]
+end
+
+-- Lockout per run for a list of runs: like MatchLock, but when one row's map is shared by
+-- several runs (LBRS / UBRS / Blackrock Spire on 229), only the run whose name (or display
+-- name) equals the row's name gets it; with no exact name among them, all keep it.
+-- (pretest finding 2) -> { [run] = lock }.
+function Runs.AssignLocks(locks, runs)
+    local out = {}
+    for _, l in ipairs(locks or {}) do
+        local hits, exact = {}, {}
+        for _, run in ipairs(runs) do
+            if Runs.MatchLock({ l }, run) then
+                hits[#hits + 1] = run
+                local ln = Has(l.name) and l.name:lower() or ""
+                if ln == run:lower() or ln == Runs.DisplayName(run):lower() then exact[#exact + 1] = run end
+            end
+        end
+        local use = (#hits > 1 and #exact > 0) and exact or hits
+        for _, run in ipairs(use) do if not out[run] then out[run] = l end end
+    end
+    return out
+end
+
+-- "free" (not saved) / "partial" / "done" (every boss with your pieces dead; without the boss
+-- list: all bosses). `bosses` = the run's view bosses.
+function Runs.LockState(lock, bosses)
+    if not lock then return "free" end
+    if lock.killed then
+        local any = false
+        for _, b in ipairs(bosses or {}) do
+            if not b.trash and not b.skipped then
+                any = true
+                if not lock.killed[b.name] then return "partial" end
+            end
+        end
+        if any then return "done" end
+    end
+    if lock.total > 0 and lock.done >= lock.total then return "done" end
+    return "partial"
+end
+
+-- "resets Tue 09:00 (in 2d 4h)"; short = "resets in 2d 4h" (the row; the tooltip has the date).
+-- Under a minute: "(under 1m)".
+function Runs.ResetText(at, now, short)
+    now = now or time()
+    local left = math.max(0, (at or now) - now)
+    local d, h, m = math.floor(left / 86400), math.floor(left % 86400 / 3600), math.floor(left % 3600 / 60)
+    local L = ns.L or {}
+    local inText
+    if d > 0 then inText = (L.LOCK_IN_DH or "in %dd %dh"):format(d, h)
+    elseif h > 0 then inText = (L.LOCK_IN_HM or "in %dh %dm"):format(h, m)
+    elseif m > 0 then inText = (L.LOCK_IN_M or "in %dm"):format(m)
+    else inText = L.LOCK_IN_LT or "under 1m" end
+    if short then return (L.LOCK_RESET_SHORT or "resets %s"):format(inText) end
+    local okD, day = pcall(date, "%a %H:%M", at)
+    return (L.LOCK_RESET or "resets %s (%s)"):format(okD and day or "?", inText)
+end
+
+-- Pins: per character (decision Q3).
+local function PinTable(create)
+    local db = ns.db
+    if type(db) ~= "table" or type(db.plan) ~= "table" then return nil end
+    local A = ns.Alts
+    local key = A and A.MyKey and A:MyKey()
+    if not key then return nil end
+    if type(db.plan.pinned) ~= "table" then db.plan.pinned = {} end
+    local t = db.plan.pinned[key]
+    if type(t) ~= "table" then
+        if not create then return nil end
+        t = {}; db.plan.pinned[key] = t
+    end
+    return t
+end
+
+function Runs.IsPinned(run)
+    local t = PinTable(false)
+    return t ~= nil and t[run] == true
+end
+
+function Runs.Pin(run, on)
+    local t = PinTable(true)
+    if not t then return end
+    if on == nil then on = not t[run] end
+    t[run] = on and true or nil
+end
+
+-- Pure order: pinned, then not done, by pieces needed (most first), then name; done raids last.
+function Runs.Sort(list)
+    table.sort(list, function(a, b)
+        local da, db = a.lockState == "done", b.lockState == "done"
+        if da ~= db then return db end
+        if (a.pinned and true or false) ~= (b.pinned and true or false) then return a.pinned and true or false end
+        if a.need ~= b.need then return a.need > b.need end
+        return a.run < b.run
+    end)
+    return list
+end
+
+-- Item name without the set's shared first word when it repeats ("Beaststalker's Cap, Gloves").
+local function ShortNames(names)
+    if #names < 2 then return names end
+    local first = names[1]:match("^(%S+%s)")
+    if not first then return names end
+    for _, n in ipairs(names) do if n:sub(1, #first) ~= first then return names end end
+    local out = { names[1] }
+    for i = 2, #names do out[i] = names[i]:sub(#first + 1) end
+    return out
+end
+
+-- "LFM Scholomance - need Beaststalker's Cap, Gloves" (max 255 letters; W5 / B5: copy box only).
+function Runs.LfgLine(run, names, maxLen)
+    maxLen = maxLen or 255
+    local L = ns.L or {}
+    local list = ShortNames(names or {})
+    local text = (L.LFG_LINE or "LFM %s - need %s"):format(run, table.concat(list, ", "))
+    if #names == 0 then text = (L.LFG_LINE_NONE or "LFM %s"):format(run) end
+    if #text > maxLen then text = text:sub(1, maxLen - 3) .. "..." end
+    return text
+end
+
+-- General group notes (B4: static text from our data only, never about other players).
+function Runs.GroupNotes(facts)
+    local L, out = ns.L or {}, {}
+    if facts.size and facts.size > 5 then out[#out + 1] = (L.GRP_SIZE or "Up to %d players."):format(facts.size) end
+    for _, k in ipairs(facts.keys) do
+        if not k.part then out[#out + 1] = L.GRP_KEY or "One key holder can open the door for the group." break end
+    end
+    if #facts.attq > 0 or #facts.attitem > 0 then out[#out + 1] = L.GRP_ATT or "Everyone needs the attunement." end
+    for _, n in ipairs(facts.notes) do out[#out + 1] = n end
+    return out
+end
+
+-- The Plan list for this character: { runs = { { run, view, facts, need, pinned, lock, lockState,
+-- names } }, other = wanted pieces out now that drop in no run }.
+function Runs.Plan(locks)
+    local wanted = Runs.Wanted()
+    local mine = ns.Data and ns.Data.PlayerFaction and ns.Data.PlayerFaction()
+    local seen, order, other = {}, {}, 0
+    for itemID, w in pairs(wanted) do
+        local srcs = Runs.PieceSources(itemID, mine)
+        if #srcs == 0 then
+            if not w.later then other = other + 1 end
+        else
+            for _, s in ipairs(srcs) do
+                if not seen[s.place] then seen[s.place] = true; order[#order + 1] = s.place end
+            end
+        end
+    end
+    if #order > 0 and Runs.HasAlts() then Runs.RunItems(order) end   -- one scan for all runs
+    local list, kept, pieces, distinct = {}, {}, {}, 0
+    for _, run in ipairs(order) do
+        local view = Runs.ViewRuns({ run }, run)
+        if view.need > 0 then
+            local e = { run = run, label = Runs.DisplayName(run), view = view, need = view.need,
+                facts = Runs.Facts(run, mine), pinned = Runs.IsPinned(run) }
+            -- wings inside the run (Ring of Law under BRD): their own group notes
+            e.wings = {}
+            for _, b in ipairs(view.bosses) do
+                if b.wing and not e.wings[b.wing] then e.wings[b.wing] = Runs.Facts(b.wing, mine).notes end
+            end
+            for id in pairs(view.needIDs or {}) do
+                if not pieces[id] then pieces[id] = true; distinct = distinct + 1 end
+            end
+            list[#list + 1] = e
+            kept[#kept + 1] = run
+        end
+    end
+    local byRun = Runs.AssignLocks(locks, kept)
+    for _, e in ipairs(list) do
+        e.lock = byRun[e.run]
+        e.lockState = Runs.LockState(e.lock, e.view.bosses)
+    end
+    return { runs = Runs.Sort(list), other = other, pieces = distinct }
 end
 
 -- Clears every cache (tests).

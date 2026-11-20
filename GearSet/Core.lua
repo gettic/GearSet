@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.DB_VERSION = 7
+ns.DB_VERSION = 8
 
 -- All user-facing text in one place (ready for translations later).
 ns.L = {
@@ -117,6 +117,72 @@ ns.L = {
     PRICE_TSM = "TSM market value",
     PRICE_TSM_SHORT = "TSM",
     SHOP_UNPRICED = "%d without a price",
+    SHOP_POINTER = "Shopping list: %d mats to get - see the Plan tab",
+    SHOP_POINTER_TIP = "Click: open the Plan tab.",
+    -- 1.1 beta.4 Plan tab (UI\Plan.lua, Runs.lua, HandIns.lua)
+    TAB_PLAN = "Plan",
+    PLAN_TITLE = "What to run",
+    PLAN_SUMMARY = "%s in %s",
+    PLAN_RUN_ONE = "1 run",
+    PLAN_RUNS = "%d runs",
+    PLAN_RUNS_HEAD = "Runs",
+    PLAN_KIND_dungeon = "Dungeon",
+    PLAN_KIND_raid = "Raid",
+    RUN_NAME_BRS = "Blackrock Spire (Lower or Upper)",
+    RUN_NAME_SM = "Scarlet Monastery (any wing)",
+    PLAN_LOCKS = "Raid lockouts: %d saved",
+    PLAN_LOCKS_NONE = "Raid lockouts: none saved",
+    PLAN_EMPTY = "Track a set or a piece (Shift-click it in the list) to plan your runs.",
+    PLAN_NONE = "None of the pieces you need drop in a dungeon or raid.",
+    PLAN_OTHER = "Not from a run: %d pieces (quests, vendors, crafting). Click a piece for its guide.",
+    PLAN_PIECES = "%d pieces",
+    PLAN_PIECE = "1 piece",
+    PLAN_SIZE = "%d players",
+    PLAN_RAID = "%d-player raid",
+    PLAN_LEVEL = "level %s",
+    PLAN_TRASH = "Trash",
+    PLAN_NEED = "Need",
+    PLAN_HANDIN = "Hand-in",
+    PLAN_FOR = "for %s",
+    PLAN_ALT = "- %s",
+    PLAN_PIN_TIP = "Pin this run to the top (this character only).",
+    PLAN_FOLD_TIP = "Click: show or hide the bosses.",
+    PLAN_LFG_TIP = "Copy a group line to paste into chat yourself.",
+    PLAN_TIP_BRING = "Bring: %s",
+    PLAN_TIP_GROUP = "Group notes",
+    PLAN_TIP_LFG = "Click LFG for a group line to copy.",
+    PLAN_TIP_PIECE = "Click: open its guide on the Sets tab.",
+    PLAN_HAND_HEAD = "Ready to hand in",
+    PLAN_HAND_ROW = "%s, %s - %s",
+    KEY_keyring = "%s: keyring",
+    KEY_bags = "%s: bags",
+    KEY_bank = "%s: bank",
+    KEY_MISSING = "%s: missing",
+    KEY_PART = "%s (%s)",
+    ATT_YES = "attuned",
+    ATT_NO = "not attuned",
+    LOCK_FREE = "not saved",
+    LOCK_SAVED = "saved %d/%d",
+    LOCK_DONE = "done this week",
+    LOCK_RESET = "resets %s (%s)",
+    LOCK_IN_DH = "in %dd %dh",
+    LOCK_IN_HM = "in %dh %dm",
+    LOCK_IN_M = "in %dm",
+    LOCK_IN_LT = "under 1m",
+    LOCK_RESET_SHORT = "resets %s",
+    LFG_LINE = "LFM %s - need %s",
+    LFG_LINE_NONE = "LFM %s",
+    LFG_POPUP = "Press Ctrl+C to copy the group line, then paste it into chat yourself.",
+    GRP_SIZE = "Up to %d players.",
+    GRP_KEY = "One key holder can open the door for the group.",
+    GRP_ATT = "Everyone needs the attunement.",
+    HAND_LINE_ONE = "1 hand-in ready here: %s.",
+    HAND_LINE = "%d hand-ins ready here: %s.",
+    HAND_WHO = "%s (%s)",
+    HAND_MORE = "+%d more",
+    FLAG_SEEN = "Out now (seen in game).",
+    S_HANDINS = "Hand-in reminders in chat",
+    S_HANDINS_TIP = "When you enter the zone of a quest giver whose reward you still need and your bags hold everything the quest asks for, one line in your chat says so. Only you see it.",
     PRICE_AUCTIONATOR = "Auctionator",
     SLOT_HEAD = "Hide the helm on this model",
     SLOT_BACK = "Hide the cloak on this model",
@@ -175,7 +241,7 @@ ns.L = {
     BONUS_ACTIVE = "Set: %s",
     BONUS_NONE = "No set bonus.",
     -- One command per line (HandleSlash prints each line on its own).
-    HELP = "/gs - open or close the window\n/gs reset - move the window back to the middle\n/gs minimap - show or hide the minimap button\n/gs check - show the data version and test the set list (for bug reports)\n/gs probe - test what this game client supports (for bug reports)\n/gs selftest - the addon checks itself (/gs selftest full also opens a guide page and the help)\n/gs config - open the settings\n/gs checklist - show or hide the dungeon checklist (inside a dungeon or raid)\n/gs forget - forget one of your other characters\n/gs help - show this list and the help on the window",
+    HELP = "/gs - open or close the window\n/gs reset - move the window back to the middle\n/gs minimap - show or hide the minimap button\n/gs check - show the data version and test the set list (for bug reports)\n/gs probe - test what this game client supports (for bug reports)\n/gs selftest - the addon checks itself (/gs selftest full also opens a guide page and the help)\n/gs config - open the settings\n/gs checklist - show or hide the dungeon checklist (inside a dungeon or raid)\n/gs plan - open the Plan tab (which runs to do for your pieces)\n/gs forget - forget one of your other characters\n/gs help - show this list and the help on the window",
     POS_RESET = "Window moved back to the middle.",
     MINIMAP_TIP_CLICK = "Click: open or close the window.",
     MINIMAP_TIP_DRAG = "Drag: move this button.",
@@ -581,6 +647,15 @@ local defaults = {
     },
     nextTargets = true,
     levels = {},             -- itemID -> required level learned in game (Data.LearnLevel)
+    -- DB v8 (1.1 beta.4, additive): Plan tab runs folded (account-wide) and pinned (per character,
+    -- pinned["Name-Realm"] = { [run] = true }); hand-in chat line on/off; seenOut[itemID] = epoch
+    -- when one of your own characters held a "not out yet" piece (Data.NoteSeen; never removed).
+    plan = {
+        collapsed = {},
+        pinned = {},
+    },
+    handIns = true,
+    seenOut = {},
 }
 
 -- Filter defaults, read by the set list's "Reset filters" (one place for both).
@@ -653,6 +728,11 @@ local function ValidateDB(db)
         db.priceSource = defaults.priceSource
     end
     if not Finite(db.minimap.angle) then db.minimap.angle = defaults.minimap.angle end
+    -- v8: a pinned list that isn't a table is dropped (only that character's pins); bad seenOut
+    -- values are ignored where read (Data.SeenOut), never deleted.
+    for k, v in pairs(db.plan.pinned) do
+        if type(k) ~= "string" or type(v) ~= "table" then db.plan.pinned[k] = nil end
+    end
 end
 
 -- Defaults, checks and migrations on any table (InitDB's saved data; /gs selftest runs
@@ -663,7 +743,7 @@ function ns.PrepareDB(t)
     if type(t.version) == "string" and Finite(t.version) then t.version = tonumber(t.version) end
     ApplyDefaults(t, defaults)
     ValidateDB(t)
-    -- Migrations (compare t.version). v1 -> v2, v2 -> v3, v3 -> v4, v4 -> v5, v5 -> v6 and v6 -> v7 only add keys (ApplyDefaults
+    -- Migrations (compare t.version). v1 -> v2, v2 -> v3, v3 -> v4, v4 -> v5, v5 -> v6, v6 -> v7 and v7 -> v8 only add keys (ApplyDefaults
     -- above). v3: a char record written in the planned beta.3 shape (one `items` string, no
     -- `places`) gets its items as bags; the old key stays. A newer version number is never
     -- lowered, so an older build opening newer data doesn't mark it as old.
@@ -746,13 +826,14 @@ local function CopyDialog(text)
 end
 
 local COPY_DIALOG = { name = "GEARSET_COPYNAME", wiki = "GEARSET_WIKI", probe = "GEARSET_PROBE",
-    report = "GEARSET_REPORT", selftest = "GEARSET_SELFTEST", way = "GEARSET_WAY" }
+    report = "GEARSET_REPORT", selftest = "GEARSET_SELFTEST", way = "GEARSET_WAY", lfg = "GEARSET_LFG" }
 
 StaticPopupDialogs.GEARSET_WIKI = CopyDialog(ns.L.WIKI_POPUP)
 StaticPopupDialogs.GEARSET_PROBE = CopyDialog(ns.L.PROBE_POPUP)   -- /gs probe results
 StaticPopupDialogs.GEARSET_SELFTEST = CopyDialog(ns.L.SELFTEST_POPUP) -- /gs selftest results
 StaticPopupDialogs.GEARSET_REPORT = CopyDialog(ns.L.REPORT_POPUP) -- Settings: Report a problem
 StaticPopupDialogs.GEARSET_WAY = CopyDialog(ns.L.WAY_POPUP)       -- guide Way button: "Zone 43.4, 52.2"
+StaticPopupDialogs.GEARSET_LFG = CopyDialog(ns.L.LFG_POPUP)       -- Plan tab LFG line (ToS B5: copy only)
 
 local nameDialog = CopyDialog(ns.L.COPY_POPUP)
 nameDialog.button2 = ns.L.WIKI_LINK
@@ -809,7 +890,7 @@ function ns.ReportText()
     return ns.L.TITLE .. " ?"
 end
 
--- ns.ShowCopyBox(kind, text, alt): kind "name", "wiki", "probe", "report", "selftest" or "way"; alt = the "Wiki link" text for "name".
+-- ns.ShowCopyBox(kind, text, alt): kind "name", "wiki", "probe", "report", "selftest", "way" or "lfg"; alt = the "Wiki link" text for "name".
 function ns.ShowCopyBox(kind, text, alt)
     if not text or text == "" then return end
     local which = COPY_DIALOG[kind] or COPY_DIALOG.wiki
@@ -862,6 +943,9 @@ local function HandleSlash(msg)
     elseif msg == "checklist" then
         -- 1.1 beta.1: show or hide the dungeon checklist for the instance you're in.
         if ns.Tracker and ns.Tracker.Toggle then ns.Tracker:Toggle() end
+    elseif msg == "plan" then
+        -- 1.1 beta.4: the Plan tab.
+        if ns.UI and ns.UI.OpenTab then ns.UI:OpenTab("plan") end
     elseif msg:match("^forget%s*%d*$") then
         -- Same menu as the settings button; "/gs forget 2" picks from the numbered list it
         -- prints when the game has no menu.

@@ -122,7 +122,10 @@ Theme.art = {
     -- beta.8 tracking star on set and piece rows: the auction house / pet journal favourite
     -- star, else the raid target star icon.
     star = { atlases = { "auctionhouse-icon-favorite", "PetJournal-FavoritesIcon" },
-        file = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_1", size = 14 },
+        file = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_1", size = 14,
+        -- 1.1 beta.4 Plan pin "off": the AH's own off star (Blizzard_AuctionHouseSharedTemplates.lua);
+        -- missing -> the star above, dimmed (`offAlpha`).
+        off = "auctionhouse-icon-favorite-off", offAlpha = 0.35 },
     -- Progress page bars (ui-review-3): ColoredProgressBarTemplate with its white fill tinted
     -- in Theme.CountColor * tint (darker, so the white count stays readable), the darker
     -- green atlas when complete. Without the template: our StatusBar with `file` on a dark
@@ -133,7 +136,8 @@ Theme.art = {
         bg = { 0, 0, 0, 0.45 }, edge = { 0, 0, 0, 0.9 }, height = 14 },
     -- beta.9 guide Way button: the game's own map pin (Waypoint-MapPin-*), hover = its highlight
     -- (ADD). No atlas on this client: the button shows the word L.WAY_FALLBACK ("Way") in link colours.
-    wayPin = { atlas = "Waypoint-MapPin-Untracked", hover = "Waypoint-MapPin-Highlight" },
+    wayPin = { atlas = "Waypoint-MapPin-Untracked", hover = "Waypoint-MapPin-Highlight",
+        text = (ns.L and ns.L.WAY_FALLBACK) or "Way" },   -- the word when the atlas is missing (as on the guide page)
     -- 1.1 beta.1 dungeon checklist (Objective Tracker look). The tracker's own header atlas
     -- (UI-QuestTracker-Header) is missing on WoW Forever (probe), so the line under the title is
     -- the Settings divider, else a 1 px gold line. Tick on got pieces: the checkmark atlas, else
@@ -171,6 +175,15 @@ Theme.art = {
     slotOffMark = { atlas = "common-icon-redx", text = "x" },
     lootStar = { atlases = { "auctionhouse-icon-favorite", "PetJournal-FavoritesIcon" },
         file = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_1", size = 18 },
+    -- 1.1 beta.4 Plan tab: lock on a saved raid (quest-sharing padlock, else the LFG lock file,
+    -- else the word); key icon = the key item's own icon, else this file; LFG button = the chat
+    -- bubble, else the word "LFG". Reused: expand, star, tick, wayPin, rowBackground, guideDivider.
+    lock = { atlas = "QuestSharing-Padlock", file = "Interface\\LFGFrame\\UI-LFG-ICON-LOCK", text = "locked", size = 14 },
+    key  = { file = "Interface\\Icons\\INV_Misc_Key_03", size = 16 },
+    lfg  = { file = "Interface\\ChatFrame\\UI-ChatIcon-Chat-Up", pushed = "Interface\\ChatFrame\\UI-ChatIcon-Chat-Down",
+        highlight = "Interface\\Buttons\\UI-Common-MouseHilight", text = "LFG", size = 16 },   -- FloatingChatFrame.xml chat button
+    -- small-button hover when an entry has no own hover atlas / highlight file
+    smallHover = { file = "Interface\\Buttons\\UI-Common-MouseHilight", blend = "ADD" },
 }
 
 Theme.sizes = {
@@ -207,6 +220,13 @@ Theme.sizes = {
     -- 1.1 beta.2 hide-slot buttons under the model: icon, button (icon + frame), gap after
     -- Reset, gap between buttons, red X.
     slot = { icon = 18, button = 20, first = 8, gap = 4, mark = 12 },
+    -- 1.1 beta.4 Plan tab: run header and line heights, boss / piece indents, icon, columns
+    -- (size+level text, key/attunement/lockout status), small buttons (LFG, Way).
+    -- ui-b4 #8: every Plan column here (x from the row's left; widths), title / summary offsets, the
+    -- shopping list's max width (#5), inline icon size in the status column (#7).
+    plan = { head = 26, row = 20, indent = 18, pieceX = 200, icon = 16, button = 16, top = 64,
+        foldX = 4, pinX = 22, nameX = 42, nameW = 240, infoX = 290, infoW = 170, countW = 70, gap = 6, rightW = 80,
+        titleX = 16, titleY = -12, summaryX = -30, summaryY = -14, sectionH = 24, shopW = 520, inline = 14 },
     tracker = { width = 240, head = 26, row = 14, maxRows = 12, pad = 6, indent = 18, button = 18, fold = 16,
         titleX = 7, tickX = 4, viaIndent = 4, countGap = 4 },
 }
@@ -330,6 +350,14 @@ Theme.colors = {
     slotOff   = CreateColor(0.5, 0.5, 0.5, 1),   -- hidden-slot button icon tint (GetRGBA)
     slotFrame = P.grey,                 -- iconBorder tint of the slot buttons
     slotOffMark = P.orange,             -- the "x" when the red X atlas is missing
+    -- 1.1 beta.4 Plan tab
+    planHead    = P.gold,               -- run names, "What to run"
+    planBoss    = P.lightGrey,          -- boss names
+    planLocked  = P.grey,               -- a run whose bosses are all dead this lockout
+    planNote    = P.grey,               -- size / level, notes, alt names
+    planHave    = P.green,              -- key held, attuned
+    planMissing = P.orange,             -- key missing, not attuned
+    handReady   = P.green,              -- "Ready to hand in"
 }
 
 -- Effort word colours (Data:GetEffort level): 0 Done grey, 1 Low green, 2 Medium gold,
@@ -368,6 +396,7 @@ Theme.flagColor = {
     checked  = Theme.colors.flagChecked,
     later    = Theme.colors.flagLater,
     srcLater = Theme.colors.flagLater,
+    seen     = Theme.colors.flagChecked,   -- 1.1 beta.4 "Out now (seen in game)"
 }
 
 function Theme.TemplateExists(name)

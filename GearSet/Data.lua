@@ -253,6 +253,7 @@ local FLAG_TEXT = {
     FLAG_SRC_LATER = "This way is not out on WoW Forever yet.",
     FLAG_LATER_SHORT = "Not out yet",
     FLAG_LATER_COUNT = "%d more not out yet",
+    FLAG_SEEN = "Out now (seen in game).",
     FLAG_UNKNOWN = "This game version doesn't know this item yet, so it can't be got for now. It still counts in the set's total.",
 }
 function Data.FlagText(key)
@@ -296,6 +297,84 @@ local function AllSourcesLater(itemID)
 end
 Data.AllSourcesLater = AllSourcesLater   -- Alts: set pieces without building the set list
 
+-- ---------------------------------------------------------------------------
+-- 1.1 beta.4 (Q8 / P3, ToS B6/W8): "not out yet" pieces that one of your own characters owns
+-- (Alts index: saved holdings of your own characters only) are saved in db.seenOut[itemID] and
+-- count as out from then on. A set whose every piece is not out yet unlocks whole when any of
+-- its pieces is seen. Never removed; the bundled data wins once it marks the piece out.
+function Data.SeenOut(itemID)
+    local db = ns.db
+    local t = type(db) == "table" and db.seenOut
+    local v = type(t) == "table" and type(itemID) == "number" and t[itemID]
+    -- only a real time counts: a number > 0 and finite (pretest finding 6: -1 / NaN / inf are junk)
+    return type(v) == "number" and v > 0 and v < math.huge or false
+end
+
+-- Item IDs flagged not out yet and not seen (built once; seen ones drop out).
+local laterIDs
+local function LaterIDs()
+    if laterIDs then return laterIDs end
+    laterIDs = {}
+    local tbl = ClassicTable()
+    for _, entry in pairs(type(tbl) == "table" and tbl or {}) do
+        if type(entry) == "table" and type(entry.i) == "table" then
+            local whole = IsOn(entry.u)
+            local up = {}
+            for _, id in ipairs(type(entry.up) == "table" and entry.up or {}) do up[id] = true end
+            for _, id in ipairs(entry.i) do
+                if type(id) == "number" and (whole or up[id] or AllSourcesLater(id)) and not Data.SeenOut(id) then
+                    laterIDs[id] = true
+                end
+            end
+        end
+    end
+    return laterIDs
+end
+
+-- Walk the not-out-yet IDs against your own characters' holdings; returns how many were new.
+-- `holders(itemID)` -> list (tests pass their own; default Alts:GetHolders).
+function Data.NoteSeen(holders)
+    local db = ns.db
+    if type(db) ~= "table" then return 0 end
+    if type(db.seenOut) ~= "table" then db.seenOut = {} end
+    local A = ns.Alts
+    holders = holders or (A and A.GetHolders and function(id) return A:GetHolders(id) end)
+    if not holders then return 0 end
+    local new, now = 0, time()
+    for id in pairs(LaterIDs()) do
+        local ok, list = pcall(holders, id)
+        if ok and type(list) == "table" and #list > 0 then
+            db.seenOut[id] = now
+            laterIDs[id] = nil
+            new = new + 1
+        end
+    end
+    if new > 0 then Data.ResetSets() end
+    return new
+end
+
+-- Count of seen pieces (selftest Info).
+function Data.SeenCount()
+    local db, n = ns.db, 0
+    for _, v in pairs(type(db) == "table" and type(db.seenOut) == "table" and db.seenOut or {}) do
+        if type(v) == "number" and v > 0 and v < math.huge then n = n + 1 end
+    end
+    return n
+end
+
+-- Drop the built set list (a newly seen piece unlocks without /reload); the window redraws.
+function Data.ResetSets()
+    Data.sets, Data.byKey = nil, nil
+    laterIDs = nil
+    if Data.ClearGuide then Data.ClearGuide() end
+    if Data.ClearEffort then Data:ClearEffort() end
+    if ns.Owned and ns.Owned.Invalidate then ns.Owned:Invalidate() end
+    local UI = ns.UI
+    if UI and UI.IsShown and UI:IsShown() and UI.RefreshAll and (not UI.CurrentTab or UI:CurrentTab() == "sets") then
+        pcall(UI.RefreshAll, UI)
+    end
+end
+
 local function BuildClassic(out)
     local tbl = ClassicTable()
     if type(tbl) ~= "table" then return end
@@ -308,13 +387,30 @@ local function BuildClassic(out)
                 upSet = {}
                 for _, id in ipairs(entry.up) do upSet[id] = true end
             end
+            -- seenOut (P3): a set whose every piece is not out yet unlocks whole on any seen piece
+            local allLater, anySeen = true, false
+            for _, itemID in ipairs(entry.i) do
+                if type(itemID) == "number" then
+                    if not (whole or (upSet and upSet[itemID]) or AllSourcesLater(itemID)) then allLater = false end
+                    if Data.SeenOut(itemID) then anySeen = true end
+                end
+            end
+            local unlockAll = anySeen and allLater
+            if unlockAll then whole = false end
             -- Most common armor type (cloth..plate) among body pieces; cloaks don't count.
             local count, best, bestN = {}, 0, 0
             for _, itemID in ipairs(entry.i) do
                 local p, armor = MakePiece(itemID)
                 local isLater = whole or (upSet and upSet[itemID]) or AllSourcesLater(itemID)
+                local seen = false
+                if unlockAll then
+                    seen, isLater = true, false
+                elseif isLater and Data.SeenOut(itemID) then
+                    seen, isLater = true, false
+                end
                 if p then
                     if isLater then p.later = true end
+                    if seen then p.seen = true end
                     if p.later and not whole then later[#later + 1] = p else pieces[#pieces + 1] = p end
                 elseif not isLater and type(itemID) == "number" then
                     -- v1.0.1 (F1): a released piece this client doesn't know still counts in
@@ -734,6 +830,7 @@ end
 -- steps may have sub (the quest's "NPC, place", drawn grey after the quest name).
 -- beta.9: rows and steps may have way = a Way.Point (Waypoint.lua): the page draws a Way button.
 local guideCache, recordCache = {}, {}
+function Data.ClearGuide() wipe(guideCache); wipe(recordCache) end   -- Data.ResetSets (seenOut)
 local GUIDE_MAX_DEPTH = 4
 local BIND_ON_EQUIP = (Enum and Enum.ItemBind and Enum.ItemBind.OnEquip) or 2
 
@@ -1182,7 +1279,8 @@ local function AddSource(out, e, itemID, ctx, state)
 end
 
 -- WoW Forever flag line: { k = "flag", flag = "classic"/"checked"/"later"/"srcLater", text }.
-local FLAG_KEYS = { classic = "FLAG_CLASSIC", checked = "FLAG_CHECKED", later = "FLAG_LATER", srcLater = "FLAG_SRC_LATER" }
+local FLAG_KEYS = { classic = "FLAG_CLASSIC", checked = "FLAG_CHECKED", later = "FLAG_LATER", srcLater = "FLAG_SRC_LATER",
+    seen = "FLAG_SEEN" }
 local function FlagBlock(flag)
     return { k = "flag", flag = flag, text = Data.FlagText(FLAG_KEYS[flag]) }
 end
@@ -1215,7 +1313,7 @@ function Data:GetGuide(piece)
     local L = ns.L
     local itemID = piece and piece.itemID
     if not itemID then return {} end
-    local cacheKey = (piece.unknown and (itemID .. "U")) or (piece.later and (itemID .. "L")) or itemID   -- same item, other set's flag
+    local cacheKey = (piece.unknown and (itemID .. "U")) or (piece.later and (itemID .. "L")) or (piece.seen and (itemID .. "S")) or itemID   -- same item, other set's flag
     local hit = guideCache[cacheKey]
     if hit then return hit end
     -- Only the page on screen is kept: a new piece drops the old blocks and parsed
@@ -1242,11 +1340,12 @@ function Data:GetGuide(piece)
     local out = {}
     Add(out, "head", L.G_HOW)
     if piece.later then out[#out + 1] = FlagBlock("later") end
+    if piece.seen then out[#out + 1] = FlagBlock("seen") end   -- 1.1 beta.4: seenOut
     if piece.unknown then   -- v1.0.1 (F1): drawn in the "not out yet" colour
         out[#out + 1] = { k = "flag", flag = "later", text = Data.FlagText("FLAG_UNKNOWN") }
     end
     if #own == 0 then Add(out, "text", L.SRC_UNKNOWN) end
-    AddSources(out, own, itemID, ctx, state, piece.later)
+    AddSources(out, own, itemID, ctx, state, piece.later or piece.seen)
     if not state.itemDone then AddRows(out, Data.GuideRecord("item", itemID), ctx) end
 
     -- Before you go: keys and attunements of the places above, all the same way:

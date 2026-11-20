@@ -4,7 +4,7 @@ Keeps track of all known armor sets in the game, in one window with three parts:
 
 A World of Warcraft addon for **WoW Forever**.
 
-Current version: **v1.0.1**. A beta, **v1.1.0-beta.3**, is on the beta channel.
+Current version: **v1.0.1**. A beta, **v1.1.0-beta.4**, is on the beta channel.
 
 ## Install
 
@@ -48,6 +48,7 @@ Open them with the gear button at the top right of the window, a right-click on 
 | Prices from | Where the [shopping list](#shopping-list) gets auction prices: "Auctionator or TSM" (default), "Auctionator", "TSM" or "Off". Under **Shopping** |
 | Open the dungeon checklist by itself | Opens the [dungeon checklist](#dungeon-checklist-and-loot-roll-star) when you enter a dungeon or raid with pieces you need (on by default) |
 | With nothing tracked, use sets I've started | When you track nothing, the checklist and the loot roll star use sets you have started and your class can wear (on by default) |
+| Hand-in reminders in chat | One chat line when you enter the zone of a quest giver whose reward you need and your bags hold what the quest asks for. See [Plan tab](#plan-tab). Under **Dungeons** |
 | Mark set pieces on loot rolls | Shows the loot roll star (on by default) |
 | Show them again | Brings back instances you chose not to show in the checklist |
 | Forget a character | Removes the saved pieces of one of your other characters |
@@ -189,7 +190,7 @@ Inside a dungeon or raid where you still need a piece of a tracked set, a small 
 
 ### Tabs and progress
 
-Two tabs sit at the bottom of the window: **Sets** (the window described above) and **Progress**.
+Three tabs sit at the bottom of the window: **Sets** (the window described above), **Progress** and **Plan** (see [Plan tab](#plan-tab)).
 
 | What | How |
 |---|---|
@@ -200,17 +201,37 @@ Two tabs sit at the bottom of the window: **Sets** (the window described above) 
 | Characters | Each saved character as a bar |
 | Count for | "This character" or "Whole account" (remembered). "This character" and each character's line count only the sets that class can wear. "Whole account" counts all sets |
 | Tracked | How many sets and pieces you track, and how many pieces are still needed |
-| Shopping list | What you need to craft your tracked pieces. See [Shopping list](#shopping-list) |
+| Shopping list | A line "Shopping list: n mats to get" links to the Plan tab. It is hidden when nothing is left to get. See [Shopping list](#shopping-list) |
 
 Removed, other-faction, hidden and not-yet-released sets are never counted. The minimap button and Titan Panel / data bar tooltips show a line such as "38% of set pieces, 12 tracked pieces left", then "Next: ..." with the 3 sets closest to done (tracked sets first). Turn "Next:" off in the settings.
 
 **Milestones:** your first complete set, 5, 10 and 25 sets, and a quarter, half, three quarters and all of the pieces. Each gives one quiet chat line, once per character, with no sound. They are on by default; turn them off in Settings > Progress ("Milestone notes in chat"). Milestones you had already reached before the update are noted silently.
 
+### Plan tab
+
+*In v1.1.0-beta.4.*
+
+Every dungeon and raid that drops a piece you still need, the run with the most pieces first. Under each run are its bosses and the pieces. Click a run to fold it.
+
+| What | How |
+|---|---|
+| Pin | The star pins a run to the top (saved per character) |
+| Run info | The run size and level, and whether you have the key (keyring, bags or bank) or the attunement |
+| Lockout | For raids, for example "saved 3/10, resets in 2d 4h" (the full date is in the tooltip). A raid whose bosses with your pieces are all dead this week turns grey and moves to the end. A lockout only marks the run with that exact name |
+| Places | General places read "Blackrock Spire (Lower or Upper)" and "Scarlet Monastery (any wing)". Ring of Law bosses show under their own line |
+| Summary | Counts each piece once, for example "3 pieces in 1 run" |
+| Hover a run | What to bring and general group notes |
+| LFG button | Puts a group line ("LFM Scholomance - need ...") in a copy box for you to paste yourself. Gear Set never posts anything |
+| Ready to hand in | Quest givers whose reward is a piece you need, where your bags hold everything the quest asks for. In your own chat, one line says so when you enter their zone (once per zone entry, never in combat or inside an instance). Turn it off with "Hand-in reminders in chat" in the settings |
+| Shopping list | The [shopping list](#shopping-list) is on this tab |
+
+Open it with the tab or `/gs plan`.
+
 ### Shopping list
 
-*In v1.1.0-beta.2.*
+*In v1.1.0-beta.2. On the Plan tab since beta.4.*
 
-On the Progress tab, for the crafted pieces of your tracked sets and pieces:
+On the Plan tab, for the crafted pieces of your tracked sets and pieces:
 
 | What | How |
 |---|---|
@@ -249,7 +270,7 @@ Most of the data is classic data, not yet checked on WoW Forever. The guide page
 |---|---|
 | Checked on WoW Forever | The set and its sources were checked on Forever (the Dungeon Set 1 sets and the 4 WoW Forever sets) |
 | Not confirmed on WoW Forever yet (classic data) | Classic data, not checked on Forever yet |
-| Not yet released / Not out yet | Not out on Forever yet. The set or piece is greyed and left out of "Have x / y". Right now: the raid sets (Tier 1-3, Zul'Gurub, Ahn'Qiraj, Onyxia), Dungeon Set 2, the PvP rank and Arathi Basin sets, the Zul'Gurub crafted sets, the four Scourge Invasion sets (Necrotic Rune shoulders and robes, Argent Dawn gloves), and Eskhandar's Pelt (Spirit of Eskhandar set, from Lord Kazzak; the client doesn't know the item yet), because no source says the invasion runs on WoW Forever |
+| Not yet released / Not out yet | Not out on Forever yet. The set or piece is greyed and left out of "Have x / y". It unlocks by itself ("Out now (seen in game)") once one of your own characters owns such a piece; for a whole set, when any of its pieces is seen. Right now: the raid sets (Tier 1-3, Zul'Gurub, Ahn'Qiraj, Onyxia), Dungeon Set 2, the PvP rank and Arathi Basin sets, the Zul'Gurub crafted sets, the four Scourge Invasion sets (Necrotic Rune shoulders and robes, Argent Dawn gloves), and Eskhandar's Pelt (Spirit of Eskhandar set, from Lord Kazzak; the client doesn't know the item yet), because no source says the invasion runs on WoW Forever |
 
 ## Colours
 
@@ -270,9 +291,10 @@ Most of the data is classic data, not yet checked on WoW Forever. The guide page
 | `/gs config` | Open the settings |
 | `/gs forget` | Pick one of your other characters to forget (removes its saved pieces) |
 | `/gs checklist` | Open or close the [dungeon checklist](#dungeon-checklist-and-loot-roll-star) for the instance you are in |
+| `/gs plan` | Open the window on the [Plan tab](#plan-tab) |
 | `/gs help` | List the commands in chat and show the help on the window |
 | `/gs check` | Show the data version, last-checked date, WoW Forever build, data sources and how many sets and sources are checked on Forever, then check the built-in set list against the game and print any problems |
-| `/gs probe` | List which game features this client has (waypoints, current map, tooltips, lockouts, reputation, keyring, account bank, journals, art) and put the result in a copy box to paste into a bug report |
+| `/gs probe` | List which game features this client has (waypoints, current map, tooltips, lockouts with bosses, keys, zone names, attunes, reputation, keyring, account bank, journals, art) and put the result in a copy box to paste into a bug report |
 | `/gs selftest` | The addon checks its own window, buttons, art, saved settings (on copies, yours are never changed) and data, then puts one line in a copy box to paste into a bug report. The line also says how many characters are saved, whether the account bank could be read, and how much memory the addon uses (for example "memory: 2500 KB"; left out if the game can't tell). It has no character name, realm, guild or web address. In combat it waits until the fight ends |
 | `/gs selftest full` | The same, and it also opens and closes a guide page and the help |
 
@@ -312,6 +334,7 @@ The addon is in the `GearSet` folder (`GearSet_Forever.toc`, interface 16001). S
 | `Gold.lua` | Works out the gold still needed and what can't be bought |
 | `Prices.lua` | Learns vendor prices when you open a vendor |
 | `Runs.lua` | Works out which dungeon and raid bosses drop the pieces you need |
+| `HandIns.lua` | Finds quests you can hand in with what is in your bags |
 | `Shopping.lua` | The shopping list: recipes, mats and what is still to get |
 | `AHPrices.lua` | Reads auction prices from Auctionator or TSM (read only) |
 | `LootMark.lua` | The star on the loot roll window |
@@ -326,6 +349,7 @@ The addon is in the `GearSet` folder (`GearSet_Forever.toc`, interface 16001). S
 | `UI\PieceList.lua` | The list of pieces |
 | `UI\GuidePage.lua` | The guide page for one piece |
 | `UI\Progress.lua` | The Progress tab, tracking and milestones |
+| `UI\Plan.lua` | The Plan tab |
 | `UI\Tracker.lua` | The dungeon checklist |
 | `UI\Settings.lua` | The settings page |
 | `UI\Help.lua` | The first-time help |

@@ -263,12 +263,63 @@ local CHECKS = {
             for i = 1, math.min(n, 5) do
                 local ok, name, _, reset, _, locked, _, _, isRaid, _, _, total, done, _, mapID = Call("GetSavedInstanceInfo", i)
                 if ok then
-                    s = s .. (" [%s %s reset %s raid %s %s/%s map %s]"):format(Safe(name), Safe(locked), Safe(reset),
+                    s = s .. (" [%s %s reset %s raid %s %s/%s map %s"):format(Safe(name), Safe(locked), Safe(reset),
                         Safe(isRaid), Safe(done), Safe(total), Safe(mapID))
+                    -- 1.1 beta.4 (Plan tab, P7): the per-boss list, first 3 bosses
+                    local bosses = {}
+                    for j = 1, 3 do
+                        local okE, boss, _, killed = Call("GetSavedInstanceEncounterInfo", i, j)
+                        if okE and boss ~= nil then bosses[#bosses + 1] = Safe(boss) .. "=" .. Safe(killed) end
+                    end
+                    if #bosses > 0 then s = s .. " bosses: " .. table.concat(bosses, " ") end
+                    s = s .. "]"
                 end
             end
         end
         return s
+    end },
+    -- 1.1 beta.4 Plan tab: where each key from the data is (bags / bags+bank counts, keyring scan).
+    { "Keys", function()
+        local R, A = ns.Runs, ns.Alts
+        local g = ns.GuideData
+        local ids, seen = {}, {}
+        for name in pairs(type(g) == "table" and type(g.place) == "table" and g.place or {}) do
+            local okF, f = pcall(R.Facts, name)
+            if okF then
+                for _, k in ipairs(f.keys) do if not seen[k.id] then seen[k.id] = true; ids[#ids + 1] = k.id end end
+                for _, id in ipairs(f.attitem) do if not seen[id] then seen[id] = true; ids[#ids + 1] = id end end
+            end
+        end
+        table.sort(ids)
+        local want = {}
+        for _, id in ipairs(ids) do want[id] = true end
+        local okK, ring = false, nil
+        if A and A.ScanKeyring then okK, ring = pcall(A.ScanKeyring, want) end
+        local out = {}
+        for _, id in ipairs(ids) do
+            local ok1, n1 = Call("C_Item.GetItemCount", id)
+            local ok2, n2 = Call("C_Item.GetItemCount", id, true)
+            out[#out + 1] = ("%d %s/%s ring %s"):format(id, ok1 and Safe(n1) or "?", ok2 and Safe(n2) or "?",
+                okK and type(ring) == "table" and YesNo(ring[id]) or "?")
+        end
+        return (#out > 0 and table.concat(out, ", ") or "no key rows") .. ", keyring bag " .. YesNo(okK and ring ~= nil)
+    end },
+    { "Zone names", function()
+        local s = Val("GetRealZoneText") .. ", " .. Val("GetZoneText")
+        local okM, m = Call("C_Map.GetBestMapForUnit", "player")
+        if okM and m then
+            local okI, info = Call("C_Map.GetMapInfo", m)
+            s = s .. ", map " .. Safe(m) .. " " .. (okI and type(info) == "table" and Safe(info.name) or "?")
+        end
+        return s
+    end },
+    { "Attunes", function()
+        local out = {}
+        for _, q in ipairs({ 7848, 7761, 9121, 9122, 9123 }) do
+            local ok, v = Call("C_QuestLog.IsQuestFlaggedCompleted", q)
+            out[#out + 1] = q .. " " .. (ok and Safe(v) or "?")
+        end
+        return Has({ "C_QuestLog.IsQuestFlaggedCompleted" }) .. ", " .. table.concat(out, ", ")
     end },
     -- 1.1 beta.1 checklist: where you are (name, type, instance ID = 8th return) and the
     -- checklist's own match; the loot roll frames the loot mark hooks.

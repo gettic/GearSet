@@ -28,6 +28,7 @@ local VAR = {
     trackerStarted = "GearSet_TrackerStarted",
     lootMark       = "GearSet_LootMark",
     nextTargets    = "GearSet_NextTargets",    -- 1.1 beta.2 (UI\Progress.lua tooltip line)
+    handIns        = "GearSet_HandIns",        -- 1.1 beta.4 (HandIns.lua chat line)
 }
 -- 1.1 beta.2: the price source dropdown (a string setting, not in VAR: S:Refresh only
 -- handles the booleans there). Values: AHPrices.lua.
@@ -131,7 +132,14 @@ local VALUES = {
             db.tracker.started = v and true or false
             if ns.Runs and ns.Runs.Invalidate then ns.Runs.Invalidate() end
             if ns.Tracker and ns.Tracker.Update then ns.Tracker:Update() end
+            if ns.Plan and ns.Plan.Refresh then pcall(ns.Plan.Refresh, ns.Plan) end
         end,
+        default = true,
+    },
+    -- 1.1 beta.4: one local chat line per zone entry when a hand-in is ready (HandIns.lua).
+    handIns = {
+        get = function() local db = DB(); return not (db and db.handIns == false) end,
+        set = function(v) local db = DB(); if db then db.handIns = v and true or false end end,
         default = true,
     },
     lootMark = {
@@ -501,6 +509,9 @@ function S:Init()
     self.settings.lootMark = Checkbox(category, "lootMark",
         T("S_LOOT_MARK", "Mark set pieces on loot rolls"),
         T("S_LOOT_MARK_TIP", "A small star on the loot roll window when you or one of your other characters needs the item. It never rolls for you."))
+    self.settings.handIns = Checkbox(category, "handIns",
+        T("S_HANDINS", "Hand-in reminders in chat"),
+        T("S_HANDINS_TIP", "When you enter the zone of a quest giver whose reward you still need and your bags hold everything the quest asks for, one line in your chat says so. Only you see it."))
     self.skipInit = Button(category, layout, T("S_SKIPPED_LABEL", "Instances you chose not to show"), SkippedText(),
         function()
             if ns.Tracker and ns.Tracker.ClearSkipped then ns.Tracker.ClearSkipped() end

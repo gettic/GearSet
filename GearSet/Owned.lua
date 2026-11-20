@@ -136,10 +136,24 @@ function Owned:Invalidate()
     if ns.Data and ns.Data.ClearEffort then ns.Data:ClearEffort() end   -- effort counts needed pieces
 end
 
+-- 1.1 beta.4 seenOut (ToS B6): not-out-yet pieces your own characters hold, checked at most
+-- once per 2 s after bags / bank / equipment change (Data.NoteSeen, Alts index only).
+local seenPending = false
+function Owned.QueueSeen()
+    if seenPending or not (ns.Data and ns.Data.NoteSeen) then return end
+    seenPending = true
+    local function run()
+        seenPending = false
+        pcall(ns.Data.NoteSeen)
+    end
+    if C_Timer and C_Timer.After then C_Timer.After(2, run) else run() end
+end
+
 -- Something changed: clear the cache, refresh the window once (coalesced).
 local pending = false
 function Owned:Changed()
     self:Invalidate()
+    Owned.QueueSeen()
     if pending then return end
     if not (ns.UI and ns.UI:IsShown()) then return end
     pending = true

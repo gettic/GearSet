@@ -544,9 +544,30 @@ function ST.ProgressParts()
     for i, b in ipairs(P.charRows or {}) do
         parts[#parts + 1] = { name = "pChar" .. i, obj = b, shownOnly = true }
     end
-    -- 1.1 beta.2 shopping list (the made-up list while the self-test shows it)
-    parts[#parts + 1] = { name = "pShopHead", obj = P.shopHead, shownOnly = true }
-    for i, r in ipairs(P.shopRows or {}) do
+    parts[#parts + 1] = { name = "pShopPointer", obj = P.shopPointer, shownOnly = true, opt = true }
+    return parts
+end
+
+-- 1.1 beta.4 Plan tab (checked while it shows the made-up run and shopping list).
+function ST.PlanParts()
+    local UI, PL = ns.UI or {}, ns.Plan or {}
+    local parts = {
+        { name = "planPage", obj = UI.planPage }, { name = "planTitle", obj = PL.title },
+        { name = "planSummary", obj = PL.summary }, { name = "planLocks", obj = PL.locksLine, shownOnly = true },
+        { name = "planHandHead", obj = PL.handHead, shownOnly = true }, { name = "planRunsHead", obj = PL.runsHead, shownOnly = true },
+        { name = "planList", obj = PL.scroll },
+    }
+    for i, r in ipairs(PL.heads or {}) do
+        if i > 4 then break end
+        parts[#parts + 1] = { name = "planHead" .. i, obj = r, shownOnly = true }
+    end
+    for i, r in ipairs(PL.lines or {}) do
+        if i > 8 then break end
+        parts[#parts + 1] = { name = "planRow" .. i, obj = r, shownOnly = true }
+    end
+    -- the shopping list (moved here from the Progress tab, P1)
+    parts[#parts + 1] = { name = "pShopHead", obj = PL.shopHead, shownOnly = true }
+    for i, r in ipairs(PL.shopRows or {}) do
         if i > 8 then break end
         parts[#parts + 1] = { name = "pShop" .. i, obj = r, shownOnly = true }
     end
@@ -784,6 +805,13 @@ local V7_SAMPLE = {
     chars = { ["A-Realm"] = { name = "A", realm = "Realm", mats = "12359:20:5,7076:2:0", prof = "164:300", recipes = "16742" } },
 }
 
+-- 1.1 beta.4 (DB v8): Plan tab folds / pins, hand-in line off, seen "not out yet" pieces.
+local V8_SAMPLE = {
+    version = 8, handIns = false,
+    plan = { collapsed = { Scholomance = true }, pinned = { ["A-Realm"] = { ["Molten Core"] = true } } },
+    seenOut = { [16820] = 1700000000, [7] = "junk" },
+}
+
 local function CheckSaved()
     local prep = ns.PrepareDB
     Count()
@@ -939,8 +967,35 @@ local function CheckSaved()
     if not ok then
         Problem("DB", "v7", Short(err))
     else
-        local lost = Lost(V7_SAMPLE, v7)
-        if lost then Problem("DB", "v7", "changed " .. lost) end
+        local lost = Lost(V7_SAMPLE, v7, nil, 0, { version = true })   -- 1.1 beta.4: version raised to 8
+        if lost then Problem("DB", "v7", "changed " .. lost)
+        elseif type(v7.plan) ~= "table" or type(v7.plan.collapsed) ~= "table" or type(v7.plan.pinned) ~= "table"
+            or v7.handIns ~= true or type(v7.seenOut) ~= "table" or v7.version ~= ns.DB_VERSION then
+            Problem("DB", "v7 -> v8", "v8 keys not added")
+        end
+    end
+    -- 3g. 1.1 beta.4 (DB v8): v8 data goes through unchanged (junk seenOut kept, ignored where read);
+    -- a bad plan table falls back, a broken pin list is dropped, other pins kept.
+    Count()
+    local v8 = DeepCopy(V8_SAMPLE)
+    ok, err = pcall(prep, v8)
+    if not ok then
+        Problem("DB", "v8", Short(err))
+    else
+        local lost = Lost(V8_SAMPLE, v8)
+        if lost then Problem("DB", "v8", "changed " .. lost) end
+    end
+    Count()
+    local bad8 = { version = 8, plan = 5, handIns = "x", seenOut = 3 }
+    local bad8b = { version = 8, plan = { pinned = { ["A-Realm"] = 4, ["B-Realm"] = { MC = true } } } }
+    ok, err = pcall(prep, bad8)
+    local ok2, err2 = pcall(prep, bad8b)
+    if not ok then Problem("DB", "bad v8", Short(err))
+    elseif not ok2 then Problem("DB", "bad v8", Short(err2))
+    elseif type(bad8.plan) ~= "table" or type(bad8.plan.pinned) ~= "table" or bad8.handIns ~= true
+        or type(bad8.seenOut) ~= "table" or bad8b.plan.pinned["A-Realm"] ~= nil
+        or not (bad8b.plan.pinned["B-Realm"] and bad8b.plan.pinned["B-Realm"].MC) then
+        Problem("DB", "bad v8", "not fixed or data lost")
     end
     Count()
     local bad7 = { version = 7, priceSource = 5, preview = { hide = 4 }, filters = { myLevel = "y" }, nextTargets = 0 }
@@ -1699,9 +1754,9 @@ function ST.ShopSample()
     return list
 end
 
--- Shopping text: no column or total cut off (the game's own measure).
+-- Shopping text: no column or total cut off (the game's own measure). On the Plan tab (1.1 beta.4).
 function ST.CheckShopText()
-    local P = ns.Progress
+    local P = ns.Plan or {}
     local cut = {}
     local function Fits(label, fs)
         if not (fs and fs:IsShown()) then return end
@@ -1859,6 +1914,172 @@ local function CheckLevels()
     end
     Info(("levels: %d bundled, %d learned (of %d sets; %d pieces learned%s)"):format(bundled, learned, all, items,
         junk > 0 and (", " .. junk .. " ignored") or ""))
+end
+
+-- ---------------------------------------------------------------------------
+-- 1.1 beta.4: the Plan tab (Runs planner parts), hand-ins, seen "not out yet" pieces.
+
+-- A made-up plan (one raid run with a key, a lockout and long names) for the text-fit check.
+function ST.PlanSample()
+    local now = time()
+    local e = {
+        run = "Upper Blackrock Spire", need = 12, pinned = true, attuned = false, lockState = "partial",
+        facts = { kind = "raid", size = 40, lo = 56, hi = 61, keys = { { id = 11000, part = "city gate" } },
+            attq = {}, attitem = {}, notes = {} },
+        lock = { name = "Upper Blackrock Spire", done = 10, total = 10, resetAt = now + 6 * 86400 + 23 * 3600, isRaid = true },
+        view = { bosses = {
+            { label = "Emperor Dagran Thaurissan", pieces = { { itemID = 16820, mine = true, alts = { "Longcharname" } } } },
+            { label = "Trash", trash = true, pieces = { { itemID = 16821, mine = true, via = "Qiraji Bindings of Dominance" } } },
+        } },
+    }
+    return { runs = { e }, other = 3 }
+end
+
+function ST.CheckPlanText()
+    local PL = ns.Plan or {}
+    local cut = {}
+    local function Fits(label, fs)
+        if not (fs and fs:IsShown()) then return end
+        Count()
+        local st, isCut = Read(fs, "IsTruncated")
+        if st == "secret" then Skip(label, "(secret)") elseif st == "ok" and isCut then cut[#cut + 1] = label end
+    end
+    Count()
+    local h = PL.heads and PL.heads[1]
+    if not (h and h:IsShown()) then return Problem("UI", "plan", "no run row") end
+    Fits("name", h.name); Fits("info", h.info); Fits("count", h.count); Fits("status", h.status)
+    Fits("summary", PL.summary); Fits("locks", PL.locksLine); Fits("note", PL.note)
+    local shown = 0
+    for i, r in ipairs(PL.lines or {}) do
+        if r:IsShown() then
+            shown = shown + 1
+            Fits("row" .. i .. "boss", r.boss); Fits("row" .. i .. "name", r.name); Fits("row" .. i .. "x", r.extra)
+            Fits("row" .. i .. "r", r.right)
+        end
+    end
+    Count()
+    if shown < 2 then Problem("UI", "plan", ("%d piece rows, want 2"):format(shown)) end
+    if #cut > 0 then Problem("UI", "plan", "text cut: " .. table.concat(cut, ", ", 1, math.min(#cut, MAX_LIST))) end
+end
+
+local function CheckPlan()
+    local R, PL = ns.Runs, ns.Plan
+    Count()
+    if not (R and R.Plan and R.Sort and R.MatchLock and R.LockState and R.ResetText and R.LfgLine and R.Facts and PL) then
+        return Problem("PLN", "module", "missing")
+    end
+    -- pure parts on made-up data
+    Count()
+    local list = R.Sort({ { run = "B", need = 1 }, { run = "A", need = 3 }, { run = "C", need = 1, pinned = true },
+        { run = "D", need = 9, lockState = "done" } })
+    if not (list[1].run == "C" and list[2].run == "A" and list[3].run == "B" and list[4].run == "D") then
+        Problem("PLN", "sort", "wrong order")
+    end
+    Count()
+    local bosses = { { name = "Ragnaros", pieces = {} }, { name = "Lucifron", pieces = {} } }
+    if R.LockState(nil, bosses) ~= "free" or R.LockState({ done = 1, total = 10, killed = { Lucifron = true } }, bosses) ~= "partial"
+        or R.LockState({ done = 2, total = 10, killed = { Lucifron = true, Ragnaros = true } }, bosses) ~= "done"
+        or R.LockState({ done = 10, total = 10 }, {}) ~= "done" then
+        Problem("PLN", "lock", "wrong state")
+    end
+    Count()
+    local rt = R.ResetText(1000 + 2 * 86400 + 4 * 3600 + 60, 1000)
+    if not rt:find("2d 4h", 1, true) then Problem("PLN", "reset", rt) end
+    Count()
+    local long = {}
+    for i = 1, 40 do long[i] = "Beaststalker's Piece " .. i end
+    local lfg = R.LfgLine("Scholomance", long)
+    local short = R.LfgLine("Scholomance", { "Beaststalker's Cap", "Beaststalker's Gloves" })
+    if #lfg > 255 or short ~= "LFM Scholomance - need Beaststalker's Cap, Gloves" then Problem("PLN", "lfg", short) end
+    -- lockouts read (B1: read only; the request is the tab's own)
+    local okL, locks = pcall(R.ReadLockouts)
+    Count()
+    if not okL then Problem("PLN", "lockouts", Short(locks)) end
+    local raids = 0
+    for _, l in ipairs(okL and locks or {}) do if l.isRaid then raids = raids + 1 end end
+    -- the data contract (b4-interface.md 3)
+    local g = ns.GuideData
+    local places = type(g) == "table" and type(g.place) == "table" and g.place or {}
+    local keys, keysKnown, attq, bad = 0, 0, 0, {}
+    local get = C_Item and C_Item.GetItemInfoInstant
+    for name in pairs(places) do
+        local f = R.Facts(name)
+        local isInst = f.kind == "dungeon" or f.kind == "raid"
+        if (#f.keys > 0 or #f.attq > 0 or #f.attitem > 0 or #f.notes > 0) and not isInst then bad[#bad + 1] = name .. " (not an instance)" end
+        for _, k in ipairs(f.keys) do
+            keys = keys + 1
+            if get and pcall(get, k.id) and get(k.id) then keysKnown = keysKnown + 1 end
+        end
+        for _, id in ipairs(f.attitem) do
+            keys = keys + 1
+            if get and pcall(get, id) and get(id) then keysKnown = keysKnown + 1 end
+        end
+        attq = attq + #f.attq
+        local rec = R.Rec("place", name)
+        local lv = rec and rec.level
+        if lv and lv ~= "" then
+            local lo, hi = tostring(lv):match("^(%d+)%s*%-%s*(%d+)$")
+            lo, hi = tonumber(lo or lv), tonumber(hi or lv)
+            if not (lo and hi and lo >= 1 and lo <= hi and hi <= 63) then bad[#bad + 1] = name .. " (level)" end
+        end
+    end
+    Count()
+    if #bad > 0 then table.sort(bad); Problem("PLN", "data", table.concat(bad, ", ", 1, math.min(#bad, MAX_LIST))) end
+    Count()
+    if keys > 0 and keysKnown < keys then Problem("PLN", "keys", ("%d of %d key items unknown"):format(keys - keysKnown, keys)) end
+    -- live plan: counts only
+    local okP, plan = pcall(PL.Data, okL and locks or {})
+    if not okP then Problem("PLN", "plan", Short(plan))
+    else
+        local locked = 0
+        for _, e in ipairs(plan.runs) do if e.lockState == "done" then locked = locked + 1 end end
+        Info(("plan: %d runs, %d locked, %d not from a run; raids saved: %d"):format(#plan.runs, locked, plan.other or 0, raids))
+    end
+    Info(("keys: %d/%d known, attunement quests: %d"):format(keysKnown, keys, attq))
+    local D = ns.Data
+    if D and D.SeenCount then Info(("not out yet unlocked by your characters: %d"):format(D.SeenCount())) end
+end
+
+local function CheckHandIns()
+    local H, R = ns.HandIns, ns.Runs
+    Count()
+    if not (H and H.Build and H.ParseBring and R) then return Problem("HND", "module", "missing") end
+    Count()
+    local n, name = H.ParseBring("15 Winterspring Blood Sample")
+    local n1 = H.ParseBring("Core Fragment")
+    if n ~= 15 or name ~= "Winterspring Blood Sample" or n1 ~= 1 then Problem("HND", "bring", "parse") end
+    -- the data: every bid| name matches a bring row of its quest, every ID is known
+    local g = ns.GuideData
+    local quests = type(g) == "table" and type(g.quest) == "table" and g.quest or {}
+    local get = C_Item and C_Item.GetItemInfoInstant
+    local nBid, unknown, noBring = 0, 0, {}
+    for q, raw in pairs(quests) do
+        if type(raw) == "string" and raw:find("bid|", 1, true) then
+            local brings = {}
+            local r = R.Rec("quest", q)
+            for _, v in ipairs(r and r.bring_all or {}) do
+                local _, bn = H.ParseBring(v)
+                if bn then brings[bn] = true end
+            end
+            for bname, id in raw:gmatch("bid|([^|;]+)|(%d+)") do
+                nBid = nBid + 1
+                bname = bname:gsub("^%s+", ""):gsub("%s+$", "")
+                if not brings[bname] then noBring[#noBring + 1] = q end
+                local okI, known = false, nil
+                if get then okI, known = pcall(get, tonumber(id)) end
+                if not (okI and known) then unknown = unknown + 1 end
+            end
+        end
+    end
+    Count()
+    if #noBring > 0 then table.sort(noBring); Problem("HND", "data", "bid without bring: " .. table.concat(noBring, ", ", 1, math.min(#noBring, MAX_LIST))) end
+    Count()
+    if unknown > 0 then Problem("HND", "data", ("%d hand-in item IDs unknown"):format(unknown)) end
+    local okL, list = pcall(H.List)
+    local ready = 0
+    for _, h in ipairs(okL and list or {}) do if h.ready then ready = ready + 1 end end
+    Info(("hand-ins: %d item IDs in the data, %d for your pieces, %d ready; chat line %s"):format(nBid,
+        okL and #list or 0, ready, (DB() and DB().handIns == false) and "off" or "on"))
 end
 
 local function CheckHooks()
@@ -2120,7 +2341,7 @@ local function OpenGuide()
     Later(2, StepGuide)
 end
 
-local OpenProgress, StepTracker
+local OpenProgress, StepTracker, OpenPlan
 
 local function StepMain()
     CheckGroup(ST.MainParts(), Win())
@@ -2155,9 +2376,17 @@ local function StepProgress()
         local text = P and P.pct and P.pct:GetText()
         if not (type(text) == "string" and text:find("%d")) then Problem("PRG", "page", "no number shown") end
     end)
+    OpenPlan()
+end
+
+-- 1.1 beta.4: the Plan tab with a made-up run and shopping list, then back to the Sets tab.
+local function StepPlan()
+    if ns.UI and ns.UI.planPage then CheckGroup(ST.PlanParts(), Win()) end
+    if run.state.planTest then Guard("plan text", ST.CheckPlanText) end
     if run.state.shopTest then Guard("shopping text", ST.CheckShopText) end
-    if ns.Progress then ns.Progress.shopSample = nil end
-    run.state.shopTest = nil
+    local PL = ns.Plan
+    if PL then PL.sample, PL.shopSample = nil, nil end
+    run.state.shopTest, run.state.planTest = nil, nil
     ns.UI:ShowTab("sets")
     -- 1.1 beta.1: the dungeon checklist with made-up rows, then back to how it was.
     local Tr = ns.Tracker
@@ -2219,13 +2448,24 @@ OpenProgress = function()
         if run.mode == "full" then return OpenGuide() end
         return Finish()
     end
-    local P = ns.Progress
-    if P and ST.ShopSample then
-        local ok, sample = pcall(ST.ShopSample)
-        if ok and sample then P.shopSample = sample; run.state.shopTest = true end
-    end
     UI:ShowTab("progress")
     Later(2, StepProgress)
+end
+
+OpenPlan = function()
+    local UI, PL = ns.UI, ns.Plan
+    if not (UI and UI.tabByKey and UI.tabByKey.plan and PL) then
+        Skip("plan tab", "(missing)")
+        return StepPlan()
+    end
+    if ST.ShopSample then
+        local ok, sample = pcall(ST.ShopSample)
+        if ok and sample then PL.shopSample = sample; run.state.shopTest = true end
+    end
+    local ok, sample = pcall(ST.PlanSample)
+    if ok and sample then PL.sample = sample; run.state.planTest = true end
+    UI:ShowTab("plan")
+    Later(2, StepPlan)
 end
 
 -- ---------------------------------------------------------------------------
@@ -2240,7 +2480,7 @@ local function Restore()
     local s = run.state
     local G, PL, H, UI = ns.GuidePage, ns.PieceList, ns.Help, ns.UI
     if s.trackerTest and ns.Tracker and ns.Tracker.HideTest then Try("checklist", ns.Tracker.HideTest, ns.Tracker) end
-    if s.shopTest and ns.Progress then ns.Progress.shopSample = nil end
+    if (s.shopTest or s.planTest) and ns.Plan then ns.Plan.shopSample, ns.Plan.sample = nil, nil end
     if s.slotHide then
         Try("model slots", function()
             local db = DB()
@@ -2373,6 +2613,8 @@ function ST:Start(mode)
     Guard("runs", CheckRuns)
     Guard("shopping", CheckShopping)
     Guard("levels", CheckLevels)
+    Guard("plan", CheckPlan)
+    Guard("hand-ins", CheckHandIns)
     Guard("search", CheckSearch)
     Guard("theme", CheckTheme)
     -- The window: opened if closed (no first-time help while we run), checked next frame.
