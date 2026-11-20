@@ -369,6 +369,22 @@ function Alts:Save()
     end
     -- 1.1 beta.2 (Shopping.lua): mats on the list, professions, known list recipes.
     if live.mats then rec.mats = Alts.EncodeMats(live.mats) end
+    -- 1.1 beta.6 (DB v9): this character's standing and chain quest flags (Steps.Snapshot; ToS S3:
+    -- own character only, our faction and chain quest IDs only). Nothing read -> the old values stay.
+    local S = ns.Steps
+    if S and S.Snapshot then
+        local okS, snap = pcall(S.Snapshot)
+        if okS and type(snap) == "table" then
+            if snap.rep then
+                -- merged per faction (b6-pretest finding 5): a faction unreadable this time keeps its old row
+                local merged = {}
+                if type(rec.rep) == "table" then for k, v in pairs(rec.rep) do merged[k] = v end end
+                for k, v in pairs(snap.rep) do merged[k] = v end
+                rec.rep = merged
+            end
+            if snap.quests then rec.quests = snap.quests end
+        end
+    end
     local prof = Alts.ReadProfessions()
     if prof then rec.prof = Alts.EncodeNums(prof) end
     local rcp = Alts.ReadRecipes()

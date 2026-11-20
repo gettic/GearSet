@@ -555,8 +555,19 @@ function ST.PlanParts()
         { name = "planPage", obj = UI.planPage }, { name = "planTitle", obj = PL.title },
         { name = "planSummary", obj = PL.summary }, { name = "planLocks", obj = PL.locksLine, shownOnly = true },
         { name = "planHandHead", obj = PL.handHead, shownOnly = true }, { name = "planRunsHead", obj = PL.runsHead, shownOnly = true },
+        { name = "planRepHead", obj = PL.repHead, shownOnly = true },
+        { name = "planOtherHead", obj = PL.otherHead, shownOnly = true },   -- beta.6 "Not from a run"
         { name = "planList", obj = PL.scroll },
     }
+    -- beta.6 (ui-b6 #1): the first tick and the first "next" arrow in front of chain steps (art loads)
+    local seen = {}
+    for _, r in ipairs(PL.lines or {}) do
+        local m = r.gsMark
+        if r:IsShown() and r.mark and (m == "tick" or m == "next") and not seen[m] then
+            seen[m] = true
+            parts[#parts + 1] = { name = "planMark_" .. m, obj = r.mark, shownOnly = true, artSelf = true }
+        end
+    end
     for i, r in ipairs(PL.heads or {}) do
         if i > 4 then break end
         parts[#parts + 1] = { name = "planHead" .. i, obj = r, shownOnly = true }
@@ -564,6 +575,11 @@ function ST.PlanParts()
     for i, r in ipairs(PL.lines or {}) do
         if i > 8 then break end
         parts[#parts + 1] = { name = "planRow" .. i, obj = r, shownOnly = true }
+    end
+    for i, r in ipairs(PL.repRows or {}) do   -- beta.6
+        if i > 4 then break end
+        parts[#parts + 1] = { name = "planRep" .. i, obj = r, shownOnly = true }
+        if r.bar then parts[#parts + 1] = { name = "planRepBar" .. i, obj = r.bar, shownOnly = true } end
     end
     -- the shopping list (moved here from the Progress tab, P1)
     parts[#parts + 1] = { name = "pShopHead", obj = PL.shopHead, shownOnly = true }
@@ -812,6 +828,15 @@ local V8_SAMPLE = {
     seenOut = { [16820] = 1700000000, [7] = "junk" },
 }
 
+-- 1.1 beta.6 (DB v9): a character record with saved standing and chain quest flags (+ junk rows,
+-- kept and ignored where read).
+local V9_SAMPLE = {
+    version = 9,
+    chars = { ["A-Realm"] = { name = "A", realm = "Realm",
+        rep = { [270] = { r = 5, v = 4200, t = 1700000000 }, [529] = "junk" },
+        quests = { [4182] = true, [4183] = true, x = 5 } } },
+}
+
 local function CheckSaved()
     local prep = ns.PrepareDB
     Count()
@@ -982,8 +1007,19 @@ local function CheckSaved()
     if not ok then
         Problem("DB", "v8", Short(err))
     else
-        local lost = Lost(V8_SAMPLE, v8)
-        if lost then Problem("DB", "v8", "changed " .. lost) end
+        local lost = Lost(V8_SAMPLE, v8, nil, 0, { version = true })   -- 1.1 beta.6: version raised to 9
+        if lost then Problem("DB", "v8", "changed " .. lost)
+        elseif v8.version ~= ns.DB_VERSION then Problem("DB", "v8 -> v9", "version not raised") end
+    end
+    -- 3h. 1.1 beta.6 (DB v9): v9 data (alt standing / quest flags, junk rows) goes through unchanged.
+    Count()
+    local v9 = DeepCopy(V9_SAMPLE)
+    ok, err = pcall(prep, v9)
+    if not ok then
+        Problem("DB", "v9", Short(err))
+    else
+        local lost = Lost(V9_SAMPLE, v9)
+        if lost then Problem("DB", "v9", "changed " .. lost) end
     end
     Count()
     local bad8 = { version = 8, plan = 5, handIns = "x", seenOut = 3 }
@@ -1924,6 +1960,7 @@ function ST.PlanSample()
     local now = time()
     local e = {
         run = "Upper Blackrock Spire", need = 12, pinned = true, attuned = false, lockState = "partial",
+        attStep = "step 14 of 16", attNext = "The Test of Skulls, Chronalis",   -- beta.6
         facts = { kind = "raid", size = 40, lo = 56, hi = 61, keys = { { id = 11000, part = "city gate" } },
             attq = {}, attitem = {}, notes = {} },
         lock = { name = "Upper Blackrock Spire", done = 10, total = 10, resetAt = now + 6 * 86400 + 23 * 3600, isRaid = true },
@@ -1932,7 +1969,8 @@ function ST.PlanSample()
             { label = "Trash", trash = true, pieces = { { itemID = 16821, mine = true, via = "Qiraji Bindings of Dominance" } } },
         } },
     }
-    return { runs = { e }, other = 3 }
+    -- beta.6: three "Not from a run" pieces (rows, ui-b6 #4); openAll shows the chain's step lines (marks)
+    return { runs = { e }, other = 3, otherIDs = { 16822, 16823, 16824 }, steps = ST.StepsSample(), openAll = true }
 end
 
 function ST.CheckPlanText()
@@ -1949,6 +1987,11 @@ function ST.CheckPlanText()
     if not (h and h:IsShown()) then return Problem("UI", "plan", "no run row") end
     Fits("name", h.name); Fits("info", h.info); Fits("count", h.count); Fits("status", h.status)
     Fits("summary", PL.summary); Fits("locks", PL.locksLine); Fits("note", PL.note)
+    if PL.otherHead then Fits("otherHead", PL.otherHead) end   -- beta.6 (a Progress.Head: its own text)
+    -- beta.6 rep / chain rows (made-up long ones from ST.StepsSample)
+    for i, r in ipairs(PL.repRows or {}) do
+        if r:IsShown() then Fits("rep" .. i .. "name", r.name); Fits("rep" .. i .. "value", r.value); Fits("rep" .. i .. "status", r.status) end
+    end
     local shown = 0
     for i, r in ipairs(PL.lines or {}) do
         if r:IsShown() then
@@ -2038,6 +2081,115 @@ local function CheckPlan()
     Info(("keys: %d/%d known, attunement quests: %d"):format(keysKnown, keys, attq))
     local D = ns.Data
     if D and D.SeenCount then Info(("not out yet unlocked by your characters: %d"):format(D.SeenCount())) end
+end
+
+-- 1.1 beta.6: rep / chain tracker (Steps.lua). Pure parts on made-up data, the data contract
+-- (b6-interface.md sec. 5), every faction ID's name in game, the alt snapshot shape.
+function ST.StepsSample()
+    return {
+        reps = { { faction = "Brood of Nozdormu", id = 910, goal = 6, missing = 12, later = false, ready = false, pieces = {},
+            rep = { id = 910, name = "Brood of Nozdormu", reaction = 4, value = 2999, min = 0, max = 3000, met = true } } },
+        chains = { { key = "onyxia_a", title = "Onyxia attunement (Alliance)", known = true, total = 16, done = 13, next = 2,   -- made-up: next = the 2nd listed step (its "next:" text, arrow mark)
+            steps = { { name = "Ascension (the long made-up step name)", where = "Marshal Maxwell, Burning Steppes", state = true },
+                { name = "The Test of Skulls, Chronalis", where = "Emberstrife, Dustwallow Marsh", state = false } } } },
+    }
+end
+
+local function CheckSteps()
+    local S = ns.Steps
+    Count()
+    if not (S and S.Rep and S.ChainState and S.ForPlan) then return Problem("REP", "module", "missing") end
+    -- pure texts
+    Count()
+    local rep = { reaction = 5, value = 4200, min = 3000, max = 9000, met = true }
+    local t1 = S.RepText(rep, "Honored")
+    local t2 = S.RepText({ reaction = 7, value = 30000, min = 21000, max = 42000, met = true }, "Honored")
+    if not (t1:find("1200/6000", 1, true) and t1:find(S.StandingName(6), 1, true)) or not t2:find(S.StandingName(7), 1, true)
+        or S.StandingIndex("honored") ~= 6 or S.StandingIndex("Nope") ~= nil or math.abs(S.Fraction(rep) - 0.2) > 0.001 then
+        Problem("REP", "text", t1 .. " / " .. t2)
+    end
+    Count()
+    if S.FullSets({ 3, 2, 1 }, 3) ~= 1 or S.FullSets({ 2, 2, 2 }, 3) ~= 2 or S.FullSets({ 5, 5 }, 3) ~= 0 then
+        Problem("REP", "sets", "token sets")
+    end
+    -- the data: chain step IDs, tokens, rep faction names
+    local g = ns.GuideData
+    local chains = type(g) == "table" and type(g.chain) == "table" and g.chain or {}
+    local nSteps, nIDs, badStep = 0, 0, {}
+    for key, raw in pairs(chains) do
+        local c = S.Chain(key, nil)
+        nSteps = nSteps + #(c and c.steps or {})
+        for _, s in ipairs(c and c.steps or {}) do nIDs = nIDs + #s.qids + #s.items end
+        if type(raw) == "string" then
+            for kind, n in raw:gmatch("(s[qi])|([^|;]*)") do
+                local v = tonumber(n)
+                if not (v and c and v >= 1 and v <= #c.steps and v == math.floor(v)) then badStep[#badStep + 1] = key .. " " .. kind .. " " .. tostring(n) end
+            end
+        end
+    end
+    Count()
+    if #badStep > 0 then Problem("REP", "chain", "bad step numbers: " .. table.concat(badStep, ", ", 1, math.min(#badStep, MAX_LIST))) end
+    local get = C_Item and C_Item.GetItemInfoInstant
+    local tokens, unknown = 0, 0
+    for faction in pairs(type(g) == "table" and type(g.token) == "table" and g.token or {}) do
+        for _, it in ipairs(S.Tokens(faction) or {}) do
+            tokens = tokens + 1
+            local okI, known = false, nil
+            if get then okI, known = pcall(get, it.id) end
+            if not (okI and known) then unknown = unknown + 1 end
+        end
+    end
+    Count()
+    if unknown > 0 then Problem("REP", "tokens", ("%d token item IDs unknown"):format(unknown)) end
+    -- faction names: every `rep|` faction we know an ID for reads back with the same name
+    Count()
+    local api = _G.C_Reputation and _G.C_Reputation.GetFactionDataByID
+    local read, wrong = 0, {}
+    if type(api) == "function" then
+        for name, id in pairs(S.FACTIONS) do
+            local r = S.Rep(id)
+            if r then
+                read = read + 1
+                if r.met and r.name ~= name then wrong[#wrong + 1] = ("%d is %s, want %s"):format(id, tostring(r.name), name) end
+            end
+        end
+        if #wrong > 0 then table.sort(wrong); Problem("REP", "factions", table.concat(wrong, "; ")) end
+    else
+        Skip("factions", "(no GetFactionDataByID)")
+    end
+    -- quest titles (Info only: Forever titles may differ)
+    local title = _G.C_QuestLog and _G.C_QuestLog.GetTitleForQuestID
+    local titled, differ = 0, 0
+    if type(title) == "function" then
+        for key in pairs(chains) do
+            local c = S.Chain(key, nil)
+            for _, s in ipairs(c and c.steps or {}) do
+                for _, q in ipairs(s.qids) do
+                    local okT, tt = pcall(title, q)
+                    if okT and type(tt) == "string" and tt ~= "" then
+                        titled = titled + 1
+                        if tt ~= s.name then differ = differ + 1 end
+                    end
+                end
+            end
+        end
+    end
+    -- the snapshot: our IDs only, right shape
+    Count()
+    local okS, snap = pcall(S.Snapshot)
+    if not okS then Problem("REP", "snapshot", Short(snap))
+    elseif snap then
+        for id, v in pairs(snap.rep or {}) do
+            local ours = false
+            for _, fid in pairs(S.FACTIONS) do if fid == id then ours = true end end
+            if not ours or type(v) ~= "table" or type(v.r) ~= "number" then Problem("REP", "snapshot", "bad rep row " .. tostring(id)) break end
+        end
+    end
+    local okP, st = pcall(S.ForPlan, ns.Runs and ns.Runs.Wanted() or {}, {})
+    if not okP then Problem("REP", "plan", Short(st)) end
+    Info(("rep: %d factions read, %d chains, %d steps, %d step IDs, %d tokens; quest titles read %d (%d differ)%s"):format(
+        read, (function() local n = 0 for _ in pairs(chains) do n = n + 1 end return n end)(), nSteps, nIDs, tokens,
+        titled, differ, okP and st and (", plan rows " .. (#st.reps + #st.chains)) or ""))
 end
 
 local function CheckHandIns()
@@ -2615,6 +2767,7 @@ function ST:Start(mode)
     Guard("levels", CheckLevels)
     Guard("plan", CheckPlan)
     Guard("hand-ins", CheckHandIns)
+    Guard("rep", CheckSteps)
     Guard("search", CheckSearch)
     Guard("theme", CheckTheme)
     -- The window: opened if closed (no first-time help while we run), checked next frame.

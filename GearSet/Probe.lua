@@ -321,6 +321,29 @@ local CHECKS = {
         end
         return Has({ "C_QuestLog.IsQuestFlaggedCompleted" }) .. ", " .. table.concat(out, ", ")
     end },
+    -- 1.1 beta.6 rep / chain tracker: each faction ID of Steps.FACTIONS as the game reads it (name,
+    -- reaction, standing in its band; "nil" = what a never-met faction gives), and the quest title API.
+    { "Factions", function()
+        local S = ns.Steps
+        local ids = {}
+        for name, id in pairs(S and S.FACTIONS or {}) do ids[#ids + 1] = { id = id, name = name } end
+        table.sort(ids, function(a, b) return a.id < b.id end)
+        local out = {}
+        for _, f in ipairs(ids) do
+            local ok, d = Call("C_Reputation.GetFactionDataByID", f.id)
+            if not ok then out[#out + 1] = f.id .. " ?"
+            elseif type(d) ~= "table" then out[#out + 1] = f.id .. " " .. Safe(d)
+            else
+                out[#out + 1] = ("%d %s%s r%s %s/%s-%s"):format(f.id, Safe(d.name), (Safe(d.name) == f.name) and "" or (" (want " .. f.name .. ")"),
+                    Safe(d.reaction), Safe(d.currentStanding), Safe(d.currentReactionThreshold), Safe(d.nextReactionThreshold))
+            end
+        end
+        return Has({ "C_Reputation.GetFactionDataByID" }) .. ", " .. table.concat(out, ", ")
+    end },
+    { "QuestTitle", function()
+        local ok, title = Call("C_QuestLog.GetTitleForQuestID", 7848)
+        return Has({ "C_QuestLog.GetTitleForQuestID" }) .. ", 7848 " .. (ok and Safe(title) or "?")
+    end },
     -- 1.1 beta.1 checklist: where you are (name, type, instance ID = 8th return) and the
     -- checklist's own match; the loot roll frames the loot mark hooks.
     { "Instance", function()

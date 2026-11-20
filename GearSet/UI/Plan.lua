@@ -18,6 +18,7 @@ local function C(key) return Theme.colors[key] end
 
 Plan.RAID_INFO_GAP = 10          -- seconds between two RequestRaidInfo calls (B1)
 Plan.requests = 0                -- RequestRaidInfo calls (tests / selftest)
+Plan.OTHER_FOLD = 8              -- beta.6: more "Not from a run" pieces than this fold into one row
 Plan.lastRequest = nil
 
 -- ---------------------------------------------------------------------------
@@ -59,15 +60,24 @@ local function ItemName(id)
     return nil
 end
 
--- "|A:atlas:s:s|a" / "|T file:s|t" for a Theme.art entry (first that exists), else "".
+-- "|A:atlas:s:s|a" / "|T file:s|t" for a Theme.art entry (first that exists), else "" (Theme.InlineIcon, ui-b6 #7).
 local function Inline(entry, size, file)
-    size = size or Sizes().inline
-    if file then return ("|T%s:%d|t"):format(tostring(file), size) end
-    if not entry then return "" end
-    for _, a in ipairs(entry.atlases or { entry.atlas }) do
-        if Theme.AtlasExists(a) then return ("|A:%s:%d:%d|a"):format(a, size, size) end
+    return Theme.InlineIcon(entry, size or Sizes().inline, file)
+end
+
+-- "Quest" / "Vendor" / "Crafted" / "World drop": the piece's first source (own faction, not a free
+-- note) for the "Not from a run" rows (ui-b6 #4); "" when none is known.
+function Plan.SourceWord(itemID)
+    local D = ns.Data
+    if not (D and D.SourceEntries and D.TypeWord) then return "" end
+    local mine = D.PlayerFaction and D.PlayerFaction()
+    local ok, list = pcall(D.SourceEntries, itemID)
+    for _, e in ipairs(ok and type(list) == "table" and list or {}) do
+        if e.kind ~= "x" and (not e.fac or not mine or e.fac == mine) then
+            local w = D.TypeWord(e.kind)
+            if w and w ~= "" then return w end
+        end
     end
-    if entry.file then return ("|T%s:%d|t"):format(entry.file, size) end
     return ""
 end
 
@@ -132,10 +142,11 @@ function Plan.StatusLines(parts, room, measure)
 end
 
 -- Width of the status column on a row `rowW` px wide (from Theme.sizes.plan; the LFG / Way buttons at the right).
-function Plan.StatusRoom(rowW, lfgW)
+-- wayW: the Way button's real width (the "Way" word when the pin atlas is missing is wider than 14).
+function Plan.StatusRoom(rowW, lfgW, wayW)
     local sz = Sizes()
     local x = sz.infoX + sz.infoW + sz.gap + sz.countW + sz.gap
-    return rowW - x - (4 + (Theme.sizes.way or 14) + sz.gap + (lfgW or sz.button) + sz.gap)
+    return rowW - x - (4 + (wayW or Theme.sizes.way or 14) + sz.gap + (lfgW or sz.button) + sz.gap)
 end
 
 function Plan.StatusParts(e, now)
@@ -148,7 +159,11 @@ function Plan.StatusParts(e, now)
     end
     local att = e.attuned
     if att == true then parts[#parts + 1] = C("planHave"):WrapTextInColorCode(T("ATT_YES", "attuned")) .. " " .. tick
-    elseif att == false then parts[#parts + 1] = C("planMissing"):WrapTextInColorCode(T("ATT_NO", "not attuned")) end
+    elseif att == false then
+        local s = T("ATT_NO", "not attuned")
+        if e.attStep and e.attStep ~= "" then s = s .. " (" .. e.attStep .. ")" end   -- beta.6
+        parts[#parts + 1] = C("planMissing"):WrapTextInColorCode(s)
+    end
     if e.facts.kind == "raid" or e.lock then
         parts[#parts + 1] = C("planNote"):WrapTextInColorCode(Plan.LockText(e, now))
     end
@@ -227,8 +242,13 @@ local function HeadTooltip(row)
         GameTooltip:AddLine(T("PLAN_TIP_BRING", "Bring: %s"):format(k.text), C(k.have and "planHave" or "planMissing"):GetRGB())
     end
     if e.attuned ~= nil then
-        GameTooltip:AddLine(e.attuned and T("ATT_YES", "attuned") or T("ATT_NO", "not attuned"),
-            C(e.attuned and "planHave" or "planMissing"):GetRGB())
+        local s = e.attuned and T("ATT_YES", "attuned") or T("ATT_NO", "not attuned")
+        -- beta.6 (ui-b6 #8): "not attuned (step 3 of 16 - next: Dragonkin Menace)"
+        if e.attuned == false and e.attStep and e.attStep ~= "" then
+            local step = e.attNext and T("ATT_STEP_NEXT", "%s - next: %s"):format(e.attStep, e.attNext) or e.attStep
+            s = s .. " (" .. step .. ")"
+        end
+        GameTooltip:AddLine(s, C(e.attuned and "planHave" or "planMissing"):GetRGB(), true)
     end
     if e.lock or e.facts.kind == "raid" then GameTooltip:AddLine(Plan.LockText(e, nil, true), C("planNote"):GetRGB()) end
     local notes = ns.Runs.GroupNotes(e.facts)
@@ -403,7 +423,7 @@ local function FillHead(r, e, now, rowW)
         for i, s in ipairs(parts) do parts[i] = C("planLocked"):WrapTextInColorCode((s:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""))) end
     end
     local m = Plan.measure
-    local status, n = Plan.StatusLines(parts, Plan.StatusRoom(rowW or 900, r.lfg:GetWidth()), function(s)
+    local status, n = Plan.StatusLines(parts, Plan.StatusRoom(rowW or 900, r.lfg:GetWidth(), r.way:GetWidth()), function(s)
         if not m then return 0 end
         m:SetText(s)
         return m:GetStringWidth() or 0
@@ -439,6 +459,10 @@ local function LineRow(self, i)
         local border, ok = W.IconBorder(r, r.icon)
         r.border, r.hasBorder = border, ok
     end
+    -- beta.6 (ui-b6 #1): chain step status slot (tick / next arrow / blank), placed by FillLine
+    r.mark = r:CreateTexture(nil, "ARTWORK")
+    r.mark:SetSize(Theme.art.tick.size or 12, Theme.art.tick.size or 12)
+    r.mark:Hide()
     r.right = r:CreateFontString(nil, "OVERLAY")
     Theme.Font(r.right, "small")
     r.right:SetPoint("RIGHT", -sz.gap, 0)
@@ -488,16 +512,28 @@ local function FillName(r, itemID)
     if r.gsGrey then r.name:SetTextColor(C(r.gsGrey):GetRGB()) end
 end
 
--- kind "piece" (boss text + item) or "text" (one line from the left edge).
+-- kind "piece" (boss text + item) or "text" (one line from the left edge). A "text" line with
+-- data.mark ("tick" / "next" / "none") gets the fixed step slot in front (ui-b6 #1): the text
+-- always starts sizes.plan.stepSlot px right of data.x, done or not.
 local function FillLine(r, kind, data)
     local sz = Sizes()
     r.gsItem, r.gsGrey = nil, nil
     r.name:ClearAllPoints()
+    r.mark:Hide()
+    r.gsMark = nil
     if kind == "text" then
         r.boss:Hide(); r.icon:Hide(); r.right:Hide(); r.extra:Hide()
         if r.border then r.border:Hide() end
         r.gsHl:Hide()
-        r.name:SetPoint("LEFT", data.x or 8, 0)
+        local x = data.x or 8
+        if data.mark then
+            r.mark:ClearAllPoints()
+            r.mark:SetPoint("LEFT", x, 0)
+            if W.SetMark then W.SetMark(r.mark, data.mark) end
+            r.gsMark = data.mark
+            x = x + sz.stepSlot
+        end
+        r.name:SetPoint("LEFT", x, 0)
         r.name:SetPoint("RIGHT", -sz.gap, 0)
         r.name:SetText(data.text)
         r.name:SetTextColor(C(data.color or "planNote"):GetRGB())
@@ -528,8 +564,255 @@ local function FillLine(r, kind, data)
 end
 
 -- ---------------------------------------------------------------------------
--- Build.
+-- 1.1 beta.6: "Reputation and chains" (Steps.lua; b6-plan.md sec. 1 / 6). One row per faction your
+-- wanted pieces need and per chain (attunement / key / set chain); folded by default, a click opens
+-- it (tokens, your other characters, the steps). ToS S2: the Way pin is click-only.
 
+-- Open state: plan.collapsed["+rep:<faction>"] / ["+chain:<key>"] = true (these rows start closed).
+local function IsOpen(key)
+    if Plan.sample and Plan.sample.openAll then return true end   -- /gs selftest: step lines shown (text fit)
+    local db = ns.db
+    return type(db) == "table" and type(db.plan) == "table" and type(db.plan.collapsed) == "table"
+        and db.plan.collapsed["+" .. key] == true
+end
+Plan.IsOpenRow = IsOpen
+
+function Plan.ToggleOpen(key)
+    local db = ns.db
+    if not (type(db) == "table" and type(db.plan) == "table") then return end
+    if type(db.plan.collapsed) ~= "table" then db.plan.collapsed = {} end
+    db.plan.collapsed["+" .. key] = (not IsOpen(key)) or nil
+    Plan:Refresh()
+end
+
+-- The Way point of a chain step: its quest's giver, else the NPC named before "," in "NPC, place".
+local function StepPoint(s)
+    local Way, S = ns.Way, ns.Steps
+    if not (Way and Way.Point and s) then return nil end
+    for _, f in ipairs(S.Rows("quest", s.name, nil) or {}) do
+        if f[1] == "giver" and f[2] and f[2] ~= "" then
+            local p = Way.Point("npc", f[2])
+            if p then return p end
+        end
+    end
+    local npc = s.where and s.where:match("^%s*([^,]+)")
+    return npc and Way.Point("npc", npc) or nil
+end
+Plan.StepPoint = StepPoint
+
+-- Texts of a rep row: name, value, status parts, colour keys.
+function Plan.RepTexts(f)
+    local S = ns.Steps
+    local statusKey = f.later and "planNote" or (f.ready and "repReady" or "repNeed")
+    return f.faction, S.StandingText(f.rep), { C(statusKey):WrapTextInColorCode(S.NeedText(f)) }
+end
+
+-- Texts of a chain row: name, value, status parts.
+function Plan.ChainTexts(st)
+    local S = ns.Steps
+    local name = S.ShortTitle(st.title or st.key)
+    local value = S.ChainText(st)
+    local parts = {}
+    if st.complete then
+        parts[1] = C("planHave"):WrapTextInColorCode(T("CHAIN_DONE", "done")) .. " " .. Inline(Theme.art.tick, 12)
+    elseif not st.known then
+        parts[1] = C("planNote"):WrapTextInColorCode(T("CHAIN_STEPS", "%d steps"):format(st.total or #st.steps))
+    else
+        local s = st.steps[st.next or 1]
+        if s then
+            parts[1] = C("stepNext"):WrapTextInColorCode(T("CHAIN_NEXT", "next: %s"):format(s.name))
+            if s.where and s.where ~= "" then parts[2] = C("planNote"):WrapTextInColorCode(s.where) end
+        end
+    end
+    return name, value, parts
+end
+
+local function RepTooltip(row)
+    local S, d = ns.Steps, row.gsData
+    if not d then return end
+    GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
+    if row.gsKind == "other" then
+        GameTooltip:SetText(T("PLAN_OTHER_HEAD", "Not from a run"), C("planHead"):GetRGB())
+        Theme.AddHint(GameTooltip, T("REP_FOLD_TIP", "Click: show or hide the details."))
+        GameTooltip:AddLine(T("PLAN_OTHER_TIP", "Pieces from quests, vendors, crafting or world drops. Click a piece for its guide."),
+            C("planNote"):GetRGB(), true)
+    elseif row.gsKind == "rep" then
+        GameTooltip:SetText(d.faction, C("planHead"):GetRGB())
+        Theme.AddHint(GameTooltip, T("REP_FOLD_TIP", "Click: show or hide the details."))
+        GameTooltip:AddLine(T("REP_YOU", "You: %s"):format(S.RepText(d.rep, d.goal and S.STANDINGS[d.goal])), C("text"):GetRGB())
+        for i, a in ipairs(d.id and S.AltRep(d.id) or {}) do
+            if i > 5 then break end
+            GameTooltip:AddLine(S.AltRepText(a), C("planNote"):GetRGB())
+        end
+        local names = {}
+        for _, p in ipairs(d.pieces or {}) do
+            if #names >= 6 then names[#names + 1] = "..." break end
+            names[#names + 1] = (ItemName(p.itemID) or ("item " .. p.itemID)) .. (p.need and (" (" .. p.need .. ")") or "")
+        end
+        if #names > 0 then
+            GameTooltip:AddLine(T("REP_FOR", "Needed for: %s"):format(table.concat(names, ", ")), C("planNote"):GetRGB(), true)
+        end
+    else
+        GameTooltip:SetText(d.title or d.key, C("planHead"):GetRGB())
+        Theme.AddHint(GameTooltip, T("REP_FOLD_TIP", "Click: show or hide the details."))
+        local v = S.ChainText(d)
+        if v ~= "" then GameTooltip:AddLine(v, C("text"):GetRGB()) end
+        for _, a in ipairs(S.AltChains(d.key) or {}) do
+            GameTooltip:AddLine(("%s: %s"):format(a.name, a.text), C("planNote"):GetRGB())
+        end
+        if not d.known then GameTooltip:AddLine(T("CHAIN_NO_IDS", "Progress not known for this chain yet."), C("planNote"):GetRGB(), true) end
+    end
+    GameTooltip:Show()
+end
+
+local function RepRow(self, i)
+    self.repRows = self.repRows or {}
+    local r = self.repRows[i]
+    if r then return r end
+    local sz = Sizes()
+    r = CreateFrame("Button", nil, self.child)
+    r:SetHeight(sz.head)
+    local bg = r:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    local art = Theme.art.rowBackground
+    if not Theme.SetArt(bg, art) then bg:SetColorTexture(unpack(art.color)) end
+    local hl = r:CreateTexture(nil, "HIGHLIGHT")
+    hl:SetAllPoints()
+    Theme.SetArt(hl, Theme.art.listHover)
+    r.fold = r:CreateTexture(nil, "ARTWORK")
+    r.fold:SetSize(Theme.art.expand.size, Theme.art.expand.size)
+    r.fold:SetPoint("LEFT", sz.foldX, 0)
+    r.name = r:CreateFontString(nil, "OVERLAY")
+    Theme.Font(r.name, "normal")
+    r.name:SetPoint("LEFT", sz.nameX, 0)
+    r.name:SetWidth(sz.nameW)
+    r.name:SetJustifyH("LEFT")
+    r.name:SetWordWrap(false)
+    -- the bar (W.RepBar, art from Theme.art.repBar; ui-b6 #5 / #7), value always right of it (#3)
+    r.bar = W.RepBar(r, sz.repBarW, sz.repBarH)
+    r.bar:SetPoint("LEFT", sz.infoX, 0)
+    r.value = r:CreateFontString(nil, "OVERLAY")
+    Theme.Font(r.value, "small")
+    r.value:SetJustifyH("LEFT")
+    r.value:SetWordWrap(false)
+    r.value:SetPoint("LEFT", sz.infoX + sz.repBarW + sz.gap, 0)
+    r.value:SetWidth(sz.infoW + sz.gap + sz.countW - sz.repBarW - sz.gap)
+    r.way = SmallButton(r, Theme.art.wayPin, Theme.sizes.way or 14,
+        function(b) if b.gsPoint and ns.Way then ns.Way.Tooltip(b, b.gsPoint) end end,
+        function(b) if b.gsPoint and ns.Way then ns.Way:Go(b.gsPoint) end end)
+    r.way:SetPoint("RIGHT", -4, 0)
+    r.status = r:CreateFontString(nil, "OVERLAY")
+    Theme.Font(r.status, "small")
+    r.status:SetPoint("LEFT", sz.infoX + sz.infoW + sz.gap + sz.countW + sz.gap, 0)
+    r.status:SetPoint("RIGHT", r.way, "LEFT", -sz.gap, 0)
+    r.status:SetJustifyH("LEFT")
+    r.status:SetWordWrap(true)
+    r:SetScript("OnClick", function()
+        if r.gsKey then
+            PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+            Plan.ToggleOpen(r.gsKey)
+        end
+    end)
+    r:SetScript("OnEnter", RepTooltip)
+    r:SetScript("OnLeave", GameTooltip_Hide)
+    self.repRows[i] = r
+    return r
+end
+
+local function FillRep(r, kind, d, rowW)
+    local sz, S = Sizes(), ns.Steps
+    r.gsKind, r.gsData = kind, d
+    r.gsKey = (kind == "rep" and "rep:" .. d.faction) or (kind == "other" and "other") or ("chain:" .. d.key)
+    local ex = Theme.art.expand
+    if not Theme.TryTexture(r.fold, Plan.IsOpenRow(r.gsKey) and ex.minus or ex.plus) then r.fold:Hide() else r.fold:Show() end
+    local name, value, parts
+    if kind == "rep" then name, value, parts = Plan.RepTexts(d)
+    elseif kind == "other" then name, value, parts = T("PLAN_OTHER_ROW", "All pieces"), Plan.CountText(d.n or 0), {}
+    else name, value, parts = Plan.ChainTexts(d) end
+    local grey = kind == "rep" and d.later
+    r.name:SetText(name)
+    r.name:SetTextColor(C(grey and "planLocked" or "planHead"):GetRGB())
+    -- ui-b6 #3: every rep row has the bar (unmet: empty), known chains a done/total bar, the value
+    -- always in the same column; #5: greyed on "not out yet" rows.
+    if kind == "rep" then
+        r.bar:Show()
+        if d.rep then
+            local cr, cg, cb = S.BarColor(d.rep, d.ready)
+            r.bar:SetValue(d.rep.met and S.Fraction(d.rep) or 0, cr, cg, cb, grey)
+        else
+            r.bar:SetValue(0)
+        end
+    elseif kind == "chain" and d.known and (d.total or 0) > 0 then
+        r.bar:Show()
+        r.bar:SetValue((d.done or 0) / d.total, C(d.complete and "planHave" or "chainBar"):GetRGB())
+    else
+        r.bar:Hide()
+    end
+    r.value:SetText(value or "")
+    r.value:SetTextColor(C(grey and "planLocked" or "text"):GetRGB())
+    local p = (kind == "chain" and not d.complete and d.known) and StepPoint(d.steps[d.next or 1]) or nil
+    r.way.gsPoint = p
+    r.way:SetShown(p ~= nil)
+    local m = Plan.measure
+    local room = rowW - (sz.infoX + sz.infoW + sz.gap + sz.countW + sz.gap) - (4 + (r.way:GetWidth() or Theme.sizes.way or 14) + sz.gap)
+    local text, n = Plan.StatusLines(parts, room, function(s)
+        if not m then return 0 end
+        m:SetText(s)
+        return m:GetStringWidth() or 0
+    end)
+    r.status:SetText(text)
+    r:SetHeight(math.max(sz.head, n * sz.line + 8))
+end
+
+-- The lines under an open rep / chain row: { { text, color[, mark] } }. Chain steps carry a mark
+-- ("tick" done / "next" / "none") for the fixed slot in front (ui-b6 #1); no tick inside the text.
+function Plan.RepLines(kind, d)
+    local S = ns.Steps
+    local out = {}
+    if kind == "rep" then
+        local tok = S.TokenText(d.faction)
+        if tok then out[#out + 1] = { text = tok, color = "planNote" } end
+        for i, a in ipairs(d.id and S.AltRep(d.id) or {}) do
+            if i > 3 then break end
+            out[#out + 1] = { text = S.AltRepText(a), color = "planNote" }
+        end
+    else
+        for i, s in ipairs(d.steps) do
+            local isNext = d.known and d.next == i
+            local color = (s.state and "stepDone") or (isNext and "stepNext") or "stepOpen"
+            local text = ("%s. %s"):format(i, s.name)
+            if s.where and s.where ~= "" then text = text .. " " .. C("planNote"):WrapTextInColorCode("- " .. s.where) end
+            out[#out + 1] = { text = text, color = color, mark = (s.state and "tick") or (isNext and "next") or "none",
+                head = ("%s. %s"):format(i, s.name), where = (s.where and s.where ~= "") and s.where or nil }
+        end
+        for _, a in ipairs(S.AltChains(d.key) or {}) do
+            out[#out + 1] = { text = ("%s: %s"):format(a.name, a.text), color = "planNote" }
+        end
+    end
+    return out
+end
+
+-- One RepLines line -> the rows it takes in `room` px (measure(text) -> px, 15 % margin like the
+-- status column): a step too long for one row puts its "- NPC, place" part on the rows under it,
+-- split at ", " (blank mark slot, so they line up with the step text). -> { { text, color, mark } }.
+function Plan.StepRows(l, room, measure)
+    local fit = room * 0.85
+    if not (l.where and l.head) or measure(l.text) <= fit then return { l } end
+    local rows = { { text = l.head, color = l.color, mark = l.mark } }
+    local pieces = {}
+    for p in (l.where .. ", "):gmatch("(.-), ") do if p ~= "" then pieces[#pieces + 1] = p end end
+    local cur = "- " .. (pieces[1] or "")
+    local function Push(s) rows[#rows + 1] = { text = C("planNote"):WrapTextInColorCode(s), color = "planNote", mark = "none" } end
+    for i = 2, #pieces do
+        local joined = cur .. ", " .. pieces[i]
+        if measure(joined) <= fit then cur = joined else Push(cur .. ","); cur = pieces[i] end
+    end
+    Push(cur)
+    return rows
+end
+
+-- ---------------------------------------------------------------------------
+-- Build.
 function Plan:Build(page)
     if self.page then return end
     self.page = page
@@ -561,7 +844,10 @@ function Plan:Build(page)
     -- section headings: gold like every other heading (ui-b4 #5); the hand-in rows stay green
     self.handHead = ns.Progress.Head(child, T("PLAN_HAND_HEAD", "Ready to hand in"))
     self.runsHead = ns.Progress.Head(child, T("PLAN_RUNS_HEAD", "Runs"))
-    self.empty = child:CreateFontString(nil, "OVERLAY")
+    self.repHead = ns.Progress.Head(child, T("PLAN_REP_HEAD", "Reputation and chains"))   -- beta.6
+    self.repRows = {}
+    self.otherHead = ns.Progress.Head(child, T("PLAN_OTHER_HEAD", "Not from a run"))   -- beta.6 (ui-b6 #4)
+    self.empty =child:CreateFontString(nil, "OVERLAY")
     Theme.Font(self.empty, "text")
     self.empty:SetJustifyH("LEFT")
     self.empty:SetWordWrap(true)
@@ -625,7 +911,28 @@ function Plan.Data(lockList)
     local plan = R.Plan(lockList or locks)
     for _, e in ipairs(plan.runs) do
         local ok, att = pcall(R.Attuned, e.facts)
-        e.attuned = ok and att or nil
+        -- b6-pretest bug 1: keep false ("not attuned"); `ok and att or nil` turned it into nil
+        if ok then e.attuned = att else e.attuned = nil end
+    end
+    -- beta.6: factions and chains for the wanted pieces and these runs
+    local S = ns.Steps
+    if S and S.ForPlan then
+        local okS, st = pcall(S.ForPlan, R.Wanted(), plan.runs)
+        plan.steps = okS and st or nil
+        -- a run's attunement word gets the chain step ("not attuned (step 3 of 16)")
+        for _, e in ipairs(plan.runs) do
+            for _, f in ipairs(S.Rows("place", e.run, nil) or {}) do
+                if f[1] == "att" and f[3] and plan.steps then
+                    for _, c in ipairs(plan.steps.chains) do
+                        if c.key == f[3] and c.known and not c.complete then
+                            e.attStep = S.ChainText(c)
+                            local s = c.steps[c.next or 1]
+                            e.attNext = s and s.name ~= "" and s.name or nil   -- run tooltip (ui-b6 #8)
+                        end
+                    end
+                end
+            end
+        end
     end
     return plan
 end
@@ -688,8 +995,42 @@ function Plan:Refresh()
         end
         y = y + 8
     end
-    -- runs (a "Runs" heading when the hand-in section is above them)
-    Section(self.runsHead, #hand > 0 and #plan.runs > 0)
+    -- beta.6: reputation and chains
+    local steps = plan.steps or { reps = {}, chains = {} }
+    local nr = 0
+    local anyRep = #steps.reps + #steps.chains > 0
+    Section(self.repHead, anyRep)
+    local function RepBlock(kind, d)
+        nr = nr + 1
+        local r = RepRow(self, nr)
+        FillRep(r, kind, d, width - 4)
+        r:ClearAllPoints()
+        r:SetPoint("TOPLEFT", self.child, "TOPLEFT", 0, -y)
+        r:SetWidth(width - 4)
+        r:Show()
+        y = y + r:GetHeight() + 2
+        if kind ~= "other" and IsOpen(r.gsKey) then
+            -- ui-b6 #8: the lines start under the row's name
+            local room = width - 4 - sz.nameX - sz.stepSlot - sz.gap
+            local m = Plan.measure
+            local function Measure(s)
+                if not m then return 0 end
+                m:SetText(s)
+                return m:GetStringWidth() or 0
+            end
+            for _, l in ipairs(Plan.RepLines(kind, d)) do
+                for _, row in ipairs(Plan.StepRows(l, room, Measure)) do
+                    Line("text", { x = sz.nameX, color = row.color, text = row.text, mark = row.mark })
+                end
+            end
+            y = y + 4
+        end
+    end
+    for _, f in ipairs(steps.reps) do RepBlock("rep", f) end
+    for _, c in ipairs(steps.chains) do RepBlock("chain", c) end
+    if anyRep then y = y + 8 end
+    -- runs (a "Runs" heading when the hand-in or rep section is above them)
+    Section(self.runsHead, (#hand > 0 or anyRep) and #plan.runs > 0)
     local anyRaid = false
     for _, e in ipairs(plan.runs) do
         nh = nh + 1
@@ -747,6 +1088,24 @@ function Plan:Refresh()
             y = y + Theme.sizes.check + 8
         end
     end
+    -- beta.6 (ui-b6 #4): "Not from a run" - the wanted pieces with no dungeon / raid source, one
+    -- clickable row each (source word, icon + name, Need); more than 8: one fold row, closed by default.
+    local otherIDs = plan.otherIDs or {}
+    Section(self.otherHead, #otherIDs > 0)
+    if #otherIDs > 0 then
+        local show = true
+        if #otherIDs > Plan.OTHER_FOLD then
+            RepBlock("other", { n = #otherIDs })
+            show = IsOpen("other")
+        end
+        if show then
+            for _, id in ipairs(otherIDs) do
+                Line("piece", { boss = Plan.SourceWord(id), piece = { itemID = id, mine = true } })
+            end
+        end
+        y = y + 8
+    end
+    for i = nr + 1, #self.repRows do self.repRows[i]:Hide() end
     for i = nl + 1, #self.lines do self.lines[i]:Hide() end
     -- shopping list (P1), at most sizes.plan.shopW wide (ui-b4 #5)
     y = y + 8
@@ -762,8 +1121,8 @@ function Plan:Refresh()
     self.locksLine:SetShown(saved > 0 or anyRaid)
     self.locksLine:SetText(saved > 0 and T("PLAN_LOCKS", "Raid lockouts: %d saved"):format(saved)
         or T("PLAN_LOCKS_NONE", "Raid lockouts: none saved"))
-    self.note:SetShown((plan.other or 0) > 0)
-    self.note:SetText(T("PLAN_OTHER", "Not from a run: %d pieces (quests, vendors, crafting). Click a piece for its guide."):format(plan.other or 0))
+    -- the old "Not from a run: n pieces" footer: replaced by the section above (ui-b6 #4)
+    self.note:Hide()
     if missing and (self.retries or 0) < 3 and C_Timer and C_Timer.After then
         self.retries = (self.retries or 0) + 1
         C_Timer.After(1, function() Plan:Refresh() end)

@@ -21,6 +21,55 @@ function W.StateColor(state)
     return Theme.stateColor[state] or Theme.colors.text
 end
 
+-- 1.1 beta.6 (ui-b6 #7): one small progress bar for rep / chain rows (Plan tab, guide page).
+-- Art from Theme.art.repBar: 1 px edge, dark backing, fill = `file`, else `fallback`, else a plain
+-- colour. bar:SetValue(frac 0..1, r, g, b, grey) - grey = desaturated + Theme's greyAlpha.
+function W.RepBar(parent, w, h)
+    local art = ns.Theme.art.repBar
+    local bar = CreateFrame("Frame", nil, parent)
+    bar:SetSize(w, h)
+    bar.gsW, bar.gsH = w, h
+    local edge = bar:CreateTexture(nil, "BACKGROUND")
+    edge:SetPoint("TOPLEFT", -1, 1)
+    edge:SetPoint("BOTTOMRIGHT", 1, -1)
+    edge:SetColorTexture(unpack(art.edge))
+    local back = bar:CreateTexture(nil, "BORDER")
+    back:SetAllPoints()
+    back:SetColorTexture(unpack(art.bg))
+    bar.fill = bar:CreateTexture(nil, "ARTWORK")
+    bar.fill:SetPoint("TOPLEFT")
+    bar.fill:SetHeight(h)
+    if not ns.Theme.TryTexture(bar.fill, art.file) and not ns.Theme.TryTexture(bar.fill, art.fallback) then
+        bar.fill:SetColorTexture(1, 1, 1, 1)
+    end
+    function bar:SetValue(frac, r, g, b, grey)
+        frac = math.max(0, math.min(1, tonumber(frac) or 0))
+        self.fill:SetWidth(math.max(1, self.gsW * frac))
+        self.fill:SetShown(frac > 0)
+        self.fill:SetVertexColor(r or 1, g or 1, b or 1)
+        self.fill:SetDesaturated(grey and true or false)
+        self.fill:SetAlpha(grey and (art.greyAlpha or 0.6) or 1)
+        self.gsFrac = frac
+    end
+    return bar
+end
+
+-- 1.1 beta.6 (ui-b6 #1): the fixed status slot in front of a chain step. mark "tick" = done
+-- (Theme.art.tick), "next" = the next step (Theme.art.rowArrow), anything else = blank slot (hidden).
+-- Returns true when something is shown.
+function W.SetMark(tex, mark)
+    local art = (mark == "tick" and Theme.art.tick) or (mark == "next" and Theme.art.rowArrow) or nil
+    if not art then tex:Hide(); return false end
+    tex:SetVertexColor(1, 1, 1, 1)
+    local used = Theme.SetArt(tex, art)
+    if not used and not Theme.TryTexture(tex, art.file) then
+        if not art.fallback then tex:Hide(); return false end
+        tex:SetColorTexture(unpack(art.fallback))
+    end
+    tex:Show()
+    return true
+end
+
 function W.SimpleTip(owner, text, anchor)
     GameTooltip:SetOwner(owner, anchor or "ANCHOR_RIGHT")
     GameTooltip:SetText(text, 1, 1, 1, 1, true)

@@ -745,11 +745,11 @@ end
 function Runs.Plan(locks)
     local wanted = Runs.Wanted()
     local mine = ns.Data and ns.Data.PlayerFaction and ns.Data.PlayerFaction()
-    local seen, order, other = {}, {}, 0
+    local seen, order, other, otherIDs = {}, {}, 0, {}
     for itemID, w in pairs(wanted) do
         local srcs = Runs.PieceSources(itemID, mine)
         if #srcs == 0 then
-            if not w.later then other = other + 1 end
+            if not w.later then other = other + 1; otherIDs[#otherIDs + 1] = itemID end
         else
             for _, s in ipairs(srcs) do
                 if not seen[s.place] then seen[s.place] = true; order[#order + 1] = s.place end
@@ -780,7 +780,8 @@ function Runs.Plan(locks)
         e.lock = byRun[e.run]
         e.lockState = Runs.LockState(e.lock, e.view.bosses)
     end
-    return { runs = Runs.Sort(list), other = other, pieces = distinct }
+    table.sort(otherIDs)
+    return { runs = Runs.Sort(list), other = other, otherIDs = otherIDs, pieces = distinct }
 end
 
 -- Clears every cache (tests).

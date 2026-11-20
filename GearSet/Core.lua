@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.DB_VERSION = 8
+ns.DB_VERSION = 9
 
 -- All user-facing text in one place (ready for translations later).
 ns.L = {
@@ -135,6 +135,9 @@ ns.L = {
     PLAN_EMPTY = "Track a set or a piece (Shift-click it in the list) to plan your runs.",
     PLAN_NONE = "None of the pieces you need drop in a dungeon or raid.",
     PLAN_OTHER = "Not from a run: %d pieces (quests, vendors, crafting). Click a piece for its guide.",
+    PLAN_OTHER_HEAD = "Not from a run",      -- beta.6 (ui-b6 #4): section after the runs
+    PLAN_OTHER_ROW = "All pieces",           -- its fold row when more than 8 pieces
+    PLAN_OTHER_TIP = "Pieces from quests, vendors, crafting or world drops. Click a piece for its guide.",
     PLAN_PIECES = "%d pieces",
     PLAN_PIECE = "1 piece",
     PLAN_SIZE = "%d players",
@@ -170,6 +173,32 @@ ns.L = {
     LOCK_IN_M = "in %dm",
     LOCK_IN_LT = "under 1m",
     LOCK_RESET_SHORT = "resets %s",
+    -- 1.1 beta.6 rep / chain tracker (Steps.lua, Plan tab, guide page)
+    PLAN_REP_HEAD = "Reputation and chains",
+    REP_FOLD_TIP = "Click: show or hide the details.",
+    REP_UNKNOWN = "not known",
+    REP_NOT_MET = "not met yet",
+    REP_READY = "%s (ready)",
+    REP_NEED = "%s - need %s",
+    REP_LATER = "not out yet",
+    REP_ALL_READY = "ready",
+    REP_NEED_ONE = "need %s for 1 piece",
+    REP_NEED_N = "need %s for %d pieces",
+    REP_YOU = "You: %s",
+    REP_FOR = "Needed for: %s",
+    STANDING_1 = "Hated", STANDING_2 = "Hostile", STANDING_3 = "Unfriendly", STANDING_4 = "Neutral",
+    STANDING_5 = "Friendly", STANDING_6 = "Honored", STANDING_7 = "Revered", STANDING_8 = "Exalted",
+    CHAIN_DONE = "done",
+    CHAIN_STEP = "step %d of %d",
+    CHAIN_STEPS = "%d steps",
+    CHAIN_NEXT = "next: %s",
+    CHAIN_NEXT_TAG = "(next)",
+    CHAIN_NO_IDS = "Progress not known for this chain yet.",
+    ATT_STEP_NEXT = "%s - next: %s",          -- run tooltip: "step 3 of 16 - next: Dragonkin Menace"
+    TOKEN_LINE = "Turn-ins in bags: %s",
+    TOKEN_SETS = "(%d sets)",
+    TOKEN_SET_ONE = "(1 set)",
+    BRING_HAVE = "%d/%d in bags",
     LFG_LINE = "LFM %s - need %s",
     LFG_LINE_NONE = "LFM %s",
     LFG_POPUP = "Press Ctrl+C to copy the group line, then paste it into chat yourself.",
@@ -656,6 +685,9 @@ local defaults = {
     },
     handIns = true,
     seenOut = {},
+    -- DB v9 (1.1 beta.6, additive): Alts.lua adds per character `rep` ({ [factionID] = { r, v, t } })
+    -- and `quests` ({ [questID] = true }) from Steps.Snapshot - own characters only, our IDs only.
+    -- Bad rows are ignored where read (Steps.AltRep / AltChains), never deleted. No new top-level keys.
 }
 
 -- Filter defaults, read by the set list's "Reset filters" (one place for both).
@@ -743,7 +775,7 @@ function ns.PrepareDB(t)
     if type(t.version) == "string" and Finite(t.version) then t.version = tonumber(t.version) end
     ApplyDefaults(t, defaults)
     ValidateDB(t)
-    -- Migrations (compare t.version). v1 -> v2, v2 -> v3, v3 -> v4, v4 -> v5, v5 -> v6, v6 -> v7 and v7 -> v8 only add keys (ApplyDefaults
+    -- Migrations (compare t.version). v1 -> v2, v2 -> v3, v3 -> v4, v4 -> v5, v5 -> v6, v6 -> v7, v7 -> v8 and v8 -> v9 only add keys (ApplyDefaults
     -- above). v3: a char record written in the planned beta.3 shape (one `items` string, no
     -- `places`) gets its items as bags; the old key stays. A newer version number is never
     -- lowered, so an older build opening newer data doesn't mark it as old.

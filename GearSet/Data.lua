@@ -641,6 +641,8 @@ local function TypeWord(letter)
     if type(g) == "string" and g ~= "" then return g end
     return ns.L[t[2]]
 end
+-- "Quest" / "Vendor" / "Crafted" ... for a source letter (nil for unknown letters; Plan "Not from a run").
+function Data.TypeWord(letter) return SOURCE_TYPES[letter] and TypeWord(letter) or nil end
 
 local function Has(s) return s and s ~= "" end
 
@@ -1013,7 +1015,11 @@ local function AddRecord(out, tname, key, ctx)
     if not rec then return end
     ctx.seen[key] = true
     ctx.depth = ctx.depth + 1
+    -- 1.1 beta.6: steps and the title of a chain carry its key and step number (Steps.lua live values)
+    local savedChain, savedN = ctx.chainKey, ctx.stepN
+    if tname == "chain" then ctx.chainKey, ctx.stepN = key, 0 end
     AddRows(out, rec, ctx)
+    ctx.chainKey, ctx.stepN = savedChain, savedN
     ctx.depth = ctx.depth - 1
     ctx.seen[key] = nil
 end
@@ -1047,6 +1053,10 @@ function AddRows(out, rows, ctx)
         else other[#other + 1] = r; otherFac = otherFac or r.fac end
     end
     local level, minLevel, qtype, bring, mats, drops = nil, nil, nil, {}, {}, {}
+    local bids = {}   -- 1.1 beta.6: hand-in item name -> itemID (bag counts on the bullets)
+    for _, r in ipairs(own) do
+        if r.key == "bid" and Has(r[1]) and tonumber(r[2]) then bids[r[1]] = tonumber(r[2]) end
+    end
     for _, r in ipairs(own) do
         local k, a = r.key, r[1]
         if Has(a) then
@@ -1090,6 +1100,9 @@ function AddRows(out, rows, ctx)
                     local bl = Add(out, "bullet", t[1])
                     bl.col = true          -- in the value column
                     bl.sub = t[2]          -- "Drops from: ..." under it (drop table), or nil
+                    local n, name = t[1]:match("^(%d+)%s+(.+)$")
+                    bl.bid = bids[name or t[1]]   -- beta.6: "3/5 in bags" (GuidePage, live)
+                    bl.need = tonumber(n) or 1
                 end
             end
         elseif k == "mat" then
@@ -1100,7 +1113,9 @@ function AddRows(out, rows, ctx)
         elseif not Has(a) then -- luacheck: ignore 542
             -- empty value: nothing to show (the branch stops the rows below)
         elseif k == "giver" then AddNpcRow(out, a, L.G_GIVER, mine)
-        elseif k == "rep" then Add(out, "row", Has(b) and (a .. " " .. b) or a, L.G_NEEDS)
+        elseif k == "rep" then
+            -- beta.6: the live standing replaces the text when the faction is known (GuidePage)
+            Add(out, "row", Has(b) and (a .. " " .. b) or a, L.G_NEEDS).rep = { faction = a, need = b }
         elseif k == "rank" then Add(out, "row", Has(b) and L.G_RANK:format(a, b) or L.G_RANK_N:format(a), L.G_NEEDS)
         elseif k == "cost" then Add(out, "row", a, L.G_COST)
         elseif k == "reward" then Add(out, "row", a, L.G_ALSO)
@@ -1130,12 +1145,16 @@ function AddRows(out, rows, ctx)
         local k, a, b, c = r.key, r[1], r[2], r[3]
         if k == "p" and Has(a) then Add(out, "text", a)
         elseif k == "b" and Has(a) then Add(out, "bullet", a)
-        elseif k == "t" and Has(a) then Add(out, "sub", a)   -- chain title: a sub-heading
+        elseif k == "t" and Has(a) then Add(out, "sub", a).chain = ctx.chainKey   -- chain title: a sub-heading
         elseif k == "s" and (Has(a) or Has(b)) then
             -- quest name as the step's text, "NPC, place" kept apart (`sub`, drawn grey)
             local text = Has(b) and b or (Has(c) and c or "")
             local step = Add(out, "step", text, a or "")
             if Has(b) and Has(c) then step.sub = c end
+            if ctx.chainKey then   -- beta.6: tick / "next" from Steps.ChainState (GuidePage, live)
+                ctx.stepN = (ctx.stepN or 0) + 1
+                step.chain, step.idx = ctx.chainKey, ctx.stepN
+            end
             step.here = Has(b) and ctx.quest == b or nil
             -- Way to the step's NPC: the quest's giver, else the name before "," in "NPC, place".
             local npc = Has(b) and Field(Data.GuideRecord("quest", b), "giver", mine)

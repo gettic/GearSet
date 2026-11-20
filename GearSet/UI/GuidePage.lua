@@ -213,6 +213,8 @@ function GuidePage:Build(parent)
     self.scroll, self.content = scroll, content
 
     self.fsPool, self.foldPool, self.linePool, self.wayPool = {}, {}, {}, {}
+    self.barPool, self.barUsed = {}, 0   -- beta.6 rep bars
+    self.markPool, self.markUsed = {}, 0 -- beta.6 step marks (ui-b6 #1)
     self.fsUsed, self.foldUsed, self.lineUsed, self.wayUsed = 0, 0, 0, 0
     self.openFolds = {}
 end
@@ -346,6 +348,101 @@ local function PlaceWay(self, b, y, width)
     return (btn:GetWidth() or Theme.sizes.way or 14) + (Theme.sizes.wayGap or 4)
 end
 
+-- ---------------------------------------------------------------------------
+-- 1.1 beta.6 live values (Steps.lua): rep rows, chain steps / titles, hand-in bag counts.
+-- The guide's blocks are cached; these are read on every draw (and in the copy text).
+
+local function Mine()
+    local D = ns.Data
+    return D and D.PlayerFaction and D.PlayerFaction() or nil
+end
+
+-- Chain progress, once per draw per chain.
+local function ChainOf(self, key)
+    if not (key and ns.Steps) then return nil end
+    self.chainStates = self.chainStates or {}
+    local hit = self.chainStates[key]
+    if hit == nil then
+        local ok, st = pcall(ns.Steps.ChainState, key, Mine())
+        hit = ok and st or false
+        self.chainStates[key] = hit
+    end
+    return hit or nil
+end
+
+-- Live text (with colour codes) for a block, or nil = draw it as before. Second / third return: the
+-- rep (bar) and ready; fourth (steps): the mark for the step slot, "tick" done / "next" (ui-b6 #1).
+function GuidePage.Live(self, b)
+    local S, c = ns.Steps, Theme.colors
+    if not S then return nil end
+    if b.rep then
+        local id = S.FactionID(b.rep.faction)
+        local rep = id and S.Rep(id)
+        if not rep then return nil end
+        local ready = S.HasStanding(rep, b.rep.need)
+        local col = ready and c.repReady or c.repNeed
+        return b.rep.faction .. ": " .. col:WrapTextInColorCode(S.RepText(rep, b.rep.need)), rep, ready
+    elseif b.k == "step" and b.chain and b.idx then
+        local st = ChainOf(self, b.chain)
+        local s = st and st.known and st.steps[b.idx]
+        if not s then return nil end
+        local text = b.here and (b.text .. "  " .. L.G_HERE) or b.text
+        if s.state then
+            return c.stepDone:WrapTextInColorCode(text), nil, nil, "tick"
+        elseif st.next == b.idx then
+            return c.stepNext:WrapTextInColorCode(text .. "  " .. (L.CHAIN_NEXT_TAG or "(next)")), nil, nil, "next"
+        end
+        return nil
+    elseif b.k == "sub" and b.chain then
+        local st = ChainOf(self, b.chain)
+        local s = st and S.ChainText(st) or ""
+        if s == "" then return nil end
+        return b.text .. "  " .. (st.complete and c.planHave or c.guideNote):WrapTextInColorCode(s)
+    elseif b.k == "bullet" and b.bid then
+        local n = S.Count(b.bid, false)
+        local need = b.need or 1
+        local col = n >= need and c.planHave or c.planMissing   -- ui-b6 #8
+        return b.text .. "  " .. col:WrapTextInColorCode((L.BRING_HAVE or "%d/%d in bags"):format(math.min(n, need), need))
+    end
+    return nil
+end
+
+-- The rep bar on its own line under a rep row's text, at x (ui-b6 #6; W.RepBar, pooled).
+-- Returns the px of height it takes (0 = none).
+local function PlaceBar(self, rep, ready, x, y)
+    if not (rep and W.RepBar) then return 0 end
+    local sz = Theme.sizes.repBar
+    self.barUsed = self.barUsed + 1
+    local bar = self.barPool[self.barUsed]
+    if not bar then
+        bar = W.RepBar(self.content, sz.w, sz.h)
+        self.barPool[self.barUsed] = bar
+    end
+    local r, g, b = ns.Steps.BarColor(rep, ready)
+    bar:SetValue(rep.met and ns.Steps.Fraction(rep) or 0, r, g, b)
+    bar:ClearAllPoints()
+    bar:SetPoint("TOPLEFT", self.content, "TOPLEFT", x, -(y + 2))
+    bar:Show()
+    return sz.h + 4
+end
+
+-- The fixed step slot (ui-b6 #1): tick / next arrow at x, pooled textures; nothing for "none".
+local function PlaceMark(self, mark, x, y)
+    if not (mark and W.SetMark) then return end
+    self.markUsed = self.markUsed + 1
+    local tex = self.markPool[self.markUsed]
+    if not tex then
+        tex = self.content:CreateTexture(nil, "ARTWORK")
+        local s = Theme.art.tick.size or 12
+        tex:SetSize(s, s)
+        self.markPool[self.markUsed] = tex
+    end
+    tex:ClearAllPoints()
+    tex:SetPoint("TOPLEFT", self.content, "TOPLEFT", x, -y)
+    tex.gsMark = mark
+    if not W.SetMark(tex, mark) then tex.gsMark = nil end
+end
+
 local function Text(self, font, color, text, x, y, width)
     local fs = TakeFS(self)
     Theme.Font(fs, font)
@@ -389,14 +486,18 @@ function GuidePage:LayBlocks(blocks, depth, y, width, path)
             y = y + (line.gsH or 1) + 4
         elseif k == "sub" then
             if y > 4 and i > 1 and blocks[i - 1].k ~= "head" then y = y + GAP_SUB end
-            y = y + Text(self, "text", c.guideSub, b.text, x0, y, w) + GAP_LINE
+            y = y + Text(self, "text", c.guideSub, GuidePage.Live(self, b) or b.text, x0, y, w) + GAP_LINE
         elseif k == "row" then
             local h1 = Text(self, "small", c.guideLabel, b.label, x0 + 8, y, LABEL_W - 4)
             local h2 = 0
             local wayW = PlaceWay(self, b, y, width)
-            if b.text and b.text ~= "" then
-                h2 = Text(self, "small", c.guideText, b.text, x0 + 8 + LABEL_W, y, w - 8 - LABEL_W - wayW)
+            local live, rep, ready = GuidePage.Live(self, b)
+            local text = live or b.text
+            if text and text ~= "" then
+                h2 = Text(self, "small", c.guideText, text, x0 + 8 + LABEL_W, y, w - 8 - LABEL_W - wayW)
             end
+            -- ui-b6 #6: the bar under the text (the text keeps the full width)
+            h2 = h2 + PlaceBar(self, rep, ready, x0 + 8 + LABEL_W, y + h2)
             y = y + math.max(h1, h2) + GAP_LINE
         elseif k == "text" then
             y = y + Text(self, "small", c.guideText, b.text, x0 + 8, y, w - 8) + GAP_LINE
@@ -411,19 +512,25 @@ function GuidePage:LayBlocks(blocks, depth, y, width, path)
             -- "You bring" items sit in the value column; note bullets at the left.
             local bx = b.col and (x0 + 8 + LABEL_W) or (x0 + 18)
             Text(self, "small", c.guideText, "-", bx - 10, y, 10)
-            y = y + Text(self, "small", c.guideText, b.text, bx, y, w - (bx - x0)) + GAP_LINE
+            y = y + Text(self, "small", c.guideText, GuidePage.Live(self, b) or b.text, bx, y, w - (bx - x0)) + GAP_LINE
             if b.sub then   -- where a hand-in item drops
                 y = y + Text(self, "small", c.guideNote, b.sub, bx, y, w - (bx - x0)) + GAP_LINE
             end
         elseif k == "step" then
             -- Numbers get a narrow column, words ("Belt, Gloves") the label column.
             local lw = IsStepNumber(b.label) and 28 or LABEL_W
+            -- beta.6 (ui-b6 #1): a chain step gets the fixed status slot in front (tick / next / blank),
+            -- so done and open steps line up; the number and the text move right by stepSlot.
+            local slot = (b.chain and b.idx) and (Theme.sizes.plan.stepSlot or 16) or 0
             -- Quest name white (green for this piece's step), " - NPC, place" grey after it.
-            local h1 = Text(self, "small", c.guideLabel, b.label, x0 + 8, y, lw - 4)
-            local text = b.here and (b.text .. "  " .. L.G_HERE) or b.text
+            local h1 = Text(self, "small", c.guideLabel, b.label, x0 + 8 + slot, y, lw - 4)
+            local live, _, _, mark = GuidePage.Live(self, b)
+            if slot > 0 then PlaceMark(self, mark, x0 + 8, y) end
+            local text = live or (b.here and (b.text .. "  " .. L.G_HERE) or b.text)
             if b.sub and b.sub ~= "" then text = text .. "  " .. c.guideNote:WrapTextInColorCode("- " .. b.sub) end
             local wayW = PlaceWay(self, b, y, width)
-            local h2 = Text(self, "small", b.here and c.guideHere or c.guideText, text, x0 + 8 + lw, y, w - 8 - lw - wayW)
+            local h2 = Text(self, "small", (b.here and not live) and c.guideHere or c.guideText, text,
+                x0 + 8 + slot + lw, y, w - 8 - slot - lw - wayW)
             y = y + math.max(h1, h2) + GAP_LINE
         elseif k == "fold" then
             local key = FoldKey(self, path, head, b.text)
@@ -460,6 +567,7 @@ end
 function GuidePage:Render()
     if not (self.page and self.piece) then return end
     self.fsUsed, self.foldUsed, self.lineUsed, self.wayUsed = 0, 0, 0, 0
+    self.barUsed, self.markUsed, self.chainStates = 0, 0, {}
     self.foldCount = {}
     local width = self.scroll:GetWidth() or 0
     if width < 100 then width = 434 end
@@ -471,6 +579,8 @@ function GuidePage:Render()
     for i = self.foldUsed + 1, #self.foldPool do self.foldPool[i]:Hide() end
     for i = self.lineUsed + 1, #self.linePool do self.linePool[i]:Hide() end
     for i = self.wayUsed + 1, #self.wayPool do self.wayPool[i]:Hide(); self.wayPool[i].point = nil end
+    for i = self.barUsed + 1, #self.barPool do self.barPool[i]:Hide() end
+    for i = self.markUsed + 1, #self.markPool do self.markPool[i]:Hide(); self.markPool[i].gsMark = nil end
     self.contentH = y
     self.content:SetHeight(math.max(y, 10))
     if self.copyMode then self:FillCopyText() end
@@ -507,7 +617,15 @@ function GuidePage.PlainLines(blocks, depth, out)
     local ind = string.rep("  ", depth)
     local ind2 = ind .. "  "
     for _, b in ipairs(blocks or {}) do
-        local k, text, label = b.k, Plain(b.text), Plain(b.label)
+        -- beta.6: the live rep / bag count / chain progress text; a done step gets "[done]"
+        local okL, live = pcall(GuidePage.Live, GuidePage, b)
+        live = okL and live or nil
+        if live and b.k == "step" then
+            local st = ChainOf(GuidePage, b.chain)
+            local s = st and st.steps[b.idx]
+            live = (s and s.state) and (b.text .. "  [" .. (L.CHAIN_DONE or "done") .. "]") or nil
+        end
+        local k, text, label = b.k, Plain(live or b.text), Plain(b.label)
         if b.way and k ~= "step" then text = WithPosition(text, b.way) end
         if k == "head" then
             if #out > 0 and out[#out] ~= "" then out[#out + 1] = "" end

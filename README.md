@@ -4,7 +4,7 @@ Keeps track of all known armor sets in the game, in one window with three parts:
 
 A World of Warcraft addon for **WoW Forever**.
 
-Current version: **v1.0.1**. A beta, **v1.1.0-beta.5**, is on the beta channel.
+Current version: **v1.0.1**. A beta, **v1.1.0-beta.6**, is on the beta channel.
 
 ## Install
 
@@ -209,7 +209,7 @@ Removed, other-faction, hidden and not-yet-released sets are never counted. The 
 
 ### Plan tab
 
-*In v1.1.0-beta.4.*
+*In v1.1.0-beta.4. Extended in beta.6.*
 
 Every dungeon and raid that drops a piece you still need, the run with the most pieces first. Under each run are its bosses and the pieces. Click a run to fold it.
 
@@ -223,9 +223,27 @@ Every dungeon and raid that drops a piece you still need, the run with the most 
 | Hover a run | What to bring and general group notes |
 | LFG button | Puts a group line ("LFM Scholomance - need ...") in a copy box for you to paste yourself. Gear Set never posts anything |
 | Ready to hand in | Quest givers whose reward is a piece you need, where your bags hold everything the quest asks for. In your own chat, one line says so when you enter their zone (once per zone entry, never in combat or inside an instance). Turn it off with "Hand-in reminders in chat" in the settings |
+| Not attuned | A run you aren't attuned for says which quest chain step you are on, for example "not attuned (step 3 of 16)". The tooltip names the next quest |
+| Not from a run | *Since beta.6.* After the runs: each piece you need from quests, vendors, crafting or world drops, tagged Quest, Vendor, Crafted and so on. Click one for its guide, Shift-click to link it. More than 8 fold into one "All pieces" row |
+| Reputation and chains | *Since beta.6.* See [below](#reputation-and-quest-chains) |
 | Shopping list | The [shopping list](#shopping-list) is on this tab |
 
 Open it with the tab or `/gs plan`.
+
+#### Reputation and quest chains
+
+*In v1.1.0-beta.6.*
+
+A section on the Plan tab for what your tracked pieces need. Click a row to open its guide. Sets not out yet show grey.
+
+| What | How |
+|---|---|
+| Factions | One row per faction with a standing bar, for example "Friendly 1200/6000 - need Honored for 3 pieces" |
+| Turn-in tokens | The tokens in your bags, as counts only. Where tokens turn in as fixed trios, only full sets count, for example "5 coins (1 set)" |
+| Quest chains | Onyxia attunement, Seal of Ascension, Dungeon Set 2 and more: a progress bar and "step 7 of 16 - next: ..." with a Way pin. Done steps are grey with a tick, the next step is gold with an arrow |
+| Other characters | Hover a faction row to see your other characters' standing. It is saved when they log out, for your own characters only |
+
+On the guide page, reputation rows show your live standing with a bar, chain steps get the same ticks and gold "next", and hand-in items show how many you hold, for example "3/5 in bags".
 
 ### Shopping list
 
@@ -335,6 +353,7 @@ The addon is in the `GearSet` folder (`GearSet_Forever.toc`, interface 16001). S
 | `Prices.lua` | Learns vendor prices when you open a vendor |
 | `Runs.lua` | Works out which dungeon and raid bosses drop the pieces you need |
 | `HandIns.lua` | Finds quests you can hand in with what is in your bags |
+| `Steps.lua` | Reputation standings, quest chain steps and turn-in token counts |
 | `Shopping.lua` | The shopping list: recipes, mats and what is still to get |
 | `AHPrices.lua` | Reads auction prices from Auctionator or TSM (read only) |
 | `LootMark.lua` | The star on the loot roll window |

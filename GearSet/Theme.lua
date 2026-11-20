@@ -136,6 +136,12 @@ Theme.art = {
         bg = { 0, 0, 0, 0.45 }, edge = { 0, 0, 0, 0.9 }, height = 14 },
     -- beta.9 guide Way button: the game's own map pin (Waypoint-MapPin-*), hover = its highlight
     -- (ADD). No atlas on this client: the button shows the word L.WAY_FALLBACK ("Way") in link colours.
+    -- 1.1 beta.6 rep / chain tracker (Steps.lua): a small StatusBar in the faction's own colour
+    -- (FACTION_BAR_COLORS[reaction], read via _G; missing -> colors.repNeed / repReady) on a dark backing.
+    -- ui-b6 #5: the fill is Blizzard's own reputation bar art (ReputationFrame.xml), else UI-StatusBar,
+    -- else a plain colour. Greyed (desaturated, `greyAlpha`) on "not out yet" rows.
+    repBar = { file = "Interface\\PaperDollInfoFrame\\UI-Character-Skills-Bar",
+        fallback = "Interface\\TargetingFrame\\UI-StatusBar", bg = { 0, 0, 0, 0.5 }, edge = { 0, 0, 0, 0.9 }, greyAlpha = 0.6 },
     wayPin = { atlas = "Waypoint-MapPin-Untracked", hover = "Waypoint-MapPin-Highlight",
         text = (ns.L and ns.L.WAY_FALLBACK) or "Way" },   -- the word when the atlas is missing (as on the guide page)
     -- 1.1 beta.1 dungeon checklist (Objective Tracker look). The tracker's own header atlas
@@ -226,7 +232,9 @@ Theme.sizes = {
     -- shopping list's max width (#5), inline icon size in the status column (#7).
     plan = { head = 26, row = 20, indent = 18, pieceX = 200, icon = 16, button = 16, top = 64,
         foldX = 4, pinX = 22, nameX = 42, nameW = 240, infoX = 290, infoW = 170, countW = 70, gap = 6, rightW = 80,
-        titleX = 16, titleY = -12, summaryX = -30, summaryY = -14, sectionH = 24, shopW = 520, line = 12, statusLines = 3, inline = 14 },
+        titleX = 16, titleY = -12, summaryX = -30, summaryY = -14, sectionH = 24, shopW = 520, line = 12, statusLines = 4, inline = 14,   -- 4: two keys + "not attuned (step n of N)" + lockout (beta.6)
+        repBarW = 100, repBarH = 10, stepSlot = 16 },   -- beta.6 rep rows: the bar in the info column; step mark slot
+    repBar = { w = 100, h = 10 },      -- beta.6 guide page rep row: the bar on its own line under the text (ui-b6 #6)
     tracker = { width = 240, head = 26, row = 14, maxRows = 12, pad = 6, indent = 18, button = 18, fold = 16,
         titleX = 7, tickX = 4, viaIndent = 4, countGap = 4 },
 }
@@ -358,6 +366,13 @@ Theme.colors = {
     planHave    = P.green,              -- key held, attuned
     planMissing = P.orange,             -- key missing, not attuned
     handReady   = P.green,              -- "Ready to hand in"
+    -- 1.1 beta.6 rep / chain tracker
+    repNeed     = P.orange,             -- standing below what a piece needs
+    repReady    = P.green,              -- standing high enough
+    stepDone    = P.lightGrey,          -- chain step done (grey + tick, like the objective tracker; ui-b6 #2)
+    chainBar    = P.gold,               -- chain progress bar fill (done: planHave)
+    stepNext    = P.gold,               -- the next step to do
+    stepOpen    = P.white,              -- steps after it
 }
 
 -- Effort word colours (Data:GetEffort level): 0 Done grey, 1 Low green, 2 Medium gold,
@@ -481,6 +496,20 @@ function Theme.AddHint(tooltip, text)
         local r, g, b = Theme.colors.hint:GetRGB()
         tooltip:AddLine(text, r, g, b, true)
     end
+end
+
+-- 1.1 beta.6: "|A:atlas:s:s|a" / "|T file:s|t" for a Theme.art entry (first atlas that exists, else
+-- its file), "" when none - for icons inside a line of text (ticks on chain steps, key icons).
+-- file: a texture path / fileID used instead of the entry.
+function Theme.InlineIcon(entry, size, file)
+    size = size or 12
+    if file then return ("|T%s:%d|t"):format(tostring(file), size) end
+    if type(entry) ~= "table" then return "" end
+    for _, a in ipairs(entry.atlases or { entry.atlas }) do
+        if Theme.AtlasExists(a) then return ("|A:%s:%d:%d|a"):format(a, size, size) end
+    end
+    if entry.file then return ("|T%s:%d|t"):format(entry.file, size) end
+    return ""
 end
 
 -- Set a texture file; false if this client doesn't have it (SetTexture may return
