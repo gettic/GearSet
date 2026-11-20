@@ -159,9 +159,13 @@ Theme.art = {
     -- paper-doll slot icons (checked by /gs probe); missing -> the letter on a plain square
     -- (`slotPlain`). Framed with `iconBorder` (tint colors.slotFrame); a hidden slot gets the red X
     -- (`slotOffMark`, falls back to an "x" in colors.slotOffMark). Sizes: sizes.slot.
-    slotHead   = { file = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Head", letter = "H" },
-    slotBack   = { file = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Back", letter = "C" },
-    slotWeapon = { file = "Interface\\PaperDoll\\UI-PaperDoll-Slot-MainHand", letter = "W" },
+    -- `slot`: the texture the character frame itself uses (C_PaperDollInfo.GetInventorySlotInfo,
+    -- as PaperDollFrame.lua does) is tried first; then `file`. WoW Forever has no
+    -- UI-PaperDoll-Slot-Back (selftest 1.1 beta.2), so the cloak falls back to the chest icon
+    -- (the classic character frame shows the back slot with the chest icon too).
+    slotHead   = { slot = "HEADSLOT", file = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Head", letter = "H" },
+    slotBack   = { slot = "BACKSLOT", file = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Chest", letter = "C" },
+    slotWeapon = { slot = "MAINHANDSLOT", file = "Interface\\PaperDoll\\UI-PaperDoll-Slot-MainHand", letter = "W" },
     slotPlain  = { color = { 0.2, 0.2, 0.2, 1 } },
     slotHilight = { file = "Interface\\Buttons\\ButtonHilight-Square", blend = "ADD" },
     slotOffMark = { atlas = "common-icon-redx", text = "x" },
@@ -459,6 +463,19 @@ function Theme.TryTexture(tex, file)
         if id == nil or id == 0 then return false end
     end
     return true
+end
+
+-- Paper-doll slot icon: the character frame's own texture for art.slot, else art.file.
+-- Returns true when one loaded.
+function Theme.SetSlotTexture(tex, art)
+    local PD = _G.C_PaperDollInfo
+    if art.slot and PD and type(PD.GetInventorySlotInfo) == "function" then
+        local ok, _, texture = pcall(PD.GetInventorySlotInfo, art.slot)
+        if ok and (type(texture) == "string" or type(texture) == "number") and Theme.TryTexture(tex, texture) then
+            return true
+        end
+    end
+    return Theme.TryTexture(tex, art.file)
 end
 
 -- Background behind the character model: class art if the client has it.

@@ -324,7 +324,21 @@ local CHECKS = {
     end },
     { "Model slots", function()
         local m = ModelMethods()
-        return "UndressSlot " .. YesNo(m and IsFunc(m.UndressSlot))
+        local s = "UndressSlot " .. YesNo(m and IsFunc(m.UndressSlot))
+        -- the character frame's own slot textures (what the back slot really uses)
+        for _, slot in ipairs({ "HEADSLOT", "BACKSLOT", "MAINHANDSLOT" }) do
+            local ok, id, texture = Call("C_PaperDollInfo.GetInventorySlotInfo", slot)
+            s = s .. (", %s %s %s"):format(slot, ok and Safe(id) or "?", ok and Safe(texture) or "")
+        end
+        local T = ns.Theme
+        if T and T.TryTexture and m then
+            local tex = m:CreateTexture()
+            for _, f in ipairs({ "Interface\\PaperDoll\\UI-PaperDoll-Slot-Back", "Interface\\PaperDoll\\UI-PaperDoll-Slot-Chest" }) do
+                local okT, loads = pcall(T.TryTexture, tex, f)
+                s = s .. ", " .. (f:match("Slot%-(%a+)$") or f) .. " " .. YesNo(okT and loads)
+            end
+        end
+        return s
     end },
     { "Reputation", function()
         local s = Has({ "C_Reputation.GetFactionDataByID", "GetFactionInfoByID" })

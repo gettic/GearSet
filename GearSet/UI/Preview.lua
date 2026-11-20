@@ -145,7 +145,7 @@ function Preview:Build(parent, bar)
         b.icon = b:CreateTexture(nil, "ARTWORK")
         b.icon:SetPoint("CENTER")
         b.icon:SetSize(sz.icon, sz.icon)
-        if not Theme.TryTexture(b.icon, art.file) then
+        if not Theme.SetSlotTexture(b.icon, art) then
             b.icon:SetColorTexture(unpack(Theme.art.slotPlain.color))
             b.letter = b:CreateFontString(nil, "OVERLAY")
             Theme.Font(b.letter, "small")

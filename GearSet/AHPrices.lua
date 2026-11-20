@@ -2,9 +2,10 @@
 -- ToS W6 (plans\v1.1.0\tos-check.md): read only. Every call is pcall'd and checked to exist
 -- first; our own caller ID "GearSet" is passed to Auctionator; never triggers an Auctionator or
 -- TSM scan, never calls C_AuctionHouse, nothing is cached or saved (decision 3).
--- API names: Auctionator.API.v1.GetAuctionPriceByItemID / GetAuctionAgeByItemID (callerID,
--- itemID), TSM_API.GetCustomPriceValue(priceString, itemString). Not confirmed against the
--- addons' source (their repos could not be fetched, b2-plan.md); /gs probe lists what exists.
+-- Auctionator: Auctionator.API.v1.GetAuctionPriceByItemID and GetAuctionAgeByItemID (callerID,
+-- itemID), both seen in game in the 1.1 beta.2 selftest (with a Thorium Bar price).
+-- TSM: TSM_API.GetCustomPriceValue(priceString, itemString), tested with a fake only.
+-- /gs probe lists the functions each addon really has.
 local _, ns = ...
 
 local AHPrices = {}
