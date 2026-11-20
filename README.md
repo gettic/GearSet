@@ -4,15 +4,23 @@ Keeps track of all known armor sets in the game, in one window with three parts:
 
 A World of Warcraft addon for **WoW Forever**.
 
-Current version: **v1.0.1**. A beta, **v1.1.0-beta.7**, is on the beta channel.
+Current version: **v1.1.0**.
+
+### What's new in 1.1
+
+- [Dungeon checklist and loot roll star](#dungeon-checklist-and-loot-roll-star): the pieces you need, boss by boss, inside a dungeon or raid.
+- [Shopping list](#shopping-list) for crafted pieces, with auction prices from Auctionator or TSM.
+- Buttons to hide the helm, cloak or weapons on the [preview](#preview-middle).
+- A level filter ("Fits my level") and a "Next:" line with the sets closest to done.
+- [Plan tab](#plan-tab): runs, keys, attunements, lockouts, an LFG line, hand-in reminders and a "Not from a run" list.
+- Sets and pieces that are "not out yet" unlock by themselves once the game shows them.
+- [Reputation and quest chain](#reputation-and-quest-chains) tracking.
 
 ## Install
 
 1. Open your addon manager.
 2. Find **Gear Set** in the list and install it. If it's not there, restart the addon manager.
 3. Start the game, or type `/reload` if it's already running.
-
-Betas of newer versions, when there are any, are on the addon manager's beta channel.
 
 ## How to use
 
@@ -174,8 +182,6 @@ The search box finds sets, pieces (names your game has already seen), bosses, pl
 
 ### Dungeon checklist and loot roll star
 
-*In v1.1.0-beta.1.*
-
 Inside a dungeon or raid where you still need a piece of a tracked set, a small list opens. With nothing tracked, it uses sets you have started and your class can wear. The settings are under **Dungeons**.
 
 | What | How |
@@ -209,8 +215,6 @@ Removed, other-faction, hidden and not-yet-released sets are never counted. The 
 
 ### Plan tab
 
-*In v1.1.0-beta.4. Extended in beta.6.*
-
 Every dungeon and raid that drops a piece you still need, the run with the most pieces first. Under each run are its bosses and the pieces. Click a run to fold it.
 
 | What | How |
@@ -224,15 +228,13 @@ Every dungeon and raid that drops a piece you still need, the run with the most 
 | LFG button | Puts a group line ("LFM Scholomance - need ...") in a copy box for you to paste yourself. Gear Set never posts anything |
 | Ready to hand in | Quest givers whose reward is a piece you need, where your bags hold everything the quest asks for. In your own chat, one line says so when you enter their zone (once per zone entry, never in combat or inside an instance). Turn it off with "Hand-in reminders in chat" in the settings |
 | Not attuned | A run you aren't attuned for says which quest chain step you are on, for example "not attuned (step 3 of 16)". The tooltip names the next quest |
-| Not from a run | *Since beta.6.* After the runs: each piece you need from quests, vendors, crafting or world drops, each with its real source (boss and zone, vendor, quest or crafted). The tooltip shows the full source. Click one for its guide, Shift-click to link it. More than 8 fold into one "All pieces" row |
-| Reputation and chains | *Since beta.6.* See [below](#reputation-and-quest-chains) |
+| Not from a run | After the runs: each piece you need from quests, vendors, crafting or world drops, each with its real source (boss and zone, vendor, quest or crafted). The tooltip shows the full source. Click one for its guide, Shift-click to link it. More than 8 fold into one "All pieces" row |
+| Reputation and chains | See [below](#reputation-and-quest-chains) |
 | Shopping list | The [shopping list](#shopping-list) is on this tab |
 
 Open it with the tab or `/gs plan`.
 
 #### Reputation and quest chains
-
-*In v1.1.0-beta.6.*
 
 A section on the Plan tab for what your tracked pieces need. Click a row to open its guide. Sets not out yet show grey.
 
@@ -246,8 +248,6 @@ A section on the Plan tab for what your tracked pieces need. Click a row to open
 On the guide page, reputation rows show your live standing with a bar, chain steps get the same ticks and gold "next", and hand-in items show how many you hold, for example "3/5 in bags".
 
 ### Shopping list
-
-*In v1.1.0-beta.2. On the Plan tab since beta.4.*
 
 On the Plan tab, for the crafted pieces of your tracked sets and pieces:
 
