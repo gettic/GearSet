@@ -4,7 +4,7 @@ Keeps track of all known armor sets in the game, in one window with three parts:
 
 A World of Warcraft addon for **WoW Forever**.
 
-Current version: **v1.0.0**. A beta, v1.0.1-beta.2, is on the addon manager's beta channel.
+Current version: **v1.0.1**.
 
 ## Install
 
