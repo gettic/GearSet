@@ -109,7 +109,36 @@ function Plan.LockText(e, now, full)
 end
 
 -- The status column: keys (icon + tick), attunement, lockout (raids), each coloured.
-function Plan.StatusText(e, now)
+-- Plan.StatusParts -> list of segments; StatusText = one line; StatusLines = packed into the room.
+function Plan.StatusText(e, now) return table.concat(Plan.StatusParts(e, now), Plan.STATUS_GAP) end
+Plan.STATUS_GAP = "   "
+
+-- Pack segments into lines that fit `room` px (measure(text) -> px; a 15 % margin for the real font),
+-- at most sizes.plan.statusLines lines; a segment never splits. Returns the text ("\n" between lines), lines.
+function Plan.StatusLines(parts, room, measure)
+    local max = Sizes().statusLines or 3
+    local fit = room * 0.85
+    local lines = {}
+    for _, seg in ipairs(parts) do
+        local cur = lines[#lines]
+        local joined = cur and (cur .. Plan.STATUS_GAP .. seg)
+        if joined and (#lines >= max or measure(joined) <= fit) then
+            lines[#lines] = joined
+        else
+            lines[#lines + 1] = seg
+        end
+    end
+    return table.concat(lines, "\n"), math.max(1, #lines)
+end
+
+-- Width of the status column on a row `rowW` px wide (from Theme.sizes.plan; the LFG / Way buttons at the right).
+function Plan.StatusRoom(rowW, lfgW)
+    local sz = Sizes()
+    local x = sz.infoX + sz.infoW + sz.gap + sz.countW + sz.gap
+    return rowW - x - (4 + (Theme.sizes.way or 14) + sz.gap + (lfgW or sz.button) + sz.gap)
+end
+
+function Plan.StatusParts(e, now)
     local parts = {}
     local tick = Inline(Theme.art.tick, 12)
     for _, k in ipairs(Plan.KeyTexts(e.facts)) do
@@ -123,7 +152,7 @@ function Plan.StatusText(e, now)
     if e.facts.kind == "raid" or e.lock then
         parts[#parts + 1] = C("planNote"):WrapTextInColorCode(Plan.LockText(e, now))
     end
-    return table.concat(parts, "   ")
+    return parts
 end
 
 -- Wanted names of a run (for the LFG line).
@@ -338,6 +367,7 @@ local function HeadRow(self, i)
     r.lfg:SetPoint("RIGHT", r.way, "LEFT", -sz.gap, 0)
     r.status = Col(sz.infoX + sz.infoW + sz.gap + sz.countW + sz.gap, nil)
     r.status:SetPoint("RIGHT", r.lfg, "LEFT", -sz.gap, 0)
+    r.status:SetWordWrap(true)   -- only breaks at the "\n" StatusLines puts between parts
     r:SetScript("OnClick", function()
         if r.gsEntry then
             PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
@@ -350,7 +380,7 @@ local function HeadRow(self, i)
     return r
 end
 
-local function FillHead(r, e, now)
+local function FillHead(r, e, now, rowW)
     local sz = Sizes()
     r.gsEntry = e
     local folded = Collapsed(e.run)
@@ -367,9 +397,19 @@ local function FillHead(r, e, now)
     r.info:SetTextColor(C("planNote"):GetRGB())
     r.count:SetText(Plan.CountText(e.need))
     r.count:SetTextColor(C(done and "planLocked" or "text"):GetRGB())
-    local status = Plan.StatusText(e, now)
-    if done then status = C("planLocked"):WrapTextInColorCode((status:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""))) end
+    -- status: wraps between its parts when the column is too narrow (selftest "text cut: status")
+    local parts = Plan.StatusParts(e, now)
+    if done then
+        for i, s in ipairs(parts) do parts[i] = C("planLocked"):WrapTextInColorCode((s:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""))) end
+    end
+    local m = Plan.measure
+    local status, n = Plan.StatusLines(parts, Plan.StatusRoom(rowW or 900, r.lfg:GetWidth()), function(s)
+        if not m then return 0 end
+        m:SetText(s)
+        return m:GetStringWidth() or 0
+    end)
     r.status:SetText(status)
+    r:SetHeight(math.max(sz.head, n * sz.line + 8))
     local p = ns.Way and ns.Way.Point("place", e.run)
     r.way.gsPoint = p
     r.way:SetShown(p ~= nil)
@@ -544,6 +584,11 @@ function Plan:Build(page)
     self.startedCheck = check
     if ns.Progress.BuildShop then ns.Progress.BuildShop(self, child) end
 
+    -- hidden, for measuring status parts in the real font (same font as the status column)
+    Plan.measure = page:CreateFontString(nil, "OVERLAY")
+    Theme.Font(Plan.measure, "small")
+    Plan.measure:Hide()
+
     self.note = page:CreateFontString(nil, "OVERLAY")
     Theme.Font(self.note, "small")
     self.note:SetTextColor(C("planNote"):GetRGB())
@@ -650,12 +695,12 @@ function Plan:Refresh()
         nh = nh + 1
         if e.facts.kind == "raid" then anyRaid = true end
         local r = HeadRow(self, nh)
-        FillHead(r, e, now)
+        FillHead(r, e, now, width - 4)
         r:ClearAllPoints()
         r:SetPoint("TOPLEFT", self.child, "TOPLEFT", 0, -y)
         r:SetWidth(width - 4)
         r:Show()
-        y = y + sz.head + 2
+        y = y + r:GetHeight() + 2
         if not Collapsed(e.run) then
             local wing
             for _, b in ipairs(e.view.bosses) do

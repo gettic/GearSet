@@ -226,7 +226,7 @@ Theme.sizes = {
     -- shopping list's max width (#5), inline icon size in the status column (#7).
     plan = { head = 26, row = 20, indent = 18, pieceX = 200, icon = 16, button = 16, top = 64,
         foldX = 4, pinX = 22, nameX = 42, nameW = 240, infoX = 290, infoW = 170, countW = 70, gap = 6, rightW = 80,
-        titleX = 16, titleY = -12, summaryX = -30, summaryY = -14, sectionH = 24, shopW = 520, inline = 14 },
+        titleX = 16, titleY = -12, summaryX = -30, summaryY = -14, sectionH = 24, shopW = 520, line = 12, statusLines = 3, inline = 14 },
     tracker = { width = 240, head = 26, row = 14, maxRows = 12, pad = 6, indent = 18, button = 18, fold = 16,
         titleX = 7, tickX = 4, viaIndent = 4, countGap = 4 },
 }
