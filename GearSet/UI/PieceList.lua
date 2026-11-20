@@ -93,6 +93,15 @@ local function PieceTooltip(row)
     local p = row.piece
     if not p then return end
     GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
+    if p.unknown then   -- v1.0.1: the client has no item to show
+        GameTooltip:SetText((L.UNKNOWN_ITEM or "Item %d"):format(p.itemID), 1, 1, 1)
+        local r, g, b = Theme.colors.later:GetRGB()
+        GameTooltip:AddLine(ns.Data.FlagText("FLAG_UNKNOWN"), r, g, b, true)
+        GameTooltip:AddLine(" ")
+        Theme.AddHint(GameTooltip, L.PIECE_TIP)
+        GameTooltip:Show()
+        return
+    end
     GameTooltip:SetItemByID(p.itemID)
     pcall(AddAltTooltip, GameTooltip, p, ns.Owned:GetState(p))
     -- beta.8: gold (PART B's Gold.lua) and tracking
@@ -158,7 +167,8 @@ local function BuildRow(row)
     check:SetScript("OnEnter", function(self)
         local p = row.piece
         if not p then return end
-        if row.laterOff then W.SimpleTip(self, ns.Data.FlagText("FLAG_LATER"))
+        if p.unknown then W.SimpleTip(self, ns.Data.FlagText("FLAG_UNKNOWN"))
+        elseif row.laterOff then W.SimpleTip(self, ns.Data.FlagText("FLAG_LATER"))
         else W.SimpleTip(self, W.ShowsOnModel(p) and L.SHOW_PIECE_TIP or L.NO_MODEL_TIP) end
     end)
     check:SetScript("OnLeave", GameTooltip_Hide)
@@ -251,7 +261,8 @@ InitRow = function(row, piece)
     local hidden = ns.Preview:IsHidden(itemID)
     -- Not out yet in a released set: greyed, not on the model, not counted (set.later).
     local set = PieceList.set
-    local laterOff = piece.later and not (set and set.unreleased)
+    -- v1.0.1: a piece this client doesn't know looks the same way (greyed, off the model).
+    local laterOff = (piece.later and not (set and set.unreleased)) or piece.unknown == true
     row.laterOff = laterOff
     row.icon:SetDesaturated(hidden or laterOff)
 
@@ -263,11 +274,22 @@ InitRow = function(row, piece)
         row.check:Disable()
     end
 
-    W.FillItem(row, itemID, OnRowItemLoaded)
-    row.name:SetAlpha(piece.later and 0.6 or 1)
+    if piece.unknown then
+        -- never loads: no "Loading..." that stays forever
+        row.gsItem = itemID
+        if row.border then row.border:Hide() end
+        row.name:SetText((L.UNKNOWN_ITEM or "Item %d"):format(itemID))
+        row.name:SetTextColor(Theme.colors.later:GetRGB())
+    else
+        W.FillItem(row, itemID, OnRowItemLoaded)
+    end
+    row.name:SetAlpha((piece.later or piece.unknown) and 0.6 or 1)
 
     local state = ns.Owned:GetState(piece)
-    if piece.later and not ns.Owned:IsHave(piece) then
+    if piece.unknown then
+        row.state:SetText(L.STATE_unknown or "Not in this game version")
+        row.state:SetTextColor(Theme.colors.later:GetRGB())
+    elseif piece.later and not ns.Owned:IsHave(piece) then
         row.state:SetText(ns.Data.FlagText("FLAG_LATER_SHORT"))
         row.state:SetTextColor(Theme.colors.later:GetRGB())
     else
@@ -276,7 +298,7 @@ InitRow = function(row, piece)
     end
     -- Under the state: the alt line, else (piece still needed) its fixed gold cost.
     local extra = PieceList.AltLine(piece, state)
-    if not extra and not ns.Owned:IsHave(piece) and ns.Progress and ns.Progress.PieceMoney then
+    if not extra and not piece.unknown and not ns.Owned:IsHave(piece) and ns.Progress and ns.Progress.PieceMoney then
         extra = ns.Progress.PieceMoney(itemID)
     end
     PlaceAltLine(row, extra)
@@ -524,6 +546,7 @@ local BREAKDOWN = {
     { "equipped", "STATE_equipped" }, { "bags", "STATE_bags" }, { "bank", "STATE_bank" },
     { "mail", "STATE_mail" }, { "keyring", "STATE_keyring" }, { "account", "STATE_account" },
     { "look", "APPEARANCE_ONLY" }, { "need", "STATE_need" },
+    { "unknown", "STATE_unknown" },   -- v1.0.1: pieces this client doesn't know (in the total)
 }
 -- "Finished on 2026-11-18" (+ "Stays finished ..." when pieces were upgraded away).
 -- Also used by the set list tooltip. Returns true when a line was added.
@@ -549,7 +572,7 @@ local function CountTooltip(self)
     GameTooltip:SetText(L.HAVE_COUNT:format(ns.Owned:SetCount(set)), 1, 1, 1)
     for _, e in ipairs(BREAKDOWN) do
         if (b[e[1]] or 0) > 0 then
-            local r, g, bl = W.StateColor(e[1]):GetRGB()
+            local r, g, bl = (e[1] == "unknown" and Theme.colors.later or W.StateColor(e[1])):GetRGB()
             local vr, vg, vb = Theme.colors.text:GetRGB()
             GameTooltip:AddDoubleLine(L[e[2]] or e[2], b[e[1]], r, g, bl, vr, vg, vb)
         end

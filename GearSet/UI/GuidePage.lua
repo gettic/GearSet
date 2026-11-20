@@ -32,6 +32,13 @@ local function ItemTooltip(self)
     local p = GuidePage.piece
     if not p then return end
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    if p.unknown then   -- v1.0.1: no item in this client to show
+        GameTooltip:SetText((L.UNKNOWN_ITEM or "Item %d"):format(p.itemID), 1, 1, 1)
+        local r, g, b = Theme.colors.later:GetRGB()
+        GameTooltip:AddLine(ns.Data.FlagText("FLAG_UNKNOWN"), r, g, b, true)
+        GameTooltip:Show()
+        return
+    end
     GameTooltip:SetItemByID(p.itemID)
     GameTooltip:AddLine(" ")
     Theme.AddHint(GameTooltip, L.PIECE_TIP_MOD)
@@ -725,12 +732,19 @@ function GuidePage:FillHeader()
         self.state:SetTextColor(W.StateColor(state):GetRGB())
     end
 
-    if W.FillItem(self, itemID, OnItemLoaded) then FitName(self.name) else Theme.Font(self.name, "header") end
+    if p.unknown then
+        -- v1.0.1: the client doesn't know this item, so it never loads (no endless "Loading...")
+        self.gsItem = itemID
+        if self.border then self.border:Hide() end
+        self.name:SetText((L.UNKNOWN_ITEM or "Item %d"):format(itemID))
+        self.name:SetTextColor(Theme.colors.later:GetRGB())
+        Theme.Font(self.name, "header")
+    elseif W.FillItem(self, itemID, OnItemLoaded) then FitName(self.name) else Theme.Font(self.name, "header") end
 
     -- Show on model: like the row's check box (neck, rings, trinkets can't show; nor a
     -- piece not out yet in a released set: the model only wears set.pieces).
     local check = self.modelCheck
-    if W.ShowsOnModel(p) and not (p.later and self.set and not self.set.unreleased) then
+    if W.ShowsOnModel(p) and not p.unknown and not (p.later and self.set and not self.set.unreleased) then
         check:Enable()
         check:SetChecked(not ns.Preview:IsHidden(itemID))
         self.modelLabel:SetTextColor(Theme.colors.text:GetRGB())
@@ -795,7 +809,7 @@ function GuidePage:Step(delta, needOnly)
         for s = 1, count - 1 do
             local i = (idx - 1 + delta * s) % count + 1
             local sp = list[i]
-            if not sp.later and not ns.Owned:IsHave(sp) then target = i; break end
+            if not sp.later and not sp.unknown and not ns.Owned:IsHave(sp) then target = i; break end
         end
     end
     self:Open(list[target], set)

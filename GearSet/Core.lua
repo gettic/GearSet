@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.DB_VERSION = 4
+ns.DB_VERSION = 5
 
 -- All user-facing text in one place (ready for translations later).
 ns.L = {
@@ -42,6 +42,17 @@ ns.L = {
     STATE_mail = "In mailbox",
     STATE_keyring = "On keyring",
     STATE_account = "Account bank",
+    -- v1.0.1 (F1): a released piece this game client doesn't know (counts in the total, never "have")
+    STATE_unknown = "Not in this game version",
+    G_STATE_unknown = "Not in this game version yet",
+    FLAG_UNKNOWN = "This game version doesn't know this item yet, so it can't be got for now. It still counts in the set's total.",
+    UNKNOWN_ITEM = "Item %d",
+    UNKNOWN_COUNT = "%d not in this game version",
+    -- v1.0.1 (F2): tooltip line on Dungeon Set 1 pieces
+    TIP_KEEP_D2 = "Keep it: the Dungeon Set 2 quests take this piece",
+    TIP_KEEP_D2_LATER = "Keep it: the Dungeon Set 2 quests take this piece (not out yet)",
+    -- v1.0.1 (F5): filter
+    HIDE_LATER = "Hide sets not out yet",
     ALL_CLASSES = "All classes",
     UNKNOWN_SET = "Set %d",
     ANY_CAN_WEAR = "(any class can wear it)",
@@ -419,6 +430,7 @@ local defaults = {
         showHidden = false,      -- DB v2: list hidden sets too (greyed)
         trackedOnly = false,     -- DB v4: only tracked sets (or sets with a tracked piece)
         tier = "",               -- DB v4: "" = all, else a tier tag ("T1"; Progress page bars set it)
+        hideLater = false,       -- DB v5 (v1.0.1): hide sets not out yet on WoW Forever
     },
     sort = "owned",              -- set list order: "owned", "closest", "name", "effort" (v2)
     search = "",
@@ -535,7 +547,7 @@ function ns.PrepareDB(t)
     if type(t.version) == "string" and Finite(t.version) then t.version = tonumber(t.version) end
     ApplyDefaults(t, defaults)
     ValidateDB(t)
-    -- Migrations (compare t.version). v1 -> v2, v2 -> v3 and v3 -> v4 only add keys (ApplyDefaults
+    -- Migrations (compare t.version). v1 -> v2, v2 -> v3, v3 -> v4 and v4 -> v5 only add keys (ApplyDefaults
     -- above). v3: a char record written in the planned beta.3 shape (one `items` string, no
     -- `places`) gets its items as bags; the old key stays. A newer version number is never
     -- lowered, so an older build opening newer data doesn't mark it as old.

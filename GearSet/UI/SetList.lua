@@ -88,6 +88,11 @@ function SetList.AddFlagLines(tip, set)
         local r, g, b = c.flagLater:GetRGB()
         tip:AddLine(D.FlagText("FLAG_LATER_COUNT"):format(nLater), r, g, b, true)
     end
+    local nUnknown = type(set.unknown) == "table" and #set.unknown or 0   -- v1.0.1
+    if nUnknown > 0 then
+        local ur, ug, ub = c.flagLater:GetRGB()
+        tip:AddLine((L.UNKNOWN_COUNT or "%d not in this game version"):format(nUnknown), ur, ug, ub, true)
+    end
     local r, g, b = (set.checked and c.flagChecked or c.flagClassic):GetRGB()
     tip:AddLine(D.FlagText(set.checked and "FLAG_CHECKED" or "FLAG_CLASSIC"), r, g, b, true)
 end
@@ -442,10 +447,11 @@ end
 -- Filter defaults: Core.lua's defaults.filters (ns.FILTER_DEFAULTS). "Only my class"
 -- and "Only my faction" are on by default, so they only count as changed when off.
 local FALLBACK_DEFAULTS = { class = 0, armor = 0, usable = true, hideComplete = false,
-    showRemoved = false, kind = "", myFaction = true, showHidden = false, trackedOnly = false, tier = "" }
+    showRemoved = false, kind = "", myFaction = true, showHidden = false, trackedOnly = false, tier = "",
+    hideLater = false }
 local function Defaults() return ns.FILTER_DEFAULTS or FALLBACK_DEFAULTS end
 -- Filters this file knows even before Core's defaults list them (DB v2).
-local EXTRA_DEFAULTS = { showHidden = false, trackedOnly = false, tier = "" }
+local EXTRA_DEFAULTS = { showHidden = false, trackedOnly = false, tier = "", hideLater = false }
 
 local function DiffersFrom(f, k, v)
     if type(v) == "boolean" then return (not f[k]) ~= (not v) end
@@ -601,6 +607,8 @@ local function SetupMenu(owner, root)
     root:CreateCheckbox(L.USABLE, function() return f.usable end, function() SetList.ToggleUsable(f); Changed() end)
     root:CreateCheckbox(L.MY_FACTION, function() return f.myFaction end, function() f.myFaction = not f.myFaction; Changed() end)
     root:CreateCheckbox(L.HIDE_COMPLETE, function() return f.hideComplete end, function() f.hideComplete = not f.hideComplete; Changed() end)
+    root:CreateCheckbox(T("HIDE_LATER", "Hide sets not out yet"), function() return f.hideLater end,
+        function() f.hideLater = not f.hideLater; Changed() end)
     root:CreateCheckbox(L.SHOW_REMOVED, function() return f.showRemoved end, function() f.showRemoved = not f.showRemoved; Changed() end)
     if ns.Data and ns.Data.IsHidden then
         root:CreateCheckbox(T("SHOW_HIDDEN", "Show hidden sets"), function() return f.showHidden end,
@@ -635,6 +643,7 @@ function SetList.EmptyReason(search, f)
     if f.usable then parts[#parts + 1] = L.USABLE end
     if f.myFaction then parts[#parts + 1] = L.MY_FACTION end
     if f.hideComplete then parts[#parts + 1] = L.HIDE_COMPLETE end
+    if f.hideLater then parts[#parts + 1] = T("HIDE_LATER", "Hide sets not out yet") end
     local filtersOn = FiltersDiffer(f)
     if #parts > 0 then
         lines[#lines + 1] = L.EMPTY_FILTERS:format(table.concat(parts, ", "))
@@ -853,12 +862,25 @@ local function FillRanks(list)
     end
 end
 
+-- v1.0.1 (F5): in every sort, sets out now come before sets not out yet on WoW Forever.
+-- Returns nil when both are the same, else the comparator's answer.
+local function LaterLess(a, b)
+    local la, lb = a.unreleased and true or false, b.unreleased and true or false
+    if la ~= lb then return lb end
+    return nil
+end
+SetList.LaterLess = LaterLess
+
 local function ByName(a, b)
+    local l = LaterLess(a, b)
+    if l ~= nil then return l end
     if a.name ~= b.name then return a.name < b.name end
     return a.key < b.key
 end
 
 local function OwnedFirstLess(a, b)
+    local l = LaterLess(a, b)
+    if l ~= nil then return l end
     local ga, gb = rGroup[a], rGroup[b]
     if ga ~= gb then return ga < gb end
     if rShare[a] ~= rShare[b] then return rShare[a] > rShare[b] end
@@ -879,6 +901,8 @@ end
 -- Closest to finishing: sets with some pieces first (fewest missing, then highest share),
 -- then untouched sets (fewest pieces), complete sets last; ties by name/key.
 local function ClosestLess(a, b)
+    local l = LaterLess(a, b)
+    if l ~= nil then return l end
     local ga, gb = rGroup[a], rGroup[b]
     if ga ~= gb then return ga < gb end
     if ga == 1 then
@@ -910,6 +934,8 @@ end
 local rEffort = {}
 
 local function EffortLess(a, b)
+    local l = LaterLess(a, b)
+    if l ~= nil then return l end
     if rEffort[a] ~= rEffort[b] then return rEffort[a] < rEffort[b] end
     return ByName(a, b)
 end

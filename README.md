@@ -4,7 +4,7 @@ Keeps track of all known armor sets in the game, in one window with three parts:
 
 A World of Warcraft addon for **WoW Forever**.
 
-Current version: **v1.0.0**.
+Current version: **v1.0.0**. A beta, v1.0.1-beta.1, is on the addon manager's beta channel.
 
 ## Install
 
@@ -54,7 +54,7 @@ Open them with the gear button at the top right of the window, a right-click on 
 | What | How |
 |---|---|
 | Find a set | Type in the search box. A tier tag works too: "t2" or "tier 2" finds the Tier 2 sets. See [Search](#search) for more |
-| Filter | The filter menu shows your current choice for Sort, Class, Armor type and Content. Choices: Class, Armor type, Content (Dungeon, Raid, PvP, Crafted, World, WoW Forever), "Only my class" (on by default for new installs), "Only my faction" (on by default), "Hide complete sets", "Show removed sets", "Show hidden sets", "Reset filters" (puts every filter back to its default; the sort stays) |
+| Filter | The filter menu shows your current choice for Sort, Class, Armor type and Content. Choices: Class, Armor type, Content (Dungeon, Raid, PvP, Crafted, World, WoW Forever), "Only my class" (on by default for new installs), "Only my faction" (on by default), "Hide complete sets", "Hide sets not out yet", "Show removed sets", "Show hidden sets", "Reset filters" (puts every filter back to its default; the sort stays) |
 | Only my class | Picking a class turns this off, and turning it on sets Class back to All, so the two never hide every set. It keeps sets your class can wear. Dungeon Set 1 and 2 are matched to the classes they were made for. Other sets for all classes show only if your class can wear their armor type |
 | Removed sets | Sets taken out of the game in patch 1.11 (old PvP rare sets) are hidden. "Show removed sets" shows them with a grey name |
 | Faction | PvP and Arathi Basin sets show a small faction icon. "Only my faction" hides the other faction's sets |
@@ -63,7 +63,7 @@ Open them with the gear button at the top right of the window, a right-click on 
 | Hide a set | Right-click it and pick "Hide this set". "Show hidden sets" in the filter menu lists hidden sets again in grey with a "hidden" tag; right-click one and pick "Show this set". "Reset filters" turns "Show hidden sets" off. Hidden sets are kept through `/reload` and updates |
 | Tier | The set tooltip shows the tier tag (Dungeon Set 1/2, Tier 1-3, Zul'Gurub, Ruins / Temple of Ahn'Qiraj, PvP), for example "Tier: Tier 2" |
 | Sort | In the filter menu: "Most owned first" (default), "Closest to finishing", "Least effort" or "Name" |
-| Order | "Most owned first": complete sets first, then sets you have some pieces of, then the rest. In each group, the sets you own most of come first, then A-Z. "Closest to finishing": sets missing the fewest pieces first, complete sets last. "Least effort": sets that need the least work for the pieces you still need first, then sets with unknown effort, complete sets last. The chosen set stays in view when the order changes |
+| Order | "Most owned first": complete sets first, then sets you have some pieces of, then the rest. In each group, the sets you own most of come first, then A-Z. "Closest to finishing": sets missing the fewest pieces first, complete sets last. "Least effort": sets that need the least work for the pieces you still need first, then sets with unknown effort, complete sets last. In every order, sets that are out now come before sets not out yet. The chosen set stays in view when the order changes |
 | Finished sets | A set you finished stays finished, even after you upgrade or sell pieces. Its tooltip shows the date you finished it |
 | Track a set | Shift-click it. A gold star shows on the row. Tracking is saved per character |
 | Right-click menu | Track, Share in chat, Hide |
@@ -100,6 +100,8 @@ Next to "Set bonuses" are two more hovers:
 | Gold cost | Under the state, the fixed gold it costs, when known. Pieces that bind when picked up say "can't be bought". See [Gold costs](#gold-costs) |
 | Try it on | Ctrl-click a piece to open the dressing room |
 | No source | "Source unknown" means the addon has no entry for that piece |
+| Not in this game version | A piece this game version doesn't know yet shows greyed as "Not in this game version". It still counts in the set's total, so a set can't look finished too early |
+| Keep it | Dungeon Set 1 pieces have a grey tooltip line "Keep it: the Dungeon Set 2 quests take this piece", so you don't sell them |
 
 ### Piece guide
 
@@ -202,7 +204,7 @@ Most of the data is classic data, not yet checked on WoW Forever. The guide page
 |---|---|
 | Checked on WoW Forever | The set and its sources were checked on Forever (the Dungeon Set 1 sets and the 4 WoW Forever sets) |
 | Not confirmed on WoW Forever yet (classic data) | Classic data, not checked on Forever yet |
-| Not yet released / Not out yet | Not out on Forever yet. The set or piece is greyed and left out of "Have x / y". Right now: the raid sets (Tier 1-3, Zul'Gurub, Ahn'Qiraj, Onyxia), Dungeon Set 2, the PvP rank and Arathi Basin sets, and the Zul'Gurub crafted sets |
+| Not yet released / Not out yet | Not out on Forever yet. The set or piece is greyed and left out of "Have x / y". Right now: the raid sets (Tier 1-3, Zul'Gurub, Ahn'Qiraj, Onyxia), Dungeon Set 2, the PvP rank and Arathi Basin sets, the Zul'Gurub crafted sets, and the four Scourge Invasion sets (Necrotic Rune shoulders and robes, Argent Dawn gloves), because no source says the invasion runs on WoW Forever |
 
 ## Colours
 

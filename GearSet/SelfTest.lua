@@ -705,6 +705,12 @@ local V4_SAMPLE = {
     prices = { [16820] = { c = 120000, t = 1300 }, [16821] = { c = 0, x = "2805 Honor Points", t = 1300 } },
 }
 
+-- v1.0.1 (DB v5): "Hide sets not out yet" on (made-up "A" again).
+local V5_SAMPLE = {
+    version = 5, filters = { hideLater = true, trackedOnly = true },
+    tracked = { ["A-Realm"] = { ["set:181"] = true } },
+}
+
 local function CheckSaved()
     local prep = ns.PrepareDB
     Count()
@@ -797,7 +803,7 @@ local function CheckSaved()
     if not ok then
         Problem("DB", "v4", Short(err))
     else
-        local lost = Lost(V4_SAMPLE, v4)
+        local lost = Lost(V4_SAMPLE, v4, nil, 0, { version = true })   -- v1.0.1: version raised to 5
         if lost then Problem("DB", "v4", "changed " .. lost) end
     end
     Count()
@@ -808,6 +814,30 @@ local function CheckSaved()
     elseif bad4.filters.tier ~= "" or bad4.progress.scope ~= "char" or bad4.progress.got.keep ~= 1 then
         Problem("DB", "bad v4", "not fixed or data lost")
     end
+    -- 3d. v1.0.1 (DB v5): v4 data gets filters.hideLater = false, nothing else changes; v5 data
+    -- goes through unchanged; a wrong-typed hideLater falls back.
+    Count()
+    local v4b = DeepCopy(V4_SAMPLE)
+    ok, err = pcall(prep, v4b)
+    if not ok then
+        Problem("DB", "v4 -> v5", Short(err))
+    elseif v4b.filters.hideLater ~= false or v4b.version ~= ns.DB_VERSION then
+        Problem("DB", "v4 -> v5", "v5 key not added")
+    end
+    Count()
+    local v5 = DeepCopy(V5_SAMPLE)
+    ok, err = pcall(prep, v5)
+    if not ok then
+        Problem("DB", "v5", Short(err))
+    else
+        local lost = Lost(V5_SAMPLE, v5)
+        if lost then Problem("DB", "v5", "changed " .. lost) end
+    end
+    Count()
+    local bad5 = { version = 5, filters = { hideLater = "yes" } }
+    ok, err = pcall(prep, bad5)
+    if not ok then Problem("DB", "bad v5", Short(err))
+    elseif bad5.filters.hideLater ~= false then Problem("DB", "bad v5", "hideLater not fixed") end
 
     -- Learned vendor prices (Prices.lua): a count only.
     if type(db.prices) == "table" then
@@ -1218,7 +1248,7 @@ local function CheckData()
     Count()
     if bundled > 0 and #sets > bundled then Problem("DATA", "sets", ("%d built from %d"):format(#sets, bundled)) end
 
-    local badSets, items, unknown = {}, 0, {}
+    local badSets, items, unknown, released = {}, 0, {}, {}
     local instant = C_Item and C_Item.GetItemInfoInstant or GetItemInfoInstant
     for _, s in ipairs(sets) do
         Count()
@@ -1229,7 +1259,10 @@ local function CheckData()
             for _, p in ipairs(list) do
                 items = items + 1
                 if p.slot == nil then badSets[#badSets + 1] = tostring(s.key) .. " slot" end
-                if type(instant) == "function" then
+                if p.unknown then
+                    -- v1.0.1 (F1): a released piece this client doesn't know (kept in the total)
+                    released[#released + 1] = tostring(p.itemID)
+                elseif type(instant) == "function" then
                     local ok, id = pcall(instant, p.itemID)
                     if ok and id == nil then unknown[#unknown + 1] = tostring(p.itemID) end
                 end
@@ -1244,12 +1277,34 @@ local function CheckData()
         Problem("DATA", "items", ("%d unknown: %s"):format(#unknown, table.concat(unknown, ", ", 1, math.min(#unknown, MAX_LIST))))
     end
     if type(instant) ~= "function" then Skip("items", "(no API)") end
+    -- v1.0.1 (F1): released pieces (no "not out yet" flag) this client doesn't know: the data
+    -- says they're out, the game says they aren't. A problem, so the data gets checked.
+    Count()
+    if #released > 0 then
+        table.sort(released)
+        Problem("DATA", "released unknown", ("%d pieces: %s"):format(#released,
+            table.concat(released, ", ", 1, math.min(#released, MAX_LIST))))
+    end
+    -- Owned counts them in the total and never marks such a set finished.
+    local O = ns.Owned
+    if O and O.SetCount and O.UnknownCount then
+        Count()
+        local fake = { key = "selftest-unknown", id = nil, pieces = {}, unknown = { { itemID = 1, unknown = true } } }
+        local okC, have, total = pcall(O.SetCount, O, fake)
+        if not okC then Problem("DATA", "unknown count", Short(have))
+        elseif have ~= 0 or total ~= 1 then
+            Problem("DATA", "unknown count", ("made-up set %s/%s, want 0/1"):format(tostring(have), tostring(total)))
+        end
+        if O.GetState and O:GetState(fake.unknown[1]) ~= "unknown" then
+            Problem("DATA", "unknown count", "state is not unknown")
+        end
+    end
 
     -- Bundled items this client doesn't know (Data skips them while building): info only.
     local built, bundledItems, missing = {}, 0, {}
     for _, s in ipairs(sets) do
         for _, p in ipairs(type(s.shown or s.pieces) == "table" and (s.shown or s.pieces) or {}) do
-            built[p.itemID] = true
+            if not p.unknown then built[p.itemID] = true end
         end
     end
     local seenItem = {}
@@ -1303,6 +1358,43 @@ local function CheckData()
     local ok, list = pcall(D.Filter, D, "", filters)
     if not ok then Problem("DATA", "filter", Short(list))
     elseif type(list) ~= "table" or #list == 0 then Problem("DATA", "filter", "no sets with every filter off") end
+    -- v1.0.1 (F5): "Hide sets not out yet" leaves none of them; sorting puts released sets first.
+    Count()
+    filters.hideLater = true
+    local okH, listH = pcall(D.Filter, D, "", filters)
+    if not okH then Problem("DATA", "hide later", Short(listH))
+    else
+        for _, s in ipairs(type(listH) == "table" and listH or {}) do
+            if s.unreleased then Problem("DATA", "hide later", "still lists " .. tostring(s.key)); break end
+        end
+    end
+    local SLs = ns.SetList
+    if ok and type(list) == "table" and SLs and type(SLs.LaterLess) == "function" then
+        Count()
+        local sorted = {}
+        for i, s in ipairs(list) do sorted[i] = s end
+        local okS = pcall(table.sort, sorted, function(a, b)
+            local l = SLs.LaterLess(a, b)
+            if l ~= nil then return l end
+            return a.key < b.key
+        end)
+        local seenLater
+        for _, s in ipairs(okS and sorted or {}) do
+            if s.unreleased then seenLater = true
+            elseif seenLater then Problem("DATA", "sort", "a released set after a set not out yet"); break end
+        end
+    end
+    -- The list on screen (no search text: plain sets) in the saved sort order.
+    if SLs and type(SLs.list) == "table" and not (DB() and DB().search ~= nil and DB().search ~= "") then
+        Count()
+        local seenLater
+        for _, s in ipairs(SLs.list) do
+            if type(s) == "table" and s.key and not s.gsKind then
+                if s.unreleased then seenLater = true
+                elseif seenLater then Problem("UI", "sets", "a released set listed after a set not out yet"); break end
+            end
+        end
+    end
     if D.GetEffort then
         Count()
         local failed, first = 0, nil
@@ -1430,6 +1522,33 @@ local function CheckHooks()
             local okO, other = pcall(Tip.LinesFor, OTHER_ITEM)
             if not okO or type(other) ~= "table" or #other > 0 then
                 Problem("HOOK", "tooltip", "line on a non-set item")
+            end
+            -- v1.0.1 (F2): a Dungeon Set 1 piece gets the "keep it" line, a T1 piece doesn't.
+            if type(Tip.KeepLine) == "function" then
+                local d1Item
+                local ids = {}
+                for setID in pairs(type(ns.ClassicSets) == "table" and ns.ClassicSets or {}) do ids[#ids + 1] = setID end
+                table.sort(ids)
+                for _, setID in ipairs(ids) do
+                    local e = ns.ClassicSets[setID]
+                    if type(e) == "table" and e.t == "D1" and type(e.i) == "table" and e.i[1] then d1Item = e.i[1]; break end
+                end
+                local keepText = (ns.L and ns.L.TIP_KEEP_D2_LATER) or "Keep it"
+                local keepShort = keepText:match("^[^:]+") or keepText
+                local function HasKeep(itemID)
+                    local okK, lines = pcall(Tip.LinesFor, itemID)
+                    if not okK or type(lines) ~= "table" then return nil end
+                    for _, l in ipairs(lines) do
+                        if type(l) == "string" and l:find(keepShort, 1, true) then return true end
+                    end
+                    return false
+                end
+                if d1Item then
+                    Count()
+                    if HasKeep(d1Item) ~= true then Problem("HOOK", "tooltip", "no keep line on D1 piece " .. d1Item) end
+                end
+                Count()
+                if HasKeep(SET_ITEM) == true then Problem("HOOK", "tooltip", "keep line on a non-D1 piece") end
             end
         end
     end

@@ -148,6 +148,11 @@ end
 
 -- have, total for a character (nil = this one). Alts first; this character falls back to Owned.
 local function Progress(set, setID, charKey)
+    -- v1.0.1 (F1): this character's count of a set with pieces this client doesn't know comes
+    -- from Owned (they count in the total there, and an old "finished" date isn't used).
+    if charKey == nil and set and ns.Owned and ns.Owned.UnknownCount and ns.Owned.UnknownCount(set) > 0 then
+        return ns.Owned:SetCount(set)
+    end
     local A = ns.Alts
     if A and A.GetSetProgress then
         local ok, h, t = pcall(A.GetSetProgress, A, setID, charKey)
@@ -245,6 +250,38 @@ function Tip.Need()
     return Wrap(Theme.colors.tipNeed or Theme.colors.tipName, L.TIP_NEED)
 end
 
+-- v1.0.1 (F2): Dungeon Set 1 pieces are taken by the Dungeon Set 2 quests. From the raw
+-- bundled table (tier tag t), no set list needed. D2 counts as out when any D2 set has no u flag.
+local d2Out
+function Tip.D2Out()
+    if d2Out ~= nil then return d2Out end
+    d2Out = false
+    local sets = ns.ClassicSets
+    if type(sets) ~= "table" then return d2Out end
+    for _, e in pairs(sets) do
+        if type(e) == "table" and e.t == "D2" and (e.u == nil or e.u == false or e.u == 0) then
+            d2Out = true
+            break
+        end
+    end
+    return d2Out
+end
+
+-- The grey "keep it" line for an item in a D1 set (nil for anything else).
+function Tip.KeepLine(ids)
+    local sets = ns.ClassicSets
+    if type(sets) ~= "table" or type(ids) ~= "table" then return nil end
+    for _, setID in ipairs(ids) do
+        local e = sets[setID]
+        if type(e) == "table" and e.t == "D1" then
+            local text = Tip.D2Out() and (L.TIP_KEEP_D2 or "Keep it: the Dungeon Set 2 quests take this piece")
+                or (L.TIP_KEEP_D2_LATER or "Keep it: the Dungeon Set 2 quests take this piece (not out yet)")
+            return Tip.Note(text)
+        end
+    end
+    return nil
+end
+
 -- Lines for one item (list of strings; empty for non-set items). Used by the hook and tests.
 -- One set: "Gear Set: have 5/8 - you need this" (the set name is already in Blizzard's set
 -- block just above). Two or more sets: "Gear Set: <set> 5/8 - you need this" per set.
@@ -278,6 +315,8 @@ function Tip.LinesFor(itemID)
         local alts = NeededBy(set, setID, held)
         if alts then out[#out + 1] = alts end
     end
+    local keep = Tip.KeepLine(ids)
+    if keep then out[#out + 1] = keep end
     return out
 end
 

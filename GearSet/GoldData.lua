@@ -9,7 +9,10 @@ ns.GoldData = {
   v = 1,
   quest = {
     ["An Earnest Proposition"] = 20,     -- Dungeon Set 2 bracers
-    ["Just Compensation"] = 80,          -- Dungeon Set 2 belt + gloves step
+    -- D2 belt + gloves step: Just Compensation itself costs no gold. The 80 g is paid earlier in the
+    -- Mux Manascrambler side chain (The Ectoplasmic Distiller 40 g, with the Delicate Arcanite Converter;
+    -- A Shifty Merchant 40 g, Fel Elemental Rod). Kept under this key: the pieces' source is this quest.
+    ["Just Compensation"] = 80,
     ["Saving the Best for Last"] = 120,  -- Dungeon Set 2 helm + chest step (Hallowed Brazier)
     ["Bonescythe Helmet"] = 75,
     ["Bonescythe Legplates"] = 100,

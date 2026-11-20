@@ -48,6 +48,7 @@ end
 
 function Owned:GetState(piece)
     local id = piece.itemID
+    if piece.unknown then return "unknown" end   -- v1.0.1: not in this game version (never "have")
     local s = stateCache[id]
     if s then return s end
     if EquippedSet()[id] then
@@ -74,6 +75,12 @@ function Owned:IsHave(piece)
     return self.HAVE[self:GetState(piece)] == true
 end
 
+-- Released pieces of a set this client doesn't know (Data's set.unknown), 0 when none.
+function Owned.UnknownCount(set)
+    local u = set and set.unknown
+    return type(u) == "table" and #u or 0
+end
+
 -- have, total for a set (cached). beta.7: a set once complete stays complete (Alts keeps the
 -- date per character), so upgrading pieces away doesn't make it "unfinished" again.
 function Owned:SetCount(set)
@@ -83,8 +90,12 @@ function Owned:SetCount(set)
     for _, p in ipairs(set.pieces) do
         if self:IsHave(p) then have = have + 1 end
     end
+    -- v1.0.1 (F1): pieces this client doesn't know count in the total, never as have, and a
+    -- set with any of them is never marked finished (a date saved before stays saved, unused).
+    local unknown = Owned.UnknownCount(set)
+    total = total + unknown
     local A = ns.Alts
-    if A and set.id and total > 0 then
+    if A and set.id and total > 0 and unknown == 0 then
         if have >= total then
             if not set.unreleased then pcall(A.MarkCompleted, A, set.id) end
         else
@@ -100,6 +111,7 @@ end
 function Owned:CompletedOn(set)
     local A = ns.Alts
     if not (A and set and set.id) then return nil end
+    if Owned.UnknownCount(set) > 0 then return nil end   -- v1.0.1: an old date isn't shown
     self:SetCount(set)        -- marks it when complete right now
     local ok, t = pcall(A.IsCompleted, A, set.id)
     return ok and t or nil
@@ -113,6 +125,7 @@ function Owned:SetBreakdown(set)
         local s = self:GetState(p)
         out[s] = (out[s] or 0) + 1
     end
+    out.unknown = Owned.UnknownCount(set)   -- v1.0.1
     return out
 end
 

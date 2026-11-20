@@ -6,6 +6,8 @@
 --           later = { pieces of a released set that are not out yet }, shown = pieces + later }
 --   A piece not out yet has piece.later = true. set.pieces holds the pieces that count (have/total,
 --   model, bonuses); a released set's later pieces are only in set.later / set.shown (greyed, not counted).
+--   v1.0.1: set.unknown = released pieces this client doesn't know (piece.unknown = true); they
+--   are in set.shown and in Owned:SetCount's total (never "have"), not in set.pieces.
 --   Contract: plans\v1.0.0\beta1-interface.md.
 local _, ns = ...
 
@@ -110,6 +112,12 @@ local function MakePiece(itemID)
     return { itemID = itemID, slot = slot[1], order = slot[2], sourceID = sourceID }, armor
 end
 
+-- v1.0.1 (F1): a released piece this client doesn't know. Listed last (no slot), never on the
+-- model, never "have"; only in set.unknown and set.shown, counted by Owned:SetCount's total.
+local function UnknownPiece(itemID)
+    return { itemID = itemID, slot = 0, order = 99, unknown = true }
+end
+
 local function SortPieces(pieces)
     table.sort(pieces, function(a, b)
         if a.order ~= b.order then return a.order < b.order end
@@ -143,6 +151,7 @@ local FLAG_TEXT = {
     FLAG_SRC_LATER = "This way is not out on WoW Forever yet.",
     FLAG_LATER_SHORT = "Not out yet",
     FLAG_LATER_COUNT = "%d more not out yet",
+    FLAG_UNKNOWN = "This game version doesn't know this item yet, so it can't be got for now. It still counts in the set's total.",
 }
 function Data.FlagText(key)
     local L = ns.L
@@ -190,7 +199,7 @@ local function BuildClassic(out)
     if type(tbl) ~= "table" then return end
     for setID, entry in pairs(tbl) do
         if type(entry) == "table" and type(entry.i) == "table" then
-            local pieces, later = {}, {}
+            local pieces, later, unknown = {}, {}, {}
             local whole = IsOn(entry.u)
             local upSet
             if type(entry.up) == "table" then
@@ -201,9 +210,14 @@ local function BuildClassic(out)
             local count, best, bestN = {}, 0, 0
             for _, itemID in ipairs(entry.i) do
                 local p, armor = MakePiece(itemID)
+                local isLater = whole or (upSet and upSet[itemID]) or AllSourcesLater(itemID)
                 if p then
-                    if whole or (upSet and upSet[itemID]) or AllSourcesLater(itemID) then p.later = true end
+                    if isLater then p.later = true end
                     if p.later and not whole then later[#later + 1] = p else pieces[#pieces + 1] = p end
+                elseif not isLater and type(itemID) == "number" then
+                    -- v1.0.1 (F1): a released piece this client doesn't know still counts in
+                    -- the set's total (never as "have"), so the set can't look complete early.
+                    unknown[#unknown + 1] = UnknownPiece(itemID)
                 end
                 if armor then
                     count[armor] = (count[armor] or 0) + 1
@@ -216,11 +230,13 @@ local function BuildClassic(out)
             end
             if #pieces > 0 then  -- sets whose items this client lacks are skipped
                 SortPieces(pieces)
+                if whole then unknown = {} end   -- a set not out yet: unknown pieces stay out (as before)
                 local shown = pieces
-                if #later > 0 then
+                if #later > 0 or #unknown > 0 then
                     SortPieces(later)
                     shown = {}
                     for _, p in ipairs(pieces) do shown[#shown + 1] = p end
+                    for _, p in ipairs(unknown) do shown[#shown + 1] = p end
                     for _, p in ipairs(later) do shown[#shown + 1] = p end
                 end
                 local name = GetItemSetInfo and GetItemSetInfo(setID)
@@ -231,6 +247,7 @@ local function BuildClassic(out)
                     armor = best,
                     pieces = pieces,
                     later = later,
+                    unknown = unknown,
                     shown = shown,
                     -- optional fields (missing = old behaviour)
                     hint = tonumber(entry.h) or 0,
@@ -269,9 +286,10 @@ end
 -- use letters other than f/u, or have more parts than the item has sources.
 function Data:FlagCounts()
     local c = { sets = 0, setsChecked = 0, setsUnreleased = 0, pieces = 0, piecesLater = 0,
-        sources = 0, sourcesChecked = 0, sourcesLater = 0, badFlags = 0 }
+        sources = 0, sourcesChecked = 0, sourcesLater = 0, badFlags = 0, piecesUnknown = 0 }
     for _, s in ipairs(self:GetSets()) do
         c.sets = c.sets + 1
+        c.piecesUnknown = c.piecesUnknown + #(s.unknown or {})
         if s.checked then c.setsChecked = c.setsChecked + 1 end
         if s.unreleased then c.setsUnreleased = c.setsUnreleased + 1 end
         for _, p in ipairs(s.shown or s.pieces) do
@@ -362,6 +380,7 @@ function Data:Filter(search, f)
     for _, s in ipairs(self:GetSets()) do
         local ok = true
         if s.removed and not f.showRemoved then ok = false end
+        if ok and f.hideLater and s.unreleased then ok = false end   -- v1.0.1 (F5)
         if ok and not f.showHidden and Data.IsHidden(s) then ok = false end
         if ok and search ~= "" and not s.name:lower():find(search, 1, true)
             and not (s.tier and (s.tier:lower():find(search, 1, true)
@@ -1089,7 +1108,7 @@ function Data:GetGuide(piece)
     local L = ns.L
     local itemID = piece and piece.itemID
     if not itemID then return {} end
-    local cacheKey = piece.later and (itemID .. "L") or itemID   -- same item, other set's flag
+    local cacheKey = (piece.unknown and (itemID .. "U")) or (piece.later and (itemID .. "L")) or itemID   -- same item, other set's flag
     local hit = guideCache[cacheKey]
     if hit then return hit end
     -- Only the page on screen is kept: a new piece drops the old blocks and parsed
@@ -1116,6 +1135,9 @@ function Data:GetGuide(piece)
     local out = {}
     Add(out, "head", L.G_HOW)
     if piece.later then out[#out + 1] = FlagBlock("later") end
+    if piece.unknown then   -- v1.0.1 (F1): drawn in the "not out yet" colour
+        out[#out + 1] = { k = "flag", flag = "later", text = Data.FlagText("FLAG_UNKNOWN") }
+    end
     if #own == 0 then Add(out, "text", L.SRC_UNKNOWN) end
     AddSources(out, own, itemID, ctx, state, piece.later)
     if not state.itemDone then AddRows(out, Data.GuideRecord("item", itemID), ctx) end
@@ -1436,7 +1458,7 @@ function Data:GetEffort(set)
     if hit then return hit end
     local L, mine = ns.L, Data.PlayerFaction()
     -- beta.7: a finished set stays finished (even after upgrading pieces away).
-    if ns.Alts and ns.Alts.IsCompleted and set.id and ns.Alts:IsCompleted(set.id) then
+    if ns.Alts and ns.Alts.IsCompleted and set.id and #(set.unknown or {}) == 0 and ns.Alts:IsCompleted(set.id) then
         local done = { level = 0, word = L.EFFORT_0, points = 0, reasons = {}, need = 0 }
         effortCache[set.key] = done
         return done
