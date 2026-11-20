@@ -4,7 +4,7 @@ Keeps track of all known armor sets in the game, in one window with three parts:
 
 A World of Warcraft addon for **WoW Forever**.
 
-Current version: **v1.0.0**. A beta, v1.0.1-beta.1, is on the addon manager's beta channel.
+Current version: **v1.0.0**. A beta, v1.0.1-beta.2, is on the addon manager's beta channel.
 
 ## Install
 
@@ -204,7 +204,7 @@ Most of the data is classic data, not yet checked on WoW Forever. The guide page
 |---|---|
 | Checked on WoW Forever | The set and its sources were checked on Forever (the Dungeon Set 1 sets and the 4 WoW Forever sets) |
 | Not confirmed on WoW Forever yet (classic data) | Classic data, not checked on Forever yet |
-| Not yet released / Not out yet | Not out on Forever yet. The set or piece is greyed and left out of "Have x / y". Right now: the raid sets (Tier 1-3, Zul'Gurub, Ahn'Qiraj, Onyxia), Dungeon Set 2, the PvP rank and Arathi Basin sets, the Zul'Gurub crafted sets, and the four Scourge Invasion sets (Necrotic Rune shoulders and robes, Argent Dawn gloves), because no source says the invasion runs on WoW Forever |
+| Not yet released / Not out yet | Not out on Forever yet. The set or piece is greyed and left out of "Have x / y". Right now: the raid sets (Tier 1-3, Zul'Gurub, Ahn'Qiraj, Onyxia), Dungeon Set 2, the PvP rank and Arathi Basin sets, the Zul'Gurub crafted sets, the four Scourge Invasion sets (Necrotic Rune shoulders and robes, Argent Dawn gloves), and Eskhandar's Pelt (Spirit of Eskhandar set, from Lord Kazzak; the client doesn't know the item yet), because no source says the invasion runs on WoW Forever |
 
 ## Colours
 
