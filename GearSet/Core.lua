@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.DB_VERSION = 5
+ns.DB_VERSION = 6
 
 -- All user-facing text in one place (ready for translations later).
 ns.L = {
@@ -53,6 +53,34 @@ ns.L = {
     TIP_KEEP_D2_LATER = "Keep it: the Dungeon Set 2 quests take this piece (not out yet)",
     -- v1.0.1 (F5): filter
     HIDE_LATER = "Hide sets not out yet",
+    -- 1.1 beta.1: dungeon checklist (UI\Tracker.lua) and loot-roll mark (LootMark.lua)
+    TRACKER_TITLE = "Gear Set - %s",
+    TRACKER_LEFT = "%d left",
+    TRACKER_TRASH = "Other enemies",
+    TRACKER_SKIP = "not out yet",
+    TRACKER_MORE = "+%d more",
+    TRACKER_NONE = "Nothing you need drops here.",
+    TRACKER_VIA = "for %s",
+    TRACKER_NOT_IN = "The checklist works inside a dungeon or raid.",
+    TRACKER_SKIP_HERE = "Don't show in this instance",
+    TRACKER_CLOSE_HERE = "Close until I leave",
+    TRACKER_COLLAPSE = "Collapse",
+    TRACKER_EXPAND = "Expand",
+    TRACKER_SETTINGS = "Settings",
+    TRACKER_TIP_HINT = "Drag: move. Right-click: options.",
+    TRACKER_WING = "Wing: %s",
+    TRACKER_ALTS = "Also needed by: %s",
+    LOOT_NEED = "Gear Set: you need this",
+    LOOT_ALTS = "Gear Set: needed by %s",
+    S_DUNGEONS = "Dungeons",
+    S_TRACKER = "Open the dungeon checklist by itself",
+    S_TRACKER_TIP = "In a dungeon or raid where you still need a set piece, a small list of its bosses and your pieces opens. Also /gs checklist.",
+    S_TRACKER_STARTED = "With nothing tracked, use sets I've started",
+    S_TRACKER_STARTED_TIP = "When you track no set or piece, the checklist and loot mark use the sets you have some pieces of and your class can wear.",
+    S_LOOT_MARK = "Mark set pieces on loot rolls",
+    S_LOOT_MARK_TIP = "A small star on the loot roll window when you or one of your other characters needs the item. It never rolls for you.",
+    S_SKIPPED_LABEL = "Instances you chose not to show",
+    S_SKIPPED = "Show them again (%d)",
     ALL_CLASSES = "All classes",
     UNKNOWN_SET = "Set %d",
     ANY_CAN_WEAR = "(any class can wear it)",
@@ -86,7 +114,7 @@ ns.L = {
     BONUS_ACTIVE = "Set: %s",
     BONUS_NONE = "No set bonus.",
     -- One command per line (HandleSlash prints each line on its own).
-    HELP = "/gs - open or close the window\n/gs reset - move the window back to the middle\n/gs minimap - show or hide the minimap button\n/gs check - show the data version and test the set list (for bug reports)\n/gs probe - test what this game client supports (for bug reports)\n/gs selftest - the addon checks itself (/gs selftest full also opens a guide page and the help)\n/gs config - open the settings\n/gs forget - forget one of your other characters\n/gs help - show this list and the help on the window",
+    HELP = "/gs - open or close the window\n/gs reset - move the window back to the middle\n/gs minimap - show or hide the minimap button\n/gs check - show the data version and test the set list (for bug reports)\n/gs probe - test what this game client supports (for bug reports)\n/gs selftest - the addon checks itself (/gs selftest full also opens a guide page and the help)\n/gs config - open the settings\n/gs checklist - show or hide the dungeon checklist (inside a dungeon or raid)\n/gs forget - forget one of your other characters\n/gs help - show this list and the help on the window",
     POS_RESET = "Window moved back to the middle.",
     MINIMAP_TIP_CLICK = "Click: open or close the window.",
     MINIMAP_TIP_DRAG = "Drag: move this button.",
@@ -470,6 +498,17 @@ local defaults = {
     -- DB v4 (additive, PART B's Prices.lua): prices[itemID] = { c = copper, x = "other cost", t = epoch },
     -- vendor prices learned in game, account-wide. Never cleared by a migration.
     prices = {},
+    -- DB v6 (1.1 beta.1, additive, UI\Tracker.lua / LootMark.lua): the dungeon checklist's
+    -- position, collapsed state, open by itself, use started sets when nothing is tracked,
+    -- skip[instanceKey] = true ("Don't show in this instance"); the loot-roll star on/off.
+    tracker = {
+        point = nil,
+        collapsed = false,
+        auto = true,
+        started = true,
+        skip = {},
+    },
+    lootMark = true,
 }
 
 -- Filter defaults, read by the set list's "Reset filters" (one place for both).
@@ -536,6 +575,7 @@ local function ValidateDB(db)
     -- for any other class); the picked class wins, like in the menu.
     if f.class ~= 0 and f.usable then f.usable = false end
     if not SORT_MODES[db.sort] then db.sort = defaults.sort end
+    if db.tracker.point ~= nil and not ns.ValidPoint(db.tracker.point) then db.tracker.point = nil end
     if not Finite(db.minimap.angle) then db.minimap.angle = defaults.minimap.angle end
 end
 
@@ -547,7 +587,7 @@ function ns.PrepareDB(t)
     if type(t.version) == "string" and Finite(t.version) then t.version = tonumber(t.version) end
     ApplyDefaults(t, defaults)
     ValidateDB(t)
-    -- Migrations (compare t.version). v1 -> v2, v2 -> v3, v3 -> v4 and v4 -> v5 only add keys (ApplyDefaults
+    -- Migrations (compare t.version). v1 -> v2, v2 -> v3, v3 -> v4, v4 -> v5 and v5 -> v6 only add keys (ApplyDefaults
     -- above). v3: a char record written in the planned beta.3 shape (one `items` string, no
     -- `places`) gets its items as bags; the old key stays. A newer version number is never
     -- lowered, so an older build opening newer data doesn't mark it as old.
@@ -743,6 +783,9 @@ local function HandleSlash(msg)
         local S = ns.Settings
         local opened = S and S.Open and S:Open()
         if not opened and not (S and S.IsAvailable and S:IsAvailable()) then ns.Print(ns.L.SETTINGS_MISSING) end
+    elseif msg == "checklist" then
+        -- 1.1 beta.1: show or hide the dungeon checklist for the instance you're in.
+        if ns.Tracker and ns.Tracker.Toggle then ns.Tracker:Toggle() end
     elseif msg:match("^forget%s*%d*$") then
         -- Same menu as the settings button; "/gs forget 2" picks from the numbered list it
         -- prints when the game has no menu.

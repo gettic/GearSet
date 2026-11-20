@@ -987,6 +987,7 @@ local function SourceEntries(itemID)
     end
     return out
 end
+Data.SourceEntries = SourceEntries   -- 1.1 beta.1: Runs.lua (where tracked pieces drop)
 
 -- Place lines: "Instance: name - raid, 40 players, level 60", "Where: ..."; the
 -- place's need rows are kept for the "Before you go" part.

@@ -36,6 +36,8 @@ Theme.templates = {
     helpArrow   = { "GlowBoxArrowTemplate" },
     -- Inspect strip under Blizzard's inspect window: a tooltip box (colours.inspectBg box if missing).
     inspectStrip = { "TooltipBackdropTemplate" },
+    -- 1.1 beta.1 dungeon checklist: X button (Blizzard's close button; a plain "x" if missing).
+    trackerClose = { "UIPanelCloseButtonNoScripts", "UIPanelCloseButton" },
 }
 
 Theme.art = {
@@ -132,6 +134,29 @@ Theme.art = {
     -- beta.9 guide Way button: the game's own map pin (Waypoint-MapPin-*), hover = its highlight
     -- (ADD). No atlas on this client: the button shows the word L.WAY_FALLBACK ("Way") in link colours.
     wayPin = { atlas = "Waypoint-MapPin-Untracked", hover = "Waypoint-MapPin-Highlight" },
+    -- 1.1 beta.1 dungeon checklist (Objective Tracker look). The tracker's own header atlas
+    -- (UI-QuestTracker-Header) is missing on WoW Forever (probe), so the line under the title is
+    -- the Settings divider, else a 1 px gold line. Tick on got pieces: the checkmark atlas, else
+    -- the ready-check tick file. Loot-roll mark: the same star as tracking, a bit bigger.
+    -- ui-b1 job A: the Objective Tracker's own header band (Forever ObjectiveTrackerModule.xml:22 /
+    -- ObjectiveTrackerContainer.xml:22) behind the title; missing -> the Settings divider under it,
+    -- tinted gold (`tint`), else a 1 px gold line (`color`).
+    trackerHeader = { atlases = { "UI-QuestTracker-Secondary-Objective-Header", "ui-questtracker-primary-objective-header" },
+        divider = "Options_HorizontalDivider", tint = { 1, 0.82, 0, 0.6 }, color = { 1, 0.82, 0, 0.5 } },
+    -- ui-b1 job A: the Objective Tracker's fold button (ObjectiveTrackerModule.xml:9-11, .lua:795-799),
+    -- 16 px with the yellow ADD highlight; missing -> the +/- files with the plus-button highlight file.
+    trackerFold = { atlases = { "ui-questtrackerbutton-secondary-collapse", "ui-questtrackerbutton-secondary-expand" },
+        collapse = "ui-questtrackerbutton-secondary-collapse", expand = "ui-questtrackerbutton-secondary-expand",
+        collapsePressed = "ui-questtrackerbutton-secondary-collapse-pressed",
+        expandPressed = "ui-questtrackerbutton-secondary-expand-pressed",
+        highlight = "ui-questtrackerbutton-yellow-highlight",
+        file = "Interface\\Buttons\\UI-PlusButton-Up", plus = "Interface\\Buttons\\UI-PlusButton-Up",
+        minus = "Interface\\Buttons\\UI-MinusButton-Up", hilight = "Interface\\Buttons\\UI-PlusButton-Hilight",
+        size = 16, fileSize = 14 },
+    tick = { atlas = "common-icon-checkmark", file = "Interface\\RaidFrame\\ReadyCheck-Ready", size = 12,
+        fallback = { 0.1, 1, 0.1, 1 } },   -- last-resort colour square when neither loads
+    lootStar = { atlases = { "auctionhouse-icon-favorite", "PetJournal-FavoritesIcon" },
+        file = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_1", size = 18 },
 }
 
 Theme.sizes = {
@@ -158,6 +183,12 @@ Theme.sizes = {
     -- icon size for Interface\Icons files (cropped) and for whole textures; offsets from TOPLEFT.
     minimapButton = { button = 31, border = 53, background = 20, iconCropped = 17, iconWhole = 20,
         x = 7, y = -5, croppedY = -6 },
+    -- 1.1 beta.1 dungeon checklist: width, header and row heights, rows before "+n more",
+    -- inner padding, piece indent, header button size.
+    -- ui-b1 job A: width 240, header band 26, close 18, fold 16, title x 7, tick x 4, "for" line +4
+    -- (the longest hand-in name, "for Qiraji Bindings of Dominance", needs ~202 of the 206 px left).
+    tracker = { width = 240, head = 26, row = 14, maxRows = 12, pad = 6, indent = 18, button = 18, fold = 16,
+        titleX = 7, tickX = 4, viaIndent = 4, countGap = 4 },
 }
 
 Theme.fonts = {
@@ -170,6 +201,9 @@ Theme.fonts = {
     countValue = "GameFontHighlightSmall",  -- "12 / 186" (white)
     -- Guide page section headings (14 px gold); the normal font if the client lacks it.
     guideHead = _G.GameFontNormalMed2 and "GameFontNormalMed2" or "GameFontNormal",
+    -- 1.1 beta.1 dungeon checklist: the Objective Tracker's fonts when the client has them.
+    trackerHead = _G.ObjectiveTrackerHeaderFont and "ObjectiveTrackerHeaderFont" or "GameFontNormal",
+    trackerLine = _G.ObjectiveTrackerLineFont and "ObjectiveTrackerLineFont" or "GameFontHighlightSmall",
 }
 
 local function Color(global, r, g, b)
@@ -257,6 +291,14 @@ Theme.colors = {
     progressNote = P.grey,              -- dates, "Not counted: ..."
     money        = P.lightGrey,         -- "12g" money text (was `gold`)
     countBoxBg   = CreateColor(0, 0, 0, 0.5),                    -- count box when InsetFrameTemplate3 is missing (GetRGBA)
+    -- 1.1 beta.1 dungeon checklist
+    trackerBg   = CreateColor(0, 0, 0, 0.45),                     -- backing behind the rows (GetRGBA)
+    trackerHead = P.gold,               -- "Gear Set - Scholomance"
+    trackerBoss = P.gold,               -- boss rows
+    trackerNeed = P.white,              -- pieces you still need
+    trackerGot  = P.green,              -- pieces you got in this run (ticked)
+    trackerSkip = P.grey,               -- "not out yet", "for ...", alt names, "+n more"
+    trackerCount = P.white,             -- "3 left" in the header
 }
 
 -- Effort word colours (Data:GetEffort level): 0 Done grey, 1 Low green, 2 Medium gold,

@@ -24,6 +24,9 @@ local VAR = {
     tooltipShift = "GearSet_TooltipShift",
     altClick     = "GearSet_AltClick",
     milestoneNotes = "GearSet_MilestoneNotes", -- beta.8 (UI\Progress.lua)
+    trackerAuto    = "GearSet_TrackerAuto",    -- 1.1 beta.1 (UI\Tracker.lua, LootMark.lua)
+    trackerStarted = "GearSet_TrackerStarted",
+    lootMark       = "GearSet_LootMark",
 }
 
 local function DB() return ns.db end
@@ -102,6 +105,33 @@ local VALUES = {
     milestoneNotes = {
         get = function() local db = DB(); return not (db and db.milestoneNotes == false) end,
         set = function(v) local db = DB(); if db then db.milestoneNotes = v and true or false end end,
+        default = true,
+    },
+    -- 1.1 beta.1: dungeon checklist and loot-roll star.
+    trackerAuto = {
+        get = function() local db = DB(); return not (db and type(db.tracker) == "table" and db.tracker.auto == false) end,
+        set = function(v)
+            local db = DB()
+            if not (db and type(db.tracker) == "table") then return end
+            db.tracker.auto = v and true or false
+            if ns.Tracker and ns.Tracker.Update then ns.Tracker:Update() end
+        end,
+        default = true,
+    },
+    trackerStarted = {
+        get = function() local db = DB(); return not (db and type(db.tracker) == "table" and db.tracker.started == false) end,
+        set = function(v)
+            local db = DB()
+            if not (db and type(db.tracker) == "table") then return end
+            db.tracker.started = v and true or false
+            if ns.Runs and ns.Runs.Invalidate then ns.Runs.Invalidate() end
+            if ns.Tracker and ns.Tracker.Update then ns.Tracker:Update() end
+        end,
+        default = true,
+    },
+    lootMark = {
+        get = function() local db = DB(); return not (db and db.lootMark == false) end,
+        set = function(v) local db = DB(); if db then db.lootMark = v and true or false end end,
         default = true,
     },
 }
@@ -199,6 +229,19 @@ local function Button(category, layout, label, buttonText, onClick, tooltip)
         local create = Settings.CreateCheckbox or Settings.CreateCheckBox
         if type(create) == "function" then pcall(create, category, setting, tooltip) end
     end
+end
+
+local function SkippedCount()
+    local Tr = ns.Tracker
+    if Tr and Tr.SkippedCount then
+        local ok, n = pcall(Tr.SkippedCount)
+        if ok and type(n) == "number" then return n end
+    end
+    return 0
+end
+
+local function SkippedText()
+    return T("S_SKIPPED", "Show them again (%d)"):format(SkippedCount())
 end
 
 local function UnhideText()
@@ -391,6 +434,24 @@ function S:Init()
         T("S_MILESTONES", "Milestone notes in chat"),
         T("S_MILESTONES_TIP", "One quiet chat line when you reach a milestone, like your first complete set. No sound."))
 
+    Header(layout, T("S_DUNGEONS", "Dungeons"))
+    self.settings.trackerAuto = Checkbox(category, "trackerAuto",
+        T("S_TRACKER", "Open the dungeon checklist by itself"),
+        T("S_TRACKER_TIP", "In a dungeon or raid where you still need a set piece, a small list of its bosses and your pieces opens. Also /gs checklist."))
+    self.settings.trackerStarted = Checkbox(category, "trackerStarted",
+        T("S_TRACKER_STARTED", "With nothing tracked, use sets I've started"),
+        T("S_TRACKER_STARTED_TIP", "When you track no set or piece, the checklist and loot mark use the sets you have some pieces of and your class can wear."))
+    self.settings.lootMark = Checkbox(category, "lootMark",
+        T("S_LOOT_MARK", "Mark set pieces on loot rolls"),
+        T("S_LOOT_MARK_TIP", "A small star on the loot roll window when you or one of your other characters needs the item. It never rolls for you."))
+    self.skipInit = Button(category, layout, T("S_SKIPPED_LABEL", "Instances you chose not to show"), SkippedText(),
+        function()
+            if ns.Tracker and ns.Tracker.ClearSkipped then ns.Tracker.ClearSkipped() end
+        end)
+    if type(self.skipInit) == "table" and type(self.skipInit.AddModifyPredicate) == "function" then
+        pcall(self.skipInit.AddModifyPredicate, self.skipInit, function() return SkippedCount() > 0 end)
+    end
+
     Header(layout, T("S_CHARS", "Characters"))
     self.forgetInit = Button(category, layout, ForgetLabel(), T("S_FORGET", "Forget a character"),
         function() S.ForgetMenu() end,
@@ -469,6 +530,7 @@ function S:Refresh()
         if type(data) == "table" then data[field] = value end
     end
     SetData(self.unhideInit, "buttonText", UnhideText())
+    SetData(self.skipInit, "buttonText", SkippedText())
     SetData(self.forgetInit, "name", ForgetLabel())
     self.refreshing = nil
 end

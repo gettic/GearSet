@@ -262,6 +262,23 @@ local function CheckTheme()
         if miss then bad[#bad + 1] = k end
     end
     if #bad > 0 then Problem("ART", "theme", "nothing loads for " .. table.concat(bad, ", ", 1, math.min(#bad, MAX_LIST))) end
+    -- ui-b1 job A: which Objective Tracker atlases this client has (fallbacks cover the rest).
+    local otMiss, otN = {}, 0
+    for _, key in ipairs({ "trackerHeader", "trackerFold" }) do
+        local e = T.art[key]
+        for _, f in ipairs({ "atlases", "collapsePressed", "expandPressed", "highlight", "divider" }) do
+            local v = type(e) == "table" and e[f]
+            for _, a in ipairs(type(v) == "table" and v or { v }) do
+                if type(a) == "string" then
+                    Count()
+                    otN = otN + 1
+                    if AtlasLoads(a) == false then otMiss[#otMiss + 1] = a end
+                end
+            end
+        end
+    end
+    Info(("tracker art: %d/%d atlases%s"):format(otN - #otMiss, otN,
+        #otMiss > 0 and (" (missing " .. table.concat(otMiss, ", ", 1, math.min(#otMiss, 3)) .. ")") or ""))
 
     local info = C_XMLUtil and C_XMLUtil.GetTemplateInfo
     if type(info) == "function" then
@@ -512,6 +529,21 @@ function ST.ProgressParts()
     return parts
 end
 
+-- 1.1 beta.1 dungeon checklist (checked while the made-up view is shown).
+function ST.TrackerParts()
+    local Tr = ns.Tracker or {}
+    local f = Tr.frame
+    local parts = {
+        { name = "tFrame", obj = f }, { name = "tHead", obj = f and f.head },
+        { name = "tTitle", obj = f and f.title }, { name = "tClose", obj = f and f.close },
+        { name = "tFold", obj = f and f.fold }, { name = "tLine", obj = f and f.line, thin = true, shownOnly = true },
+    }
+    for i, r in ipairs(Tr.Rows and Tr.Rows() or {}) do
+        parts[#parts + 1] = { name = "tRow" .. i, obj = r, shownOnly = true }
+    end
+    return parts
+end
+
 -- Bottom tabs hang from under the window's bottom border like CharacterFrame's (top at most
 -- Theme.sizes.tabOffsetY px above the window's bottom edge: the border draws over that
 -- strip, Blizzard's design), the rest below the window, inside its left/right edges.
@@ -711,6 +743,14 @@ local V5_SAMPLE = {
     tracked = { ["A-Realm"] = { ["set:181"] = true } },
 }
 
+-- 1.1 beta.1 (DB v6): dungeon checklist + loot mark (made-up instance keys).
+local V6_SAMPLE = {
+    version = 6, filters = { hideLater = false },
+    tracker = { point = { "TOPRIGHT", "TOPRIGHT", -40, -200 }, collapsed = true, auto = false, started = false,
+        skip = { m289 = true, nScholomance = true } },
+    lootMark = false,
+}
+
 local function CheckSaved()
     local prep = ns.PrepareDB
     Count()
@@ -830,14 +870,37 @@ local function CheckSaved()
     if not ok then
         Problem("DB", "v5", Short(err))
     else
-        local lost = Lost(V5_SAMPLE, v5)
-        if lost then Problem("DB", "v5", "changed " .. lost) end
+        local lost = Lost(V5_SAMPLE, v5, nil, 0, { version = true })   -- 1.1: version raised to 6
+        if lost then Problem("DB", "v5", "changed " .. lost)
+        elseif type(v5.tracker) ~= "table" or v5.tracker.auto ~= true or v5.tracker.started ~= true
+            or v5.tracker.collapsed ~= false or type(v5.tracker.skip) ~= "table" or v5.lootMark ~= true
+            or v5.version ~= ns.DB_VERSION then
+            Problem("DB", "v5 -> v6", "v6 keys not added")
+        end
     end
     Count()
     local bad5 = { version = 5, filters = { hideLater = "yes" } }
     ok, err = pcall(prep, bad5)
     if not ok then Problem("DB", "bad v5", Short(err))
     elseif bad5.filters.hideLater ~= false then Problem("DB", "bad v5", "hideLater not fixed") end
+    -- 3e. 1.1 beta.1 (DB v6): v6 data goes through unchanged; bad tracker values fall back.
+    Count()
+    local v6 = DeepCopy(V6_SAMPLE)
+    ok, err = pcall(prep, v6)
+    if not ok then
+        Problem("DB", "v6", Short(err))
+    else
+        local lost = Lost(V6_SAMPLE, v6)
+        if lost then Problem("DB", "v6", "changed " .. lost) end
+    end
+    Count()
+    local bad6 = { version = 6, tracker = { point = { "NOPE" }, auto = "x", skip = 5, keep = 1 }, lootMark = 3 }
+    ok, err = pcall(prep, bad6)
+    if not ok then Problem("DB", "bad v6", Short(err))
+    elseif bad6.tracker.point ~= nil or bad6.tracker.auto ~= true or type(bad6.tracker.skip) ~= "table"
+        or bad6.lootMark ~= true or bad6.tracker.keep ~= 1 then
+        Problem("DB", "bad v6", "not fixed or data lost")
+    end
 
     -- Learned vendor prices (Prices.lua): a count only.
     if type(db.prices) == "table" then
@@ -1429,6 +1492,125 @@ local function CheckData()
 end
 
 -- ---------------------------------------------------------------------------
+-- 1.1 beta.1: where pieces drop (Runs.lua), the checklist's lines (UI\Tracker.lua) and the
+-- loot-roll star (LootMark.lua). Data checks per plans\v1.1.0\b1-interface.md.
+
+-- A made-up checklist (also shown by the UI step): one boss with a needed and a got piece,
+-- a boss whose drop isn't out yet, the other-enemies row.
+function ST.TrackerSample()
+    -- The longest instance name and a long hand-in name: the in-game text-cut check uses them.
+    return { title = "Temple of Ahn'Qiraj", runs = { "Selftest" }, need = 1, bosses = {
+        { name = "Boss A", label = "Boss A", order = 1, pieces = {
+            { itemID = 16820, mine = true, via = "Qiraji Bindings of Dominance" }, { itemID = 16821, mine = true, got = true } } },
+        { name = "Boss B", label = "Boss B", order = 2, skipped = true, pieces = {
+            { itemID = 16822, mine = true, later = true } } },
+        { name = "", label = "", trash = true, pieces = { { itemID = 16823, alts = { "Alt" } } } },
+    } }
+end
+
+local function CheckRuns()
+    local R, Tr, LM = ns.Runs, ns.Tracker, ns.LootMark
+    Count()
+    if not (R and R.View and R.PieceSources and R.Wanted and R.RunsIn) then return Problem("RUN", "runs", "missing") end
+    Count()
+    if not (Tr and Tr.Update and Tr.Lines and Tr.LeftCount) then Problem("RUN", "checklist", "missing") end
+    Count()
+    if not (LM and LM.Hook and LM.Decide and LM.Refresh) then Problem("RUN", "loot mark", "missing") end
+
+    -- Data: boss `n|` whole 1..99, place `map|` whole > 0 (bad ones are ignored, so a count).
+    local g = ns.GuideData or {}
+    local badN, nBoss, badMap, nMap = 0, 0, 0, 0
+    Count()
+    for name, raw in pairs(type(g.boss) == "table" and g.boss or {}) do
+        if type(raw) == "string" and raw:find("n|", 1, true) then
+            local r = R.Rec("boss", name)
+            if r and r.n ~= nil then
+                nBoss = nBoss + 1
+                if not R.BossOrder(name) then badN = badN + 1 end
+            end
+        end
+    end
+    for name in pairs(type(g.place) == "table" and g.place or {}) do
+        local r = R.Rec("place", name)
+        if r and r.map ~= nil then
+            nMap = nMap + 1
+            if not R.PlaceMap(name) then badMap = badMap + 1 end
+        end
+    end
+    if badN > 0 then Problem("RUN", "boss order", ("%d bad n| values"):format(badN)) end
+    if badMap > 0 then Problem("RUN", "place map", ("%d bad map| values"):format(badMap)) end
+
+    -- Every run with set drops is found from inside it (by its map ID, else by its name).
+    Count()
+    local idx = R.PlaceIndex()
+    local runs, lost = 0, {}
+    for place in pairs(idx) do
+        runs = runs + 1
+        local found = false
+        for _, r in ipairs(R.RunsIn(place, R.PlaceMap(place))) do if r == place then found = true end end
+        if not found then lost[#lost + 1] = place end
+    end
+    if runs < 5 then Problem("RUN", "places", ("only %d instances with set drops"):format(runs)) end
+    if #lost > 0 then Problem("RUN", "places", "not reachable: " .. table.concat(lost, ", ", 1, math.min(#lost, 3))) end
+    Info(("checklist: %d instances, %d boss orders, %d map IDs"):format(runs, nBoss, nMap))
+
+    -- Views keep bosses in kill order, trash last (a few instances; alts make it slower).
+    Count()
+    local checked = 0
+    for place in pairs(idx) do
+        if checked >= 4 then break end
+        checked = checked + 1
+        local view = R.View(place, R.PlaceMap(place))
+        local last, trash = 0, false
+        for _, b in ipairs(view.bosses) do
+            if trash then Problem("RUN", "view " .. place, "boss after the trash row"); break end
+            if b.trash then trash = true
+            else
+                local o = b.order or 1000
+                if o < last then Problem("RUN", "view " .. place, "bosses out of order"); break end
+                last = o
+            end
+        end
+    end
+
+    -- The checklist's lines on made-up data: counts, the "+n more" cap, skipped bosses folded.
+    if Tr and Tr.Lines then
+        Count()
+        local s = ST.TrackerSample()
+        if Tr.LeftCount(s) ~= 1 then Problem("RUN", "checklist", "left count " .. tostring(Tr.LeftCount(s))) end
+        Count()
+        local lines = Tr.Lines(s)
+        if #lines ~= 8 then Problem("RUN", "checklist", ("%d lines, want 8"):format(#lines)) end
+        Count()
+        local capped = Tr.Lines(s, 4)
+        if #capped ~= 4 or capped[4].kind ~= "more" or capped[4].n ~= 5 then Problem("RUN", "checklist", "no +n more line") end
+    end
+
+    -- Loot mark: hooked on every roll frame there is; nothing for a non-set item (Hearthstone).
+    -- W1 (it only shows a star) is checked offline: tracker.lua counts roll calls.
+    if LM and LM.HookedCount then
+        Count()
+        local frames = 0
+        for i = 1, 4 do if type(_G["GroupLootFrame" .. i]) == "table" then frames = frames + 1 end end
+        local before = LM.HookedCount()
+        local now = LM.Hook()   -- idempotent; also hooks frames made after login
+        if now < frames then
+            Problem("HOOK", "loot mark", ("hooked %d of %d roll frames"):format(now, frames))
+        end
+        Info(("loot mark: %d roll frames, %d hooked at login"):format(frames, before))
+        Count()
+        if LM.Decide(6948) then Problem("RUN", "loot mark", "star on a non-set item") end
+        Count()
+        for itemID, w in pairs(R.Wanted()) do
+            if not w.later then
+                if not LM.Decide(itemID) then Problem("RUN", "loot mark", "no star on a needed piece") end
+                break
+            end
+        end
+    end
+end
+
+-- ---------------------------------------------------------------------------
 -- Hooks into the game
 
 local function CheckHooks()
@@ -1690,7 +1872,7 @@ local function OpenGuide()
     Later(2, StepGuide)
 end
 
-local OpenProgress
+local OpenProgress, StepTracker
 
 local function StepMain()
     CheckGroup(ST.MainParts(), Win())
@@ -1717,6 +1899,55 @@ local function StepProgress()
         if not (type(text) == "string" and text:find("%d")) then Problem("PRG", "page", "no number shown") end
     end)
     ns.UI:ShowTab("sets")
+    -- 1.1 beta.1: the dungeon checklist with made-up rows, then back to how it was.
+    local Tr = ns.Tracker
+    if Tr and Tr.ShowTest then
+        local ok, shown = pcall(Tr.ShowTest, Tr, ST.TrackerSample())
+        if ok and shown then
+            run.state.trackerTest = true
+            return Later(2, StepTracker)
+        end
+        Skip("checklist", ok and "(not built)" or Short(shown))
+    end
+    if run.mode == "full" then return Later(1, OpenGuide) end
+    Finish()
+end
+
+StepTracker = function()
+    local Tr = ns.Tracker
+    CheckGroup(ST.TrackerParts(), nil)   -- no template art: only its own parts may cover each other
+    Guard("checklist rows", function()
+        Count()
+        local n = #(Tr.Rows())
+        if n ~= 8 then Problem("UI", "checklist", ("%d rows, want 8"):format(n)) end
+        Count()
+        local title = Tr.frame.title:GetText()
+        if not (type(title) == "string" and title:find("Qiraj", 1, true)) then Problem("UI", "checklist", "no title") end
+        Count()
+        local count = Tr.frame.count and Tr.frame.count:GetText()
+        if not (type(count) == "string" and count:find("1", 1, true)) then Problem("UI", "checklist", "no count") end
+    end)
+    -- ui-b1 job A: no cut-off text in the header or the rows (the game's own measure).
+    Guard("checklist text", function()
+        local cut = {}
+        local function Fits(label, fs)
+            if not fs then return end
+            Count()
+            local st, isCut = Read(fs, "IsTruncated")
+            if st == "secret" then Skip(label, "(secret)") elseif st == "ok" and isCut then cut[#cut + 1] = label end
+        end
+        Fits("title", Tr.frame.title)
+        Fits("count", Tr.frame.count)
+        for i, r in ipairs(Tr.Rows()) do
+            Fits("row" .. i, r.name)
+            Fits("row" .. i .. "x", r.extra)
+        end
+        if #cut > 0 then Problem("UI", "checklist", "text cut: " .. table.concat(cut, ", ", 1, math.min(#cut, MAX_LIST))) end
+    end)
+    Guard("checklist restore", function()
+        Tr:HideTest()
+        run.state.trackerTest = nil
+    end)
     if run.mode == "full" then return Later(1, OpenGuide) end
     Finish()
 end
@@ -1743,6 +1974,7 @@ end
 local function Restore()
     local s = run.state
     local G, PL, H, UI = ns.GuidePage, ns.PieceList, ns.Help, ns.UI
+    if s.trackerTest and ns.Tracker and ns.Tracker.HideTest then Try("checklist", ns.Tracker.HideTest, ns.Tracker) end
     if s.openedHelp and H and H.Hide then Try("help", H.Hide, H) end
     if s.openedCopy and G and G.HideCopyText then Try("copy", G.HideCopyText, G) end
     if s.openedGuide and G and G.Back then
@@ -1864,6 +2096,7 @@ function ST:Start(mode)
     Guard("data", CheckData)
     Guard("places", CheckPlaces)
     Guard("hooks", CheckHooks)
+    Guard("runs", CheckRuns)
     Guard("search", CheckSearch)
     Guard("theme", CheckTheme)
     -- The window: opened if closed (no first-time help while we run), checked next frame.

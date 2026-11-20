@@ -4,7 +4,7 @@ Keeps track of all known armor sets in the game, in one window with three parts:
 
 A World of Warcraft addon for **WoW Forever**.
 
-Current version: **v1.0.1**.
+Current version: **v1.0.1**. A beta, **v1.1.0-beta.1**, is on the beta channel.
 
 ## Install
 
@@ -44,6 +44,10 @@ Open them with the gear button at the top right of the window, a right-click on 
 | Only while Shift is held | Shows the tooltip line only while you hold Shift. Sits under the line above and is greyed out while that is off |
 | Alt-click an item to open its guide | Turns Alt-click on or off (on by default) |
 | Milestone notes in chat | One quiet chat line when you reach a [milestone](#tabs-and-progress) (on by default) |
+| Open the dungeon checklist by itself | Opens the [dungeon checklist](#dungeon-checklist-and-loot-roll-star) when you enter a dungeon or raid with pieces you need (on by default) |
+| With nothing tracked, use sets I've started | When you track nothing, the checklist and the loot roll star use sets you have started and your class can wear (on by default) |
+| Mark set pieces on loot rolls | Shows the loot roll star (on by default) |
+| Show them again | Brings back instances you chose not to show in the checklist |
 | Forget a character | Removes the saved pieces of one of your other characters |
 | Show help now | Opens the help |
 | Report a problem | Shows one line to copy for a bug report: addon and data version, game build, and the set and piece you looked at. No character name, realm or guild. Nothing is sent anywhere |
@@ -158,6 +162,22 @@ The search box finds sets, pieces (names your game has already seen), bosses, pl
 | Alt-click | Alt-click a set piece (bags, chat links, loot, character window) to open Gear Set at that piece's guide. In combat it opens when the fight ends |
 | Turn them off | In the settings you can turn the tooltip line off, show it only while Shift is held, or turn Alt-click off |
 
+### Dungeon checklist and loot roll star
+
+*In v1.1.0-beta.1.*
+
+Inside a dungeon or raid where you still need a piece of a tracked set, a small list opens. With nothing tracked, it uses sets you have started and your class can wear. The settings are under **Dungeons**.
+
+| What | How |
+|---|---|
+| The list | The title is the instance name, with "n left" for the pieces you still need. Below it are the bosses in kill order, each with the pieces it drops. A piece you hold turns green with a tick |
+| Not out yet | A boss whose drop is not out yet gets a grey "not out yet" row. A piece only your other characters need shows their names in grey |
+| Move it | Drag it |
+| Close | The X closes it until you leave the instance |
+| Options | Right-click the title: collapse or expand, "Close until I leave", "Don't show in this instance", or open the settings. "Show them again" in the settings brings back every instance you chose not to show |
+| By hand | `/gs checklist` opens or closes it. Outside a dungeon or raid it says so |
+| Loot roll star | A small gold star on the group loot roll window when you, or one of your other characters, needs the item for a set. It only marks the item and never rolls for you |
+
 ### Tabs and progress
 
 Two tabs sit at the bottom of the window: **Sets** (the window described above) and **Progress**.
@@ -224,6 +244,7 @@ Most of the data is classic data, not yet checked on WoW Forever. The guide page
 | `/gs minimap` | Show or hide the minimap button |
 | `/gs config` | Open the settings |
 | `/gs forget` | Pick one of your other characters to forget (removes its saved pieces) |
+| `/gs checklist` | Open or close the [dungeon checklist](#dungeon-checklist-and-loot-roll-star) for the instance you are in |
 | `/gs help` | List the commands in chat and show the help on the window |
 | `/gs check` | Show the data version, last-checked date, WoW Forever build, data sources and how many sets and sources are checked on Forever, then check the built-in set list against the game and print any problems |
 | `/gs probe` | List which game features this client has (waypoints, current map, tooltips, lockouts, reputation, keyring, account bank, journals, art) and put the result in a copy box to paste into a bug report |
@@ -265,6 +286,8 @@ The addon is in the `GearSet` folder (`GearSet_Forever.toc`, interface 16001). S
 | `GoldData.lua` | The built-in fixed gold costs (from Warcraft Wiki) |
 | `Gold.lua` | Works out the gold still needed and what can't be bought |
 | `Prices.lua` | Learns vendor prices when you open a vendor |
+| `Runs.lua` | Works out which dungeon and raid bosses drop the pieces you need |
+| `LootMark.lua` | The star on the loot roll window |
 | `Share.lua` | Puts a set and its item links in your chat box |
 | `Search.lua` | Search across sets, pieces, bosses, places and NPCs |
 | `Waypoint.lua` | The Way button (TomTom or map pin) |
@@ -276,6 +299,7 @@ The addon is in the `GearSet` folder (`GearSet_Forever.toc`, interface 16001). S
 | `UI\PieceList.lua` | The list of pieces |
 | `UI\GuidePage.lua` | The guide page for one piece |
 | `UI\Progress.lua` | The Progress tab, tracking and milestones |
+| `UI\Tracker.lua` | The dungeon checklist |
 | `UI\Settings.lua` | The settings page |
 | `UI\Help.lua` | The first-time help |
 | `UI\Minimap.lua` | The minimap button and the Addon Compartment entry |

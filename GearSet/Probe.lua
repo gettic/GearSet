@@ -17,6 +17,13 @@ local PLANNED_ATLASES = {
     "common-stat-bar-BG", "common-stat-bar-white", "common-stat-bar-green", "common-stat-bar-Mask",
     -- ui-review-3: bar behind each piece row
     "PetList-ButtonBackground",
+    -- 1.1 beta.1 checklist / later Plan tab
+    "Options_HorizontalDivider", "common-icon-redx", "QuestSharing-Padlock",
+    -- ui-b1 job A: the Objective Tracker's own header band and fold button (+ tick for job B)
+    "UI-QuestTracker-Secondary-Objective-Header", "ui-questtracker-primary-objective-header",
+    "ui-questtrackerbutton-secondary-collapse", "ui-questtrackerbutton-secondary-expand",
+    "ui-questtrackerbutton-secondary-collapse-pressed", "ui-questtrackerbutton-secondary-expand-pressed",
+    "ui-questtrackerbutton-yellow-highlight", "ui-questtracker-tracker-check",
 }
 local PLANNED_TEMPLATES = {
     "PanelTabButtonTemplate", "MapCanvasPinTemplate", "MaximizeMinimizeButtonFrameTemplate",
@@ -26,8 +33,11 @@ local PLANNED_TEMPLATES = {
     "ColoredProgressBarTemplate", "InputScrollFrameTemplate", "GlowBoxArrowTemplate",
     -- ui-review-3: "Sets complete" count box
     "InsetFrameTemplate3",
+    -- 1.1 beta.1 checklist X button
+    "UIPanelCloseButtonNoScripts", "UIPanelCloseButton",
 }
-local PLANNED_FONTS = { "ObjectiveTrackerLineFont", "GameFontHighlightSmall", "GameFontNormalMed2" }
+local PLANNED_FONTS = { "ObjectiveTrackerLineFont", "GameFontHighlightSmall", "GameFontNormalMed2",
+    "ObjectiveTrackerHeaderFont" }
 
 local function IsFunc(f) return type(f) == "function" end
 local function YesNo(b) return b and "yes" or "no" end
@@ -245,7 +255,43 @@ local CHECKS = {
             "CreateSettingsListSectionHeaderInitializer" })
     end },
     { "Lockouts", function()
-        return Has({ "GetSavedInstanceInfo", "RequestRaidInfo" }) .. ", " .. Val("GetNumSavedInstances")
+        local s = Has({ "GetSavedInstanceInfo", "RequestRaidInfo", "GetSavedInstanceEncounterInfo" })
+            .. ", " .. Val("GetNumSavedInstances")
+        -- 1.1: each saved row (name, reset s, isRaid, bosses done/total, map ID = 14th return)
+        local okN, n = Call("GetNumSavedInstances")
+        if okN and type(n) == "number" and not (issecretvalue and issecretvalue(n)) then
+            for i = 1, math.min(n, 5) do
+                local ok, name, _, reset, _, locked, _, _, isRaid, _, _, total, done, _, mapID = Call("GetSavedInstanceInfo", i)
+                if ok then
+                    s = s .. (" [%s %s reset %s raid %s %s/%s map %s]"):format(Safe(name), Safe(locked), Safe(reset),
+                        Safe(isRaid), Safe(done), Safe(total), Safe(mapID))
+                end
+            end
+        end
+        return s
+    end },
+    -- 1.1 beta.1 checklist: where you are (name, type, instance ID = 8th return) and the
+    -- checklist's own match; the loot roll frames the loot mark hooks.
+    { "Instance", function()
+        local okI, inInst, itype = Call("IsInInstance")
+        local s = "in " .. (okI and Safe(inInst) or "?") .. " " .. (okI and Safe(itype) or "")
+        if okI and inInst then
+            local ok, name, _, _, _, maxPlayers, _, _, mapID = Call("GetInstanceInfo")
+            if ok then s = s .. (", %s, %s players, id %s"):format(Safe(name), Safe(maxPlayers), Safe(mapID)) end
+            local R = ns.Runs
+            if ok and R and R.RunsIn and not (issecretvalue and (issecretvalue(name) or issecretvalue(mapID))) then
+                local okR, runs = pcall(R.RunsIn, name, tonumber(mapID))
+                if okR and type(runs) == "table" then s = s .. ", matches " .. (#runs > 0 and table.concat(runs, "/") or "none") end
+            end
+        end
+        return s
+    end },
+    { "Loot roll", function()
+        local frames = 0
+        for i = 1, 4 do if type(_G["GroupLootFrame" .. i]) == "table" then frames = frames + 1 end end
+        local LM = ns.LootMark
+        return Has({ "GetLootRollItemLink", "GetLootRollItemInfo" }) .. (", GroupLootFrame %d/4"):format(frames)
+            .. ", hooked " .. (LM and LM.HookedCount and LM.HookedCount() or 0)
     end },
     { "Reputation", function()
         local s = Has({ "C_Reputation.GetFactionDataByID", "GetFactionInfoByID" })
