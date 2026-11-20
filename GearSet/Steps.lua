@@ -21,7 +21,7 @@ Steps.FACTIONS = {
     ["Cenarion Circle"] = 609,
     ["Brood of Nozdormu"] = 910,
     ["Argent Dawn"] = 529,
-    ["League of Arathor"] = 509,
+    ["The League of Arathor"] = 509,   -- the game's own name (in-game selftest beta.6)
     ["The Defilers"] = 510,
 }
 Steps.STANDINGS = { "Hated", "Hostile", "Unfriendly", "Neutral", "Friendly", "Honored", "Revered", "Exalted" }
@@ -47,7 +47,15 @@ end
 
 function Steps.FactionID(name)
     if not Has(name) then return nil end
-    return Steps.FACTIONS[Trim(name)]
+    -- data rows may write the name with or without a leading "The " ("League of Arathor")
+    local t = Trim(name)
+    return Steps.FACTIONS[t] or Steps.FACTIONS["The " .. t] or Steps.FACTIONS[(t:gsub("^The%s+", ""))]
+end
+
+-- The name to show: the game's own when it was read, else the data's.
+function Steps.DisplayName(rep, fallback)
+    if rep and rep.met and Has(rep.name) then return rep.name end
+    return fallback
 end
 
 -- "Honored" -> 6 (any case); nil for unknown words.

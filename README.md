@@ -4,7 +4,7 @@ Keeps track of all known armor sets in the game, in one window with three parts:
 
 A World of Warcraft addon for **WoW Forever**.
 
-Current version: **v1.0.1**. A beta, **v1.1.0-beta.6**, is on the beta channel.
+Current version: **v1.0.1**. A beta, **v1.1.0-beta.7**, is on the beta channel.
 
 ## Install
 
@@ -224,7 +224,7 @@ Every dungeon and raid that drops a piece you still need, the run with the most 
 | LFG button | Puts a group line ("LFM Scholomance - need ...") in a copy box for you to paste yourself. Gear Set never posts anything |
 | Ready to hand in | Quest givers whose reward is a piece you need, where your bags hold everything the quest asks for. In your own chat, one line says so when you enter their zone (once per zone entry, never in combat or inside an instance). Turn it off with "Hand-in reminders in chat" in the settings |
 | Not attuned | A run you aren't attuned for says which quest chain step you are on, for example "not attuned (step 3 of 16)". The tooltip names the next quest |
-| Not from a run | *Since beta.6.* After the runs: each piece you need from quests, vendors, crafting or world drops, tagged Quest, Vendor, Crafted and so on. Click one for its guide, Shift-click to link it. More than 8 fold into one "All pieces" row |
+| Not from a run | *Since beta.6.* After the runs: each piece you need from quests, vendors, crafting or world drops, each with its real source (boss and zone, vendor, quest or crafted). The tooltip shows the full source. Click one for its guide, Shift-click to link it. More than 8 fold into one "All pieces" row |
 | Reputation and chains | *Since beta.6.* See [below](#reputation-and-quest-chains) |
 | Shopping list | The [shopping list](#shopping-list) is on this tab |
 

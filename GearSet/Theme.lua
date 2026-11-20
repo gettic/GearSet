@@ -233,7 +233,7 @@ Theme.sizes = {
     plan = { head = 26, row = 20, indent = 18, pieceX = 200, icon = 16, button = 16, top = 64,
         foldX = 4, pinX = 22, nameX = 42, nameW = 240, infoX = 290, infoW = 170, countW = 70, gap = 6, rightW = 80,
         titleX = 16, titleY = -12, summaryX = -30, summaryY = -14, sectionH = 24, shopW = 520, line = 12, statusLines = 4, inline = 14,   -- 4: two keys + "not attuned (step n of N)" + lockout (beta.6)
-        repBarW = 100, repBarH = 10, stepSlot = 16 },   -- beta.6 rep rows: the bar in the info column; step mark slot
+        repBarW = 100, repBarH = 10, stepSlot = 16, locksH = 16 },   -- locksH: the list moves up by this without a lockouts line   -- beta.6 rep rows: the bar in the info column; step mark slot
     repBar = { w = 100, h = 10 },      -- beta.6 guide page rep row: the bar on its own line under the text (ui-b6 #6)
     tracker = { width = 240, head = 26, row = 14, maxRows = 12, pad = 6, indent = 18, button = 18, fold = 16,
         titleX = 7, tickX = 4, viaIndent = 4, countGap = 4 },

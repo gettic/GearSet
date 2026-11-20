@@ -381,7 +381,7 @@ function GuidePage.Live(self, b)
         if not rep then return nil end
         local ready = S.HasStanding(rep, b.rep.need)
         local col = ready and c.repReady or c.repNeed
-        return b.rep.faction .. ": " .. col:WrapTextInColorCode(S.RepText(rep, b.rep.need)), rep, ready
+        return S.DisplayName(rep, b.rep.faction) .. ": " .. col:WrapTextInColorCode(S.RepText(rep, b.rep.need)), rep, ready
     elseif b.k == "step" and b.chain and b.idx then
         local st = ChainOf(self, b.chain)
         local s = st and st.known and st.steps[b.idx]

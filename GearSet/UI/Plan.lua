@@ -65,20 +65,60 @@ local function Inline(entry, size, file)
     return Theme.InlineIcon(entry, size or Sizes().inline, file)
 end
 
--- "Quest" / "Vendor" / "Crafted" / "World drop": the piece's first source (own faction, not a free
--- note) for the "Not from a run" rows (ui-b6 #4); "" when none is known.
-function Plan.SourceWord(itemID)
+-- The real source of a "Not from a run" piece (ui-b6 #4, user's screenshot: "Boss Drop" was unclear):
+-- the first own-faction source that isn't a free note -> full ("Lord Kazzak - Blasted Lands",
+-- "Vendor: Deliana - Ironforge", "Quest: The Fall of Ossirian"), short (the first part only).
+-- Only the type word ("World Drop") when the data has nothing better; "", "" when no source.
+local function Has(s) return type(s) == "string" and s ~= "" end
+function Plan.SourceText(itemID)
     local D = ns.Data
-    if not (D and D.SourceEntries and D.TypeWord) then return "" end
+    if not (D and D.SourceEntries) then return "", "" end
     local mine = D.PlayerFaction and D.PlayerFaction()
     local ok, list = pcall(D.SourceEntries, itemID)
     for _, e in ipairs(ok and type(list) == "table" and list or {}) do
         if e.kind ~= "x" and (not e.fac or not mine or e.fac == mine) then
-            local w = D.TypeWord(e.kind)
+            local k, short, place = e.kind, nil, nil
+            if k == "b" and Has(e.a) then short, place = e.a, e.b
+            elseif k == "z" and Has(e.a) then short = e.a
+            elseif k == "v" and Has(e.a) then short, place = T("PLAN_SRC_VENDOR", "Vendor: %s"):format(e.a), e.b
+            elseif k == "q" and Has(e.a) then short, place = T("PLAN_SRC_QUEST", "Quest: %s"):format(e.a), e.b
+            elseif k == "c" and Has(e.a) then short = T("PLAN_SRC_CRAFT", "Crafted: %s"):format(e.a)
+            end
+            if short then
+                local full = Has(place) and place ~= short and (short .. " - " .. place) or short
+                return full, short
+            end
+            local w = D.TypeWord and D.TypeWord(k)
+            if w and w ~= "" then return w, w end
+        end
+    end
+    return "", ""
+end
+
+-- The type word only (kept for callers / tests).
+function Plan.SourceWord(itemID)
+    local D = ns.Data
+    local mine = D and D.PlayerFaction and D.PlayerFaction()
+    local ok, list = pcall(D.SourceEntries, itemID)
+    for _, e in ipairs(ok and type(list) == "table" and list or {}) do
+        if e.kind ~= "x" and (not e.fac or not mine or e.fac == mine) then
+            local w = D.TypeWord and D.TypeWord(e.kind)
             if w and w ~= "" then return w end
         end
     end
     return ""
+end
+
+-- A text cut to fit `room` px (measure(text) -> px, 15 % margin): full, else short, else short cut + "...".
+function Plan.FitText(full, short, room, measure)
+    local fit = room * 0.85
+    if measure(full) <= fit then return full end
+    if measure(short) <= fit then return short end
+    local s = short
+    while #s > 1 and measure(s .. "...") > fit do
+        s = s:sub(1, -2):gsub("[\192-\255][\128-\191]*$", "")   -- never half a UTF-8 letter
+    end
+    return (s:gsub("%s+$", "")) .. "..."
 end
 
 local function KeyIcon(id)
@@ -490,6 +530,9 @@ local function LineRow(self, i)
         if not b.gsItem then return end
         GameTooltip:SetOwner(b, "ANCHOR_RIGHT")
         GameTooltip:SetItemByID(b.gsItem)
+        if b.gsSource and b.gsSource ~= "" then
+            GameTooltip:AddLine(T("PLAN_SRC_TIP", "From: %s"):format(b.gsSource), C("planNote"):GetRGB(), true)
+        end
         Theme.AddHint(GameTooltip, T("PLAN_TIP_PIECE", "Click: open its guide on the Sets tab."))
         GameTooltip:Show()
     end)
@@ -518,6 +561,7 @@ end
 local function FillLine(r, kind, data)
     local sz = Sizes()
     r.gsItem, r.gsGrey = nil, nil
+    r.gsSource = data.source   -- "Not from a run": the full source for the tooltip
     r.name:ClearAllPoints()
     r.mark:Hide()
     r.gsMark = nil
@@ -604,7 +648,7 @@ Plan.StepPoint = StepPoint
 function Plan.RepTexts(f)
     local S = ns.Steps
     local statusKey = f.later and "planNote" or (f.ready and "repReady" or "repNeed")
-    return f.faction, S.StandingText(f.rep), { C(statusKey):WrapTextInColorCode(S.NeedText(f)) }
+    return S.DisplayName(f.rep, f.faction), S.StandingText(f.rep), { C(statusKey):WrapTextInColorCode(S.NeedText(f)) }
 end
 
 -- Texts of a chain row: name, value, status parts.
@@ -637,7 +681,7 @@ local function RepTooltip(row)
         GameTooltip:AddLine(T("PLAN_OTHER_TIP", "Pieces from quests, vendors, crafting or world drops. Click a piece for its guide."),
             C("planNote"):GetRGB(), true)
     elseif row.gsKind == "rep" then
-        GameTooltip:SetText(d.faction, C("planHead"):GetRGB())
+        GameTooltip:SetText(S.DisplayName(d.rep, d.faction), C("planHead"):GetRGB())
         Theme.AddHint(GameTooltip, T("REP_FOLD_TIP", "Click: show or hide the details."))
         GameTooltip:AddLine(T("REP_YOU", "You: %s"):format(S.RepText(d.rep, d.goal and S.STANDINGS[d.goal])), C("text"):GetRGB())
         for i, a in ipairs(d.id and S.AltRep(d.id) or {}) do
@@ -1068,6 +1112,7 @@ function Plan:Refresh()
         end
     end
     for i = nh + 1, #self.heads do self.heads[i]:Hide() end
+    if #plan.runs > 0 then y = y + 8 end   -- the same gap before the next heading as after the other sections
     -- empty state
     local tracked = ns.Track and ns.Track.Mine and next(ns.Track.Mine()) ~= nil
     local showEmpty = #plan.runs == 0
@@ -1099,8 +1144,17 @@ function Plan:Refresh()
             show = IsOpen("other")
         end
         if show then
+            local m = Plan.measure
+            local function Measure(s)
+                if not m then return 0 end
+                m:SetText(s)
+                return m:GetStringWidth() or 0
+            end
+            local room = sz.pieceX - sz.indent - sz.gap   -- the boss column
             for _, id in ipairs(otherIDs) do
-                Line("piece", { boss = Plan.SourceWord(id), piece = { itemID = id, mine = true } })
+                local full, short = Plan.SourceText(id)
+                Line("piece", { boss = Plan.FitText(full, short, room, Measure), source = full,
+                    piece = { itemID = id, mine = true } })
             end
         end
         y = y + 8
@@ -1119,6 +1173,14 @@ function Plan:Refresh()
     for _, l in ipairs(self.sampleLocks or locks) do if l.isRaid then saved = saved + 1 end end
     -- the lockouts line only when it says something: a raid listed or a raid saved (ui-b4 #11)
     self.locksLine:SetShown(saved > 0 or anyRaid)
+    -- the list starts right under the title when there is no lockouts line (no empty band; screenshot)
+    local top = (saved > 0 or anyRaid) and sz.top or (sz.top - (sz.locksH or 16))
+    if self.scrollTop ~= top then
+        self.scrollTop = top
+        self.scroll:ClearAllPoints()
+        self.scroll:SetPoint("TOPLEFT", sz.titleX - 4, -top)
+        self.scroll:SetPoint("BOTTOMRIGHT", sz.summaryX, 30)
+    end
     self.locksLine:SetText(saved > 0 and T("PLAN_LOCKS", "Raid lockouts: %d saved"):format(saved)
         or T("PLAN_LOCKS_NONE", "Raid lockouts: none saved"))
     -- the old "Not from a run: n pieces" footer: replaced by the section above (ui-b6 #4)
