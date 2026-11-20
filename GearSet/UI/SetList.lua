@@ -78,6 +78,15 @@ end
 
 -- WoW Forever lines for a set's tooltips (set list rows, the piece list's "Have x / y"):
 -- the whole set or some pieces not out yet (those aren't counted), then checked / not confirmed.
+-- 1.1 beta.2: "Requires level 52-58" (grey; orange when the set is more than 5 levels above you).
+function SetList.AddLevelLine(tip, set)
+    local D = ns.Data
+    local text = D and D.LevelText and D.LevelText(set)
+    if not text then return end
+    local c = (D.FitsLevel and not D.FitsLevel(set)) and Theme.colors.levelHigh or Theme.colors.subtle
+    tip:AddLine(text, c:GetRGB())
+end
+
 function SetList.AddFlagLines(tip, set)
     local c, D = Theme.colors, ns.Data
     local nLater = set.later and #set.later or 0
@@ -142,6 +151,7 @@ local function SetTooltip(row)
     end
     local have, total = ns.Owned:SetCount(set)
     GameTooltip:AddLine(L.HAVE_COUNT:format(have, total), Theme.CountColor(have, total))
+    SetList.AddLevelLine(GameTooltip, set)
     if ns.PieceList and ns.PieceList.AddDoneLines then pcall(ns.PieceList.AddDoneLines, GameTooltip, set) end
     SetList.AddAltLines(GameTooltip, set)
     SetList.AddEffortLines(GameTooltip, set, MAX_REASONS)
@@ -448,10 +458,10 @@ end
 -- and "Only my faction" are on by default, so they only count as changed when off.
 local FALLBACK_DEFAULTS = { class = 0, armor = 0, usable = true, hideComplete = false,
     showRemoved = false, kind = "", myFaction = true, showHidden = false, trackedOnly = false, tier = "",
-    hideLater = false }
+    hideLater = false, myLevel = false }
 local function Defaults() return ns.FILTER_DEFAULTS or FALLBACK_DEFAULTS end
 -- Filters this file knows even before Core's defaults list them (DB v2).
-local EXTRA_DEFAULTS = { showHidden = false, trackedOnly = false, tier = "", hideLater = false }
+local EXTRA_DEFAULTS = { showHidden = false, trackedOnly = false, tier = "", hideLater = false, myLevel = false }
 
 local function DiffersFrom(f, k, v)
     if type(v) == "boolean" then return (not f[k]) ~= (not v) end
@@ -609,6 +619,8 @@ local function SetupMenu(owner, root)
     root:CreateCheckbox(L.HIDE_COMPLETE, function() return f.hideComplete end, function() f.hideComplete = not f.hideComplete; Changed() end)
     root:CreateCheckbox(T("HIDE_LATER", "Hide sets not out yet"), function() return f.hideLater end,
         function() f.hideLater = not f.hideLater; Changed() end)
+    root:CreateCheckbox(T("MY_LEVEL", "Fits my level (within 5)"), function() return f.myLevel end,
+        function() f.myLevel = not f.myLevel; Changed() end)
     root:CreateCheckbox(L.SHOW_REMOVED, function() return f.showRemoved end, function() f.showRemoved = not f.showRemoved; Changed() end)
     if ns.Data and ns.Data.IsHidden then
         root:CreateCheckbox(T("SHOW_HIDDEN", "Show hidden sets"), function() return f.showHidden end,
@@ -644,6 +656,7 @@ function SetList.EmptyReason(search, f)
     if f.myFaction then parts[#parts + 1] = L.MY_FACTION end
     if f.hideComplete then parts[#parts + 1] = L.HIDE_COMPLETE end
     if f.hideLater then parts[#parts + 1] = T("HIDE_LATER", "Hide sets not out yet") end
+    if f.myLevel then parts[#parts + 1] = T("MY_LEVEL", "Fits my level (within 5)") end
     local filtersOn = FiltersDiffer(f)
     if #parts > 0 then
         lines[#lines + 1] = L.EMPTY_FILTERS:format(table.concat(parts, ", "))

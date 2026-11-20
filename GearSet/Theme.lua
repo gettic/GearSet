@@ -155,6 +155,16 @@ Theme.art = {
         size = 16, fileSize = 14 },
     tick = { atlas = "common-icon-checkmark", file = "Interface\\RaidFrame\\ReadyCheck-Ready", size = 12,
         fallback = { 0.1, 1, 0.1, 1 } },   -- last-resort colour square when neither loads
+    -- 1.1 beta.2 preview bar: hide helm / cloak / weapons on our model. Blizzard's empty
+    -- paper-doll slot icons (checked by /gs probe); missing -> the letter on a plain square
+    -- (`slotPlain`). Framed with `iconBorder` (tint colors.slotFrame); a hidden slot gets the red X
+    -- (`slotOffMark`, falls back to an "x" in colors.slotOffMark). Sizes: sizes.slot.
+    slotHead   = { file = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Head", letter = "H" },
+    slotBack   = { file = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Back", letter = "C" },
+    slotWeapon = { file = "Interface\\PaperDoll\\UI-PaperDoll-Slot-MainHand", letter = "W" },
+    slotPlain  = { color = { 0.2, 0.2, 0.2, 1 } },
+    slotHilight = { file = "Interface\\Buttons\\ButtonHilight-Square", blend = "ADD" },
+    slotOffMark = { atlas = "common-icon-redx", text = "x" },
     lootStar = { atlases = { "auctionhouse-icon-favorite", "PetJournal-FavoritesIcon" },
         file = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_1", size = 18 },
 }
@@ -187,6 +197,12 @@ Theme.sizes = {
     -- inner padding, piece indent, header button size.
     -- ui-b1 job A: width 240, header band 26, close 18, fold 16, title x 7, tick x 4, "for" line +4
     -- (the longest hand-in name, "for Qiraji Bindings of Dominance", needs ~202 of the 206 px left).
+    -- 1.1 beta.2 shopping list rows (Progress tab right column, 400 px): row height, columns
+    -- (name / have / to get / each), price age in days after which a total turns grey.
+    shop = { row = 20, icon = 16, have = 56, get = 50, each = 90, indent = 8, oldDays = 3 },
+    -- 1.1 beta.2 hide-slot buttons under the model: icon, button (icon + frame), gap after
+    -- Reset, gap between buttons, red X.
+    slot = { icon = 18, button = 20, first = 8, gap = 4, mark = 12 },
     tracker = { width = 240, head = 26, row = 14, maxRows = 12, pad = 6, indent = 18, button = 18, fold = 16,
         titleX = 7, tickX = 4, viaIndent = 4, countGap = 4 },
 }
@@ -299,6 +315,17 @@ Theme.colors = {
     trackerGot  = P.green,              -- pieces you got in this run (ticked)
     trackerSkip = P.grey,               -- "not out yet", "for ...", alt names, "+n more"
     trackerCount = P.white,             -- "3 left" in the header
+    -- 1.1 beta.2 shopping list (Progress tab) and price lines
+    shopHead  = P.gold,                 -- "To craft", "Mats"
+    shopText  = P.white,                -- mat names
+    shopMissing = P.orange,             -- "not known" (the recipe you still have to get)
+    shopDone  = P.green,                -- "known", enough of a mat
+    shopWhere = P.grey,                 -- "needs a crafter", "?", column labels, notes
+    priceOld  = P.grey,                 -- a total whose price is older than 3 days
+    levelHigh = P.orange,               -- "Requires level 60" when more than 5 levels above you
+    slotOff   = CreateColor(0.5, 0.5, 0.5, 1),   -- hidden-slot button icon tint (GetRGBA)
+    slotFrame = P.grey,                 -- iconBorder tint of the slot buttons
+    slotOffMark = P.orange,             -- the "x" when the red X atlas is missing
 }
 
 -- Effort word colours (Data:GetEffort level): 0 Done grey, 1 Low green, 2 Medium gold,

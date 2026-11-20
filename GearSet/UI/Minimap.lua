@@ -68,6 +68,8 @@ local function ShowTooltip(owner, anchor)
     GameTooltip:SetText(L.TITLE, Theme.colors.title:GetRGB())
     -- beta.8: "38% of set pieces, 12 tracked pieces left" (worked out once, cached)
     if ns.Progress and ns.Progress.AddTooltipLine then pcall(ns.Progress.AddTooltipLine, ns.Progress, GameTooltip) end
+    -- 1.1 beta.2: "Next: <3 sets closest to done>" (setting nextTargets)
+    if ns.Progress and ns.Progress.AddNextLine then pcall(ns.Progress.AddNextLine, ns.Progress, GameTooltip) end
     Theme.AddHint(GameTooltip, L.MINIMAP_TIP_CLICK)
     if owner == MB.button then
         Theme.AddHint(GameTooltip, L.MINIMAP_TIP_DRAG)

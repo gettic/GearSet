@@ -154,6 +154,10 @@ local function LoadLive()
             end
         end
     end
+    -- 1.1 beta.2: the saved mat counts (bank part only changes at a bank visit)
+    if type(rec) == "table" and type(rec.mats) == "string" and live.mats == nil then
+        live.mats = Alts.DecodeMats(rec.mats)
+    end
     local acc = db.account
     if type(acc) == "table" then
         if type(acc.bank) == "string" then
@@ -313,10 +317,12 @@ local function RunScans()
         live.bags, live.dates.bags = Alts.ScanBags(items), t
         local k = Alts.ScanKeyring(items)
         if k then live.keyring, live.dates.keyring = k, t end
+        Alts.CountMats(false)
         any = true
     end
     if pending.bank and state.bankOpen then
         live.bank, live.dates.bank = Alts.ScanBank(items), t
+        Alts.CountMats(true)
         state.bankRead = true
         local got, readable, api = Alts.ScanAccount(items)
         account.api, account.readable, account.checked = api, readable, t
@@ -361,6 +367,12 @@ function Alts:Save()
             rec.dates[place] = Num(live.dates[place]) or rec.seen
         end
     end
+    -- 1.1 beta.2 (Shopping.lua): mats on the list, professions, known list recipes.
+    if live.mats then rec.mats = Alts.EncodeMats(live.mats) end
+    local prof = Alts.ReadProfessions()
+    if prof then rec.prof = Alts.EncodeNums(prof) end
+    local rcp = Alts.ReadRecipes()
+    if rcp then rec.recipes = Alts.EncodeList(rcp) end
     if next(liveDone) then
         if type(rec.done) ~= "table" then rec.done = {} end
         for id, t in pairs(liveDone) do
@@ -419,6 +431,7 @@ local function OnEvent(_, event)
         if okB then live.bags, live.dates.bags = bags, t end
         local okK, k = pcall(Alts.ScanKeyring, items)
         if okK and k then live.keyring, live.dates.keyring = k, t end
+        pcall(Alts.CountMats, false)
         Alts:Save()
     end
 end
@@ -708,6 +721,172 @@ function Alts:AccountStatus()
     local now
     if state.bankOpen then now = readable end
     return api, now, account.readable, account.checked
+end
+
+-- ---------------------------------------------------------------------------
+-- 1.1 beta.2: mats, professions and recipes (Shopping.lua). Only the shopping mats (<= 29 IDs
+-- from GuideData `mats`) and the data's recipe spells are read; own characters only (W8).
+
+local function Whole(v) return type(v) == "number" and v == math.floor(v) and v >= 0 and v < 2 ^ 31 end
+
+-- "id:bags:bank,..." (zeros left out) <-> { [id] = { bags, bank } }.
+function Alts.EncodeMats(m)
+    local ids = {}
+    for id, c in pairs(m) do
+        if Whole(id) and type(c) == "table" and ((c[1] or 0) > 0 or (c[2] or 0) > 0) then ids[#ids + 1] = id end
+    end
+    table.sort(ids)
+    local parts = {}
+    for i, id in ipairs(ids) do parts[i] = ("%d:%d:%d"):format(id, m[id][1] or 0, m[id][2] or 0) end
+    return table.concat(parts, ",")
+end
+
+function Alts.DecodeMats(s)
+    local out = {}
+    if type(s) ~= "string" then return out end
+    for id, b, k in s:gmatch("(%d+):(%d+):(%d+)") do
+        out[tonumber(id)] = { tonumber(b), tonumber(k) }
+    end
+    return out
+end
+
+-- { [k] = n } <-> "k:n,..."; { [k] = true } <-> "k,...".
+function Alts.EncodeNums(t)
+    local keys = {}
+    for k, v in pairs(t) do if Whole(k) and Whole(v) then keys[#keys + 1] = k end end
+    table.sort(keys)
+    local parts = {}
+    for i, k in ipairs(keys) do parts[i] = k .. ":" .. t[k] end
+    return table.concat(parts, ",")
+end
+
+function Alts.DecodeNums(s)
+    local out = {}
+    if type(s) ~= "string" then return out end
+    for k, v in s:gmatch("(%d+):(%d+)") do out[tonumber(k)] = tonumber(v) end
+    return out
+end
+
+function Alts.EncodeList(t)
+    local keys = {}
+    for k, v in pairs(t) do if Whole(k) and v then keys[#keys + 1] = k end end
+    table.sort(keys)
+    return table.concat(keys, ",")
+end
+
+function Alts.DecodeList(s)
+    local out = {}
+    if type(s) ~= "string" then return out end
+    for k in s:gmatch("%d+") do out[tonumber(k)] = true end
+    return out
+end
+
+local function MatIDs()
+    local S = ns.Shopping
+    if S and S.MatIDs then
+        local ok, ids = pcall(S.MatIDs)
+        if ok and type(ids) == "table" then return ids end
+    end
+    return EMPTY
+end
+
+-- Counts the shopping mats of this character: bags always, the bank only while it is open.
+function Alts.CountMats(withBank)
+    local ids = MatIDs()
+    if #ids == 0 then return end
+    local C = C_Item
+    local GetCount = (C and C.GetItemCount) or _G.GetItemCount
+    if type(GetCount) ~= "function" then return end
+    local m = live.mats or {}
+    for _, id in ipairs(ids) do
+        local okB, bags = pcall(GetCount, id)
+        if okB and not Secret(bags) and type(bags) == "number" then
+            local c = m[id] or { 0, 0 }
+            c[1] = bags
+            if withBank then
+                local okA, all = pcall(GetCount, id, true)
+                if okA and not Secret(all) and type(all) == "number" then c[2] = math.max(0, all - bags) end
+            end
+            m[id] = c
+        end
+    end
+    live.mats = m
+end
+
+-- This character's professions -> { [skillLine] = rank } (nil when unreadable).
+function Alts.ReadProfessions()
+    local GetProfessions, GetProfessionInfo = _G.GetProfessions, _G.GetProfessionInfo
+    if type(GetProfessions) ~= "function" or type(GetProfessionInfo) ~= "function" then return nil end
+    local ok, a, b, c, d, e = pcall(GetProfessions)
+    if not ok then return nil end
+    local out = {}
+    for _, idx in pairs({ a, b, c, d, e }) do
+        if type(idx) == "number" and not Secret(idx) then
+            local okI, _, _, rank, _, _, _, skillLine = pcall(GetProfessionInfo, idx)
+            if okI and Whole(rank) and Whole(skillLine) and not Secret(skillLine) then out[skillLine] = rank end
+        end
+    end
+    return out
+end
+
+-- The data's recipe spells this character knows -> { [spellID] = true } (nil = can't tell).
+-- C_SpellBook.IsSpellKnown at any time (probe "Recipes" confirms it covers recipes), plus
+-- what the profession window told us (`live.recipes`).
+function Alts.ReadRecipes()
+    local S = ns.Shopping
+    local spells = (S and S.RecipeSpells) and S.RecipeSpells() or EMPTY
+    local known = {}
+    for id in pairs(live.recipes or EMPTY) do known[id] = true end
+    local SB = _G.C_SpellBook
+    local IsKnown = SB and SB.IsSpellKnown
+    if type(IsKnown) ~= "function" and next(known) == nil then return nil end
+    if type(IsKnown) == "function" then
+        for _, id in ipairs(spells) do
+            local ok, k = pcall(IsKnown, id)
+            if ok and k == true then known[id] = true end
+        end
+    end
+    return known
+end
+
+-- The profession window said a recipe is learned (or not).
+function Alts.NoteRecipe(spellID, learned)
+    if not Whole(spellID) then return end
+    live.recipes = live.recipes or {}
+    live.recipes[spellID] = learned and true or nil
+end
+
+-- Per character (own saved ones; this one = live): mats { [id] = { bags, bank } },
+-- professions { [skillLine] = rank }, recipes { [spellID] = true }.
+function Alts:MatCounts(key)
+    if key == self:MyKey() then
+        LoadLive()
+        if live.mats then return live.mats end
+    end
+    local db = DB()
+    local rec = db and db.chars[key]
+    return type(rec) == "table" and Alts.DecodeMats(rec.mats) or {}
+end
+
+function Alts:Professions(key)
+    if key == self:MyKey() then
+        local p = Alts.ReadProfessions()
+        if p then return p end
+    end
+    local db = DB()
+    local rec = db and db.chars[key]
+    return type(rec) == "table" and Alts.DecodeNums(rec.prof) or {}, type(rec) == "table" and type(rec.prof) == "string"
+end
+
+function Alts:Recipes(key)
+    if key == self:MyKey() then
+        local r = Alts.ReadRecipes()
+        if r then return r, true end
+    end
+    local db = DB()
+    local rec = db and db.chars[key]
+    if type(rec) == "table" and type(rec.recipes) == "string" then return Alts.DecodeList(rec.recipes), true end
+    return {}, false
 end
 
 -- Offline tests: reset the in-memory state.

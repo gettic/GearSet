@@ -449,6 +449,7 @@ end
 Tracker.entered = {}
 
 function Tracker:IsCollapsed()
+    if self.testView then return false end   -- /gs selftest checks the rows even when folded
     local t = DB()
     return t ~= nil and t.collapsed == true
 end

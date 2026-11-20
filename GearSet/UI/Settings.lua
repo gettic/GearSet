@@ -27,7 +27,12 @@ local VAR = {
     trackerAuto    = "GearSet_TrackerAuto",    -- 1.1 beta.1 (UI\Tracker.lua, LootMark.lua)
     trackerStarted = "GearSet_TrackerStarted",
     lootMark       = "GearSet_LootMark",
+    nextTargets    = "GearSet_NextTargets",    -- 1.1 beta.2 (UI\Progress.lua tooltip line)
 }
+-- 1.1 beta.2: the price source dropdown (a string setting, not in VAR: S:Refresh only
+-- handles the booleans there). Values: AHPrices.lua.
+S.PRICE_VAR = "GearSet_PriceSource"
+S.PRICE_SOURCES = { "auto", "auctionator", "tsm", "off" }
 
 local function DB() return ns.db end
 
@@ -134,7 +139,56 @@ local VALUES = {
         set = function(v) local db = DB(); if db then db.lootMark = v and true or false end end,
         default = true,
     },
+    nextTargets = {
+        get = function() local db = DB(); return not (db and db.nextTargets == false) end,
+        set = function(v) local db = DB(); if db then db.nextTargets = v and true or false end end,
+        default = true,
+    },
 }
+
+local function PriceGet()
+    local db = DB()
+    local v = db and db.priceSource
+    for _, s in ipairs(S.PRICE_SOURCES) do if s == v then return v end end
+    return "auto"
+end
+
+local function PriceSet(v)
+    local db = DB()
+    if not db then return end
+    for _, s in ipairs(S.PRICE_SOURCES) do
+        if s == v then
+            db.priceSource = v
+            if ns.Progress and ns.Progress.Refresh then pcall(ns.Progress.Refresh, ns.Progress) end
+            return
+        end
+    end
+end
+S.PriceGet, S.PriceSet = PriceGet, PriceSet
+
+function S.CanPriceDropdown()
+    local Set = Settings
+    return type(Set) == "table" and type(Set.RegisterProxySetting) == "function" and type(Set.CreateDropdown) == "function"
+        and type(Set.CreateControlTextContainer) == "function"
+end
+
+-- "Prices from: Auctionator or TSM / Auctionator / TSM / Off" (Blizzard dropdown row).
+local function PriceDropdown(category)
+    local Set = Settings
+    if not S.CanPriceDropdown() then return end
+    local vtype = (Set.VarType and Set.VarType.String) or "string"
+    local ok, setting = pcall(Set.RegisterProxySetting, category, S.PRICE_VAR, vtype,
+        T("S_PRICES_LABEL", "Prices from"), "auto", PriceGet, PriceSet)
+    if not (ok and setting) then return end
+    local function Options()
+        local c = Set.CreateControlTextContainer()
+        for _, s in ipairs(S.PRICE_SOURCES) do c:Add(s, T("S_PRICES_" .. s, s)) end
+        return c:GetData()
+    end
+    local okD, init = pcall(Set.CreateDropdown, category, setting, Options,
+        T("S_PRICES_TIP", "Auction prices on the shopping list, read from your price addon. Gear Set never scans the auction house."))
+    return setting, okD and init or nil
+end
 
 -- Read by /gs selftest (setting value == saved data).
 S.VARS, S.VALUES = VAR, VALUES
@@ -433,6 +487,9 @@ function S:Init()
     self.settings.milestoneNotes = Checkbox(category, "milestoneNotes",
         T("S_MILESTONES", "Milestone notes in chat"),
         T("S_MILESTONES_TIP", "One quiet chat line when you reach a milestone, like your first complete set. No sound."))
+    self.settings.nextTargets = Checkbox(category, "nextTargets",
+        T("S_NEXT", "Next targets in the button tooltip"),
+        T("S_NEXT_TIP", "The minimap and broker tooltip name the 3 sets closest to done."))
 
     Header(layout, T("S_DUNGEONS", "Dungeons"))
     self.settings.trackerAuto = Checkbox(category, "trackerAuto",
@@ -450,6 +507,12 @@ function S:Init()
         end)
     if type(self.skipInit) == "table" and type(self.skipInit.AddModifyPredicate) == "function" then
         pcall(self.skipInit.AddModifyPredicate, self.skipInit, function() return SkippedCount() > 0 end)
+    end
+
+    -- "Shopping" holds only the price dropdown: no header when this client can't make one.
+    if S.CanPriceDropdown() then
+        Header(layout, T("S_SHOPPING", "Shopping"))
+        self.priceSetting = PriceDropdown(category)
     end
 
     Header(layout, T("S_CHARS", "Characters"))
@@ -529,6 +592,7 @@ function S:Refresh()
         local data = init.GetData and init:GetData() or init.data
         if type(data) == "table" then data[field] = value end
     end
+    if self.priceSetting and type(Settings.NotifyUpdate) == "function" then pcall(Settings.NotifyUpdate, S.PRICE_VAR) end
     SetData(self.unhideInit, "buttonText", UnhideText())
     SetData(self.skipInit, "buttonText", SkippedText())
     SetData(self.forgetInit, "name", ForgetLabel())

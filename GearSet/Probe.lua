@@ -293,6 +293,39 @@ local CHECKS = {
         return Has({ "GetLootRollItemLink", "GetLootRollItemInfo" }) .. (", GroupLootFrame %d/4"):format(frames)
             .. ", hooked " .. (LM and LM.HookedCount and LM.HookedCount() or 0)
     end },
+    -- 1.1 beta.2 shopping list: recipe reads (Imperial Plate Chest's spell from the data, else
+    -- 16742), price addons (read only: which API functions exist, one price), item levels,
+    -- the model's UndressSlot (hide helm / cloak / weapons on our own model).
+    { "Recipes", function()
+        local S = ns.Shopping
+        local spells = S and S.RecipeSpells and S.RecipeSpells() or {}
+        local id = spells[1] or 16742
+        local s = Has({ "C_SpellBook.IsSpellKnown", "C_TradeSkillUI.GetRecipeInfo", "IsPlayerSpell" })
+            .. (", %d recipe spells in data, %s %s"):format(#spells, tostring(id), Val("C_SpellBook.IsSpellKnown", id))
+        local ok, info = Call("C_TradeSkillUI.GetRecipeInfo", id)
+        if ok and type(info) == "table" then s = s .. ", learned " .. Safe(info.learned) end
+        return s
+    end },
+    { "Price addons", function()
+        local AH = ns.AHPrices
+        if not (AH and AH.Describe) then return "module no" end
+        local hasA, names, hasT = AH.Describe()
+        local s = "Auctionator " .. YesNo(hasA)
+        if hasA then s = s .. " (" .. table.concat(names, " ", 1, math.min(#names, 20)) .. ")" end
+        s = s .. ", TSM_API " .. YesNo(hasT) .. ", source " .. Safe(AH.Source())
+        local ok, p, age = pcall(AH.Get, 12359)   -- Thorium Bar
+        if ok then s = s .. ", 12359 = " .. Safe(p) .. " age " .. Safe(age) end
+        return s
+    end },
+    { "Required level", function()
+        local ok, name, _, _, _, minLevel = Call("C_Item.GetItemInfo", 16820)
+        return Has({ "C_Item.GetItemInfo", "UnitLevel" }) .. ", 16820 " .. (ok and (Safe(name) .. " min " .. Safe(minLevel)) or "?")
+            .. ", " .. Val("UnitLevel", "player")
+    end },
+    { "Model slots", function()
+        local m = ModelMethods()
+        return "UndressSlot " .. YesNo(m and IsFunc(m.UndressSlot))
+    end },
     { "Reputation", function()
         local s = Has({ "C_Reputation.GetFactionDataByID", "GetFactionInfoByID" })
         local ok, data = Call("C_Reputation.GetFactionDataByID", 529)   -- Argent Dawn

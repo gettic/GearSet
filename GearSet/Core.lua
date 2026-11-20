@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.DB_VERSION = 6
+ns.DB_VERSION = 7
 
 -- All user-facing text in one place (ready for translations later).
 ns.L = {
@@ -81,6 +81,67 @@ ns.L = {
     S_LOOT_MARK_TIP = "A small star on the loot roll window when you or one of your other characters needs the item. It never rolls for you.",
     S_SKIPPED_LABEL = "Instances you chose not to show",
     S_SKIPPED = "Show them again (%d)",
+    -- 1.1 beta.2: shopping list (Shopping.lua / UI\Progress.lua), prices (AHPrices.lua),
+    -- model toggles (UI\Preview.lua), levels (Data / SetList / PieceList), next targets.
+    SHOP_HEAD = "Shopping list",
+    SHOP_CRAFT = "To craft",
+    SHOP_MATS = "Mats",
+    SHOP_COL_HAVE = "Have",
+    SHOP_COL_GET = "To get",
+    SHOP_COL_EACH = "Each",
+    SHOP_HAVE_NEED = "%d/%d",
+    SHOP_KNOWN = "known",
+    SHOP_KNOWN_BY = "known by %s",
+    SHOP_NOT_KNOWN = "not known",
+    SHOP_CRAFTER = "needs a crafter",
+    SHOP_UNKNOWN = "?",
+    SHOP_TOTAL = "To buy %s",
+    SHOP_TOTAL_MONEY = "about %s",
+    SHOP_TOTAL_NONE = "To buy: no price",
+    SHOP_SOURCE = "(%s, %s)",
+    SHOP_AMOUNTS = "%d mat amounts unknown (?)",
+    SHOP_TIP_HAVE = "Have %d: bags %d, bank %d",
+    SHOP_TIP_ALT = "%s: %d",
+    SHOP_TIP_GET = "Get it: %s",
+    SHOP_TIP_PRICE = "Price %s each (%s, %s)",
+    SHOP_TIP_RECIPE = "Recipe: %s",
+    SHOP_TIP_SKILL = "%s %d",
+    SHOP_GET_ah = "auction house",
+    SHOP_GET_craft = "%s from %s",
+    SHOP_GET_skin = "skinning %s, %s",
+    SHOP_GET_drop = "drops from %s, %s",
+    SHOP_GET_vendor = "sold by %s, %s",
+    PRICE_TODAY = "today",
+    PRICE_DAYS = "%d days old",
+    PRICE_DAY = "1 day old",
+    PRICE_TSM = "TSM market value",
+    PRICE_TSM_SHORT = "TSM",
+    SHOP_UNPRICED = "%d without a price",
+    PRICE_AUCTIONATOR = "Auctionator",
+    SLOT_HEAD = "Hide the helm on this model",
+    SLOT_BACK = "Hide the cloak on this model",
+    SLOT_WEAPONS = "Hide the weapons on this model",
+    SLOT_SHOW_HEAD = "Show the helm on this model",
+    SLOT_SHOW_BACK = "Show the cloak on this model",
+    SLOT_SHOW_WEAPONS = "Show the weapons on this model",
+    SLOT_TIP_NOTE = "Only this preview; your character is not changed.",
+    LEVEL_RANGE = "Requires level %d-%d",
+    LEVEL_ONE = "Requires level %d",
+    LEVEL_SHORT = "Level %s",
+    MY_LEVEL = "Fits my level (within 5)",
+    NEXT_LINE = "Next: %s",
+    NEXT_ITEM = "%s (%d left)",
+    NEXT_HEAD = "Next:",
+    NEXT_LEFT = "%d left",
+    S_SHOPPING = "Shopping",
+    S_PRICES_LABEL = "Prices from",
+    S_PRICES_auto = "Auctionator or TSM",
+    S_PRICES_auctionator = "Auctionator",
+    S_PRICES_tsm = "TSM",
+    S_PRICES_off = "Off",
+    S_PRICES_TIP = "Auction prices on the shopping list, read from your price addon. Gear Set never scans the auction house.",
+    S_NEXT = "Next targets in the button tooltip",
+    S_NEXT_TIP = "The minimap and broker tooltip name the 3 sets closest to done.",
     ALL_CLASSES = "All classes",
     UNKNOWN_SET = "Set %d",
     ANY_CAN_WEAR = "(any class can wear it)",
@@ -459,6 +520,7 @@ local defaults = {
         trackedOnly = false,     -- DB v4: only tracked sets (or sets with a tracked piece)
         tier = "",               -- DB v4: "" = all, else a tier tag ("T1"; Progress page bars set it)
         hideLater = false,       -- DB v5 (v1.0.1): hide sets not out yet on WoW Forever
+        myLevel = false,         -- DB v7 (1.1 beta.2): only sets within 5 levels of yours
     },
     sort = "owned",              -- set list order: "owned", "closest", "name", "effort" (v2)
     search = "",
@@ -509,6 +571,16 @@ local defaults = {
         skip = {},
     },
     lootMark = true,
+    -- DB v7 (1.1 beta.2, additive): auction prices from "auto" / "auctionator" / "tsm" / "off"
+    -- (AHPrices.lua, read only, nothing cached); helm / cloak / weapons hidden on our own model
+    -- (Preview.lua); "Next:" line in the minimap / broker tooltip. Alts.lua adds per character
+    -- `mats` ("id:bags:bank,..."), `prof` ("skillLine:rank,...") and `recipes` ("spellID,...").
+    priceSource = "auto",
+    preview = {
+        hide = { head = false, back = false, weapons = false },
+    },
+    nextTargets = true,
+    levels = {},             -- itemID -> required level learned in game (Data.LearnLevel)
 }
 
 -- Filter defaults, read by the set list's "Reset filters" (one place for both).
@@ -576,6 +648,10 @@ local function ValidateDB(db)
     if f.class ~= 0 and f.usable then f.usable = false end
     if not SORT_MODES[db.sort] then db.sort = defaults.sort end
     if db.tracker.point ~= nil and not ns.ValidPoint(db.tracker.point) then db.tracker.point = nil end
+    -- an unknown string may come from a newer version: kept (AHPrices reads it as "auto")
+    if type(db.priceSource) ~= "string" or db.priceSource == "" then
+        db.priceSource = defaults.priceSource
+    end
     if not Finite(db.minimap.angle) then db.minimap.angle = defaults.minimap.angle end
 end
 
@@ -587,7 +663,7 @@ function ns.PrepareDB(t)
     if type(t.version) == "string" and Finite(t.version) then t.version = tonumber(t.version) end
     ApplyDefaults(t, defaults)
     ValidateDB(t)
-    -- Migrations (compare t.version). v1 -> v2, v2 -> v3, v3 -> v4, v4 -> v5 and v5 -> v6 only add keys (ApplyDefaults
+    -- Migrations (compare t.version). v1 -> v2, v2 -> v3, v3 -> v4, v4 -> v5, v5 -> v6 and v6 -> v7 only add keys (ApplyDefaults
     -- above). v3: a char record written in the planned beta.3 shape (one `items` string, no
     -- `places`) gets its items as bags; the old key stays. A newer version number is never
     -- lowered, so an older build opening newer data doesn't mark it as old.

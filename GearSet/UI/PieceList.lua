@@ -343,10 +343,18 @@ end
 -- Header
 
 -- Armor type (gold) and classes (class colours), e.g. "Plate - Warrior, Paladin".
-local function SetInfoText(set)
+local function SetInfoText(set, noLevel)
     local parts = {}
+    -- 1.1 beta.2: "Level 52-58" first (SetsData lv / lx; nothing when the data has none)
+    local lo, hi = ns.Data.SetLevel(set)
+    if lo and not noLevel then
+        local lv = (hi and hi > lo) and (lo .. "-" .. hi) or tostring(lo)
+        local text = (L.LEVEL_SHORT or "Level %s"):format(lv)
+        local c = (ns.Data.FitsLevel and not ns.Data.FitsLevel(set)) and Theme.colors.levelHigh or Theme.colors.armorLine
+        parts[1] = c:WrapTextInColorCode(text)
+    end
     local armor = ns.Data.ArmorName(set.armor)
-    if armor then parts[1] = Theme.colors.armorLine:WrapTextInColorCode(armor) end
+    if armor then parts[#parts + 1] = Theme.colors.armorLine:WrapTextInColorCode(armor) end
     -- Class names in class colours; Dungeon Set 1/2 add "(any class can wear it)".
     local classes = ns.SetList and ns.SetList.ClassText and ns.SetList.ClassText(set)
     if not classes then classes = L.ALL_CLASSES end
@@ -745,7 +753,14 @@ function PieceList:Refresh()
         return
     end
     self:SetTitle(set.name)
+    -- 1.1 beta.2: learn required levels of pieces the client already has (no extra loads)
+    if ns.Data.LearnLevel then
+        for _, p in ipairs(set.pieces or {}) do pcall(ns.Data.LearnLevel, p.itemID) end
+    end
     self.info:SetText(SetInfoText(set))
+    -- the level never pushes the class list out: drop it when the line would be cut (it is
+    -- in the set tooltip too)
+    if self.info.IsTruncated and self.info:IsTruncated() then self.info:SetText(SetInfoText(set, true)) end
     self:SetCountBar(ns.Owned:SetCount(set))
     self:UpdateBonuses()
     local retain = ScrollBoxConstants and ScrollBoxConstants.RetainScrollPosition

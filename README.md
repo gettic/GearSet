@@ -4,7 +4,7 @@ Keeps track of all known armor sets in the game, in one window with three parts:
 
 A World of Warcraft addon for **WoW Forever**.
 
-Current version: **v1.0.1**. A beta, **v1.1.0-beta.1**, is on the beta channel.
+Current version: **v1.0.1**. A beta, **v1.1.0-beta.2**, is on the beta channel.
 
 ## Install
 
@@ -44,6 +44,8 @@ Open them with the gear button at the top right of the window, a right-click on 
 | Only while Shift is held | Shows the tooltip line only while you hold Shift. Sits under the line above and is greyed out while that is off |
 | Alt-click an item to open its guide | Turns Alt-click on or off (on by default) |
 | Milestone notes in chat | One quiet chat line when you reach a [milestone](#tabs-and-progress) (on by default) |
+| Next targets in the button tooltip | The minimap and broker tooltip name the [3 sets closest to done](#tabs-and-progress) (on by default). Under **Progress** |
+| Prices from | Where the [shopping list](#shopping-list) gets auction prices: "Auctionator or TSM" (default), "Auctionator", "TSM" or "Off". Under **Shopping** |
 | Open the dungeon checklist by itself | Opens the [dungeon checklist](#dungeon-checklist-and-loot-roll-star) when you enter a dungeon or raid with pieces you need (on by default) |
 | With nothing tracked, use sets I've started | When you track nothing, the checklist and the loot roll star use sets you have started and your class can wear (on by default) |
 | Mark set pieces on loot rolls | Shows the loot roll star (on by default) |
@@ -58,7 +60,7 @@ Open them with the gear button at the top right of the window, a right-click on 
 | What | How |
 |---|---|
 | Find a set | Type in the search box. A tier tag works too: "t2" or "tier 2" finds the Tier 2 sets. See [Search](#search) for more |
-| Filter | The filter menu shows your current choice for Sort, Class, Armor type and Content. Choices: Class, Armor type, Content (Dungeon, Raid, PvP, Crafted, World, WoW Forever), "Only my class" (on by default for new installs), "Only my faction" (on by default), "Hide complete sets", "Hide sets not out yet", "Show removed sets", "Show hidden sets", "Reset filters" (puts every filter back to its default; the sort stays) |
+| Filter | The filter menu shows your current choice for Sort, Class, Armor type and Content. Choices: Class, Armor type, Content (Dungeon, Raid, PvP, Crafted, World, WoW Forever), "Only my class" (on by default for new installs), "Only my faction" (on by default), "Fits my level (within 5)" (see [Required level](#required-level)), "Hide complete sets", "Hide sets not out yet", "Show removed sets", "Show hidden sets", "Reset filters" (puts every filter back to its default; the sort stays) |
 | Only my class | Picking a class turns this off, and turning it on sets Class back to All, so the two never hide every set. It keeps sets your class can wear. Dungeon Set 1 and 2 are matched to the classes they were made for. Other sets for all classes show only if your class can wear their armor type |
 | Removed sets | Sets taken out of the game in patch 1.11 (old PvP rare sets) are hidden. "Show removed sets" shows them with a grey name |
 | Faction | PvP and Arathi Basin sets show a small faction icon. "Only my faction" hides the other faction's sets |
@@ -85,6 +87,7 @@ Your character wearing the chosen set.
 | Show only the set | Tick "Only the set" (bottom bar) to take off your own gear (off by default, so your own gear shows with the set) |
 | Take a piece off | Untick its box in the list on the right; tick it again to put it back |
 | Start over | "Reset view" (bottom bar) turns the model back, zooms out and puts all pieces back |
+| Hide helm, cloak or weapons | Three small buttons next to "Reset view" hide that slot on the preview only. Your character is not changed. Click again to show it. The choice is kept for all characters |
 
 ### Pieces (right)
 
@@ -106,6 +109,12 @@ Next to "Set bonuses" are two more hovers:
 | No source | "Source unknown" means the addon has no entry for that piece |
 | Not in this game version | A piece this game version doesn't know yet shows greyed as "Not in this game version". It still counts in the set's total, so a set can't look finished too early |
 | Keep it | Dungeon Set 1 pieces have a grey tooltip line "Keep it: the Dungeon Set 2 quests take this piece", so you don't sell them |
+
+### Required level
+
+Sets show the level they need ("Requires level 50-60" in the set tooltip, "Level 50-60" above the piece list). The filter menu has "Fits my level (within 5)": it hides sets that need more than 5 levels above yours. Sets with no known level always stay.
+
+Levels the built-in data doesn't have yet are learned as you play. When a set piece's item info shows up (tooltips, the piece list), its level is remembered for all your characters.
 
 ### Piece guide
 
@@ -191,14 +200,30 @@ Two tabs sit at the bottom of the window: **Sets** (the window described above) 
 | Characters | Each saved character as a bar |
 | Count for | "This character" or "Whole account" (remembered). "This character" and each character's line count only the sets that class can wear. "Whole account" counts all sets |
 | Tracked | How many sets and pieces you track, and how many pieces are still needed |
+| Shopping list | What you need to craft your tracked pieces. See [Shopping list](#shopping-list) |
 
-Removed, other-faction, hidden and not-yet-released sets are never counted. The minimap button and Titan Panel / data bar tooltips show a line such as "38% of set pieces, 12 tracked pieces left".
+Removed, other-faction, hidden and not-yet-released sets are never counted. The minimap button and Titan Panel / data bar tooltips show a line such as "38% of set pieces, 12 tracked pieces left", then "Next: ..." with the 3 sets closest to done (tracked sets first). Turn "Next:" off in the settings.
 
 **Milestones:** your first complete set, 5, 10 and 25 sets, and a quarter, half, three quarters and all of the pieces. Each gives one quiet chat line, once per character, with no sound. They are on by default; turn them off in Settings > Progress ("Milestone notes in chat"). Milestones you had already reached before the update are noted silently.
 
+### Shopping list
+
+*In v1.1.0-beta.2.*
+
+On the Progress tab, for the crafted pieces of your tracked sets and pieces:
+
+| What | How |
+|---|---|
+| Recipes | Which ones you or your other characters know, or "needs a crafter". Open a profession window once so Gear Set can read it |
+| Mats | Added up and compared with your bags, bank and other characters: have, still to get |
+| Where | Where to get each mat (auction house, vendor, drop, skinning, crafting) |
+| Prices | An auction price for each mat and a total. A price older than 3 days shows grey |
+
+Prices are read only from Auctionator or TSM, if you have one. Choose which in the settings under **Shopping** ("Prices from"). Gear Set never scans the auction house. Without a price addon the list has no prices.
+
 ### Gold costs
 
-A set shows "Gold still needed" for the fixed in-game gold it still needs on this character, such as the quest gold in the Dungeon Set 2 steps. Vendor prices count only where Gear Set has them. Auction prices are not used, and crafting materials are not priced. Pieces that bind when picked up are marked "can't be bought". The piece tooltip shows the cost line.
+A set shows "Gold still needed" for the fixed in-game gold it still needs on this character, such as the quest gold in the Dungeon Set 2 steps. Vendor prices count only where Gear Set has them. Auction prices are not part of this number (they are on the [shopping list](#shopping-list)), and crafting materials are not priced here. Pieces that bind when picked up are marked "can't be bought". The piece tooltip shows the cost line.
 
 When you open a vendor that sells set pieces (PvP rank, Arathi Basin), Gear Set remembers the prices shown (gold and honor or marks) for all your characters. They show as "Price seen at a vendor: ... (date)". It only reads the window and never buys anything.
 
@@ -287,6 +312,8 @@ The addon is in the `GearSet` folder (`GearSet_Forever.toc`, interface 16001). S
 | `Gold.lua` | Works out the gold still needed and what can't be bought |
 | `Prices.lua` | Learns vendor prices when you open a vendor |
 | `Runs.lua` | Works out which dungeon and raid bosses drop the pieces you need |
+| `Shopping.lua` | The shopping list: recipes, mats and what is still to get |
+| `AHPrices.lua` | Reads auction prices from Auctionator or TSM (read only) |
 | `LootMark.lua` | The star on the loot roll window |
 | `Share.lua` | Puts a set and its item links in your chat box |
 | `Search.lua` | Search across sets, pieces, bosses, places and NPCs |
@@ -306,7 +333,7 @@ The addon is in the `GearSet` folder (`GearSet_Forever.toc`, interface 16001). S
 
 ## Credits
 
-Works with LibDataBroker displays such as Titan Panel and with TomTom if you have them installed; they are not included with Gear Set and keep their own licences.
+Works with LibDataBroker displays such as Titan Panel, with TomTom, and with Auctionator and TSM (prices are read only) if you have them installed; they are not included with Gear Set and keep their own licences.
 
 Set, item, source, position and gold cost data, and the how-to-get guide text, gathered and adapted from Warcraft Wiki (https://warcraft.wiki.gg), whose text is available under CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). World of Warcraft and its content are trademarks and property of Blizzard Entertainment.
 

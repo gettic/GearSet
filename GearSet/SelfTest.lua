@@ -228,7 +228,7 @@ local function ArtEntryMissing(v)
         end
         if type(v.file) == "string" and FileLoads(v.file) ~= false then return nil end
         if type(v.file) == "number" then return nil end
-        if v.color then return nil end
+        if v.color or v.text then return nil end      -- own colour / text fallback
         return names[1] or tostring(v.file)
     end
     if #v > 0 then
@@ -279,6 +279,20 @@ local function CheckTheme()
     end
     Info(("tracker art: %d/%d atlases%s"):format(otN - #otMiss, otN,
         #otMiss > 0 and (" (missing " .. table.concat(otMiss, ", ", 1, math.min(#otMiss, 3)) .. ")") or ""))
+    -- 1.1 beta.2: the paper-doll slot icons on the model's hide buttons (letters as fallback).
+    local slotOK, slotN = 0, 0
+    for _, key in ipairs({ "slotHead", "slotBack", "slotWeapon", "slotHilight" }) do
+        local e = T.art[key]
+        if type(e) == "table" and type(e.file) == "string" then
+            Count()
+            slotN = slotN + 1
+            if FileLoads(e.file) ~= false then slotOK = slotOK + 1 end
+        end
+    end
+    local mark = T.art.slotOffMark
+    local markOK = mark and AtlasLoads(mark.atlas)
+    Count()
+    Info(("slot art: %d/%d files, red X %s"):format(slotOK, slotN, markOK == false and "missing (x text)" or "ok"))
 
     local info = C_XMLUtil and C_XMLUtil.GetTemplateInfo
     if type(info) == "function" then
@@ -488,6 +502,10 @@ function ST.MainParts()
         { name = "insetL", obj = UI.left }, { name = "insetM", obj = UI.mid }, { name = "insetR", obj = UI.right },
         { name = "filter", obj = SL.filter }, { name = "search", obj = SL.search }, { name = "sets", obj = SL.box },
         { name = "model", obj = PV.model }, { name = "reset", obj = PV.reset }, { name = "onlySet", obj = PV.check },
+        -- 1.1 beta.2: hide helm / cloak / weapons on the model
+        { name = "slotHead", obj = PV.slotButtons and PV.slotButtons[1] },
+        { name = "slotBack", obj = PV.slotButtons and PV.slotButtons[2] },
+        { name = "slotWeapons", obj = PV.slotButtons and PV.slotButtons[3] },
         -- ui-review-3: "Sets complete" box under the title (only with the Progress module)
         { name = "countBox", obj = UI.countBox, opt = not ns.Progress },
     }
@@ -525,6 +543,12 @@ function ST.ProgressParts()
     end
     for i, b in ipairs(P.charRows or {}) do
         parts[#parts + 1] = { name = "pChar" .. i, obj = b, shownOnly = true }
+    end
+    -- 1.1 beta.2 shopping list (the made-up list while the self-test shows it)
+    parts[#parts + 1] = { name = "pShopHead", obj = P.shopHead, shownOnly = true }
+    for i, r in ipairs(P.shopRows or {}) do
+        if i > 8 then break end
+        parts[#parts + 1] = { name = "pShop" .. i, obj = r, shownOnly = true }
     end
     return parts
 end
@@ -751,6 +775,15 @@ local V6_SAMPLE = {
     lootMark = false,
 }
 
+-- 1.1 beta.2 (DB v7): price source, model toggles, level filter, next targets, per-character
+-- mats / professions / recipes (made-up "A" again).
+local V7_SAMPLE = {
+    version = 7, filters = { myLevel = true }, priceSource = "tsm", nextTargets = false,
+    preview = { hide = { head = true, back = false, weapons = true } },
+    levels = { [16820] = 60, [5] = "junk" },
+    chars = { ["A-Realm"] = { name = "A", realm = "Realm", mats = "12359:20:5,7076:2:0", prof = "164:300", recipes = "16742" } },
+}
+
 local function CheckSaved()
     local prep = ns.PrepareDB
     Count()
@@ -890,9 +923,39 @@ local function CheckSaved()
     if not ok then
         Problem("DB", "v6", Short(err))
     else
-        local lost = Lost(V6_SAMPLE, v6)
-        if lost then Problem("DB", "v6", "changed " .. lost) end
+        local lost = Lost(V6_SAMPLE, v6, nil, 0, { version = true })   -- 1.1 beta.2: version raised to 7
+        if lost then Problem("DB", "v6", "changed " .. lost)
+        elseif v6.priceSource ~= "auto" or v6.nextTargets ~= true or v6.filters.myLevel ~= false
+            or type(v6.preview) ~= "table" or type(v6.preview.hide) ~= "table" or v6.preview.hide.head ~= false
+            or type(v6.levels) ~= "table"
+            or v6.version ~= ns.DB_VERSION then
+            Problem("DB", "v6 -> v7", "v7 keys not added")
+        end
     end
+    -- 3f. 1.1 beta.2 (DB v7): v7 data goes through unchanged; a bad price source falls back.
+    Count()
+    local v7 = DeepCopy(V7_SAMPLE)
+    ok, err = pcall(prep, v7)
+    if not ok then
+        Problem("DB", "v7", Short(err))
+    else
+        local lost = Lost(V7_SAMPLE, v7)
+        if lost then Problem("DB", "v7", "changed " .. lost) end
+    end
+    Count()
+    local bad7 = { version = 7, priceSource = 5, preview = { hide = 4 }, filters = { myLevel = "y" }, nextTargets = 0 }
+    ok, err = pcall(prep, bad7)
+    if not ok then Problem("DB", "bad v7", Short(err))
+    elseif bad7.priceSource ~= "auto" or type(bad7.preview.hide) ~= "table" or bad7.filters.myLevel ~= false
+        or bad7.nextTargets ~= true then
+        Problem("DB", "bad v7", "not fixed")
+    end
+    -- a price source from a newer version is kept (read as "auto")
+    Count()
+    local new7 = { version = 7, priceSource = "newAddon" }
+    ok, err = pcall(prep, new7)
+    if not ok then Problem("DB", "newer v7", Short(err))
+    elseif new7.priceSource ~= "newAddon" then Problem("DB", "newer v7", "price source reset") end
     Count()
     local bad6 = { version = 6, tracker = { point = { "NOPE" }, auto = "x", skip = 5, keep = 1 }, lootMark = 3 }
     ok, err = pcall(prep, bad6)
@@ -1613,6 +1676,191 @@ end
 -- ---------------------------------------------------------------------------
 -- Hooks into the game
 
+-- ---------------------------------------------------------------------------
+-- 1.1 beta.2: shopping list, prices, levels, next targets, model slots.
+
+-- A made-up list (real Shopping.Build, fake have / price) for the text-fit check.
+function ST.ShopSample()
+    local S = ns.Shopping
+    if not (S and S.Build) then return nil end
+    local crafted = {
+        { itemID = 15050, prof = "Leatherworking", skill = 300, recipe = "Pattern: Black Dragonscale Breastplate",
+            mats = { { name = "Black Dragonscale", n = 40 }, { name = "Rugged Leather", n = 40 }, { name = "Larval Acid" } } },
+        { itemID = 12422, prof = "Blacksmithing", skill = 300, recipe = "Plans: Imperial Plate Chest",
+            mats = { { name = "Thorium Bar", n = 20 } } },
+        { itemID = 15051, prof = "Leatherworking", skill = 300, mats = { { name = "Black Dragonscale", n = 8 } } },
+    }
+    local states = { [15050] = "me", [12422] = "Longcharname", [15051] = "crafter" }
+    local list = S.Build(crafted,
+        function(id) if id == 15416 then return 999, { bags = 900, bank = 99, alts = {} } end return 12, { bags = 10, bank = 2, alts = {} } end,
+        function() return 9999999, 12, "auctionator" end,
+        function(c) return states[c.itemID] end)
+    list.priced, list.total, list.age = 1, 99999999, 12   -- longest total text
+    return list
+end
+
+-- Shopping text: no column or total cut off (the game's own measure).
+function ST.CheckShopText()
+    local P = ns.Progress
+    local cut = {}
+    local function Fits(label, fs)
+        if not (fs and fs:IsShown()) then return end
+        Count()
+        local st, isCut = Read(fs, "IsTruncated")
+        if st == "secret" then Skip(label, "(secret)") elseif st == "ok" and isCut then cut[#cut + 1] = label end
+    end
+    Count()
+    local shown = 0
+    for i, r in ipairs(P.shopRows or {}) do
+        if r:IsShown() then
+            shown = shown + 1
+            Fits("shop" .. i .. "have", r.have); Fits("shop" .. i .. "get", r.get); Fits("shop" .. i .. "each", r.each)
+            if r.gsKind == "label" then Fits("shop" .. i .. "name", r.name) end
+        end
+    end
+    if shown < 6 then Problem("UI", "shopping", ("%d rows, want 6+"):format(shown)) end
+    Fits("shopTotal", P.shopTotal)
+    Fits("shopTotalMoney", P.shopTotalMoney)
+    Fits("shopNote", P.shopNote)
+    if #cut > 0 then Problem("UI", "shopping", "text cut: " .. table.concat(cut, ", ", 1, math.min(#cut, MAX_LIST))) end
+end
+
+-- Hide-slot buttons: a click flips the saved value and the model takes it (then put back).
+function ST.CheckSlots()
+    local PV = ns.Preview
+    Count()
+    if not (PV and PV.slotButtons and #PV.slotButtons == 3) then return Problem("UI", "slots", "buttons missing") end
+    local db = DB()
+    Count()
+    if not (type(db.preview) == "table" and type(db.preview.hide) == "table") then return Problem("DB", "slots", "preview.hide missing") end
+    Count()
+    local m = PV.model
+    if not (m and m.UndressSlot) then Problem("UI", "slots", "model has no UndressSlot") end
+    local h = db.preview.hide
+    run.state.slotHide = { head = h.head, back = h.back, weapons = h.weapons }
+    local was = h.head
+    Count()
+    local ok, err = pcall(PV.ToggleSlot, PV, "head")   -- no click sound
+    if not ok then Problem("UI", "slots", Short(err))
+    elseif (db.preview.hide.head and true or false) == (was and true or false) then Problem("UI", "slots", "click did not change the helm") end
+    pcall(PV.ToggleSlot, PV, "head")
+    Count()
+    if (db.preview.hide.head and true or false) ~= (was and true or false) then Problem("UI", "slots", "second click did not put it back") end
+    local hidden = {}
+    for _, k in ipairs(PV.SLOT_ORDER or {}) do if PV.IsSlotHidden(k) then hidden[#hidden + 1] = k end end
+    Info("model slots hidden: " .. (#hidden > 0 and table.concat(hidden, ", ") or "none"))
+end
+
+local function CheckShopping()
+    local A, S, AH = ns.Alts, ns.Shopping, ns.AHPrices
+    Count()
+    if not (A and A.EncodeMats and S and S.Build and AH and AH.Get) then return Problem("SHP", "module", "missing") end
+    -- Saved strings round trip; junk ignored.
+    Count()
+    local m = A.DecodeMats(A.EncodeMats({ [12359] = { 20, 5 }, [7076] = { 0, 0 }, [1.5] = { 1, 1 } }))
+    if not (m[12359] and m[12359][1] == 20 and m[12359][2] == 5 and m[7076] == nil) then Problem("SHP", "mats", "round trip") end
+    Count()
+    local n = A.DecodeNums(A.EncodeNums({ [164] = 300, [197] = 2.5 }))
+    local l = A.DecodeList(A.EncodeList({ [16742] = true, x = true }))
+    if not (n[164] == 300 and n[197] == nil and l[16742] and next(l, next(l)) == nil) then Problem("SHP", "prof", "round trip") end
+    -- The pure list: sums, have, to get, price total, unknown amounts.
+    Count()
+    local list = S.Build({
+        { itemID = 1, mats = { { name = "Thorium Bar", n = 10 }, { name = "Arcanite Bar" } } },
+        { itemID = 2, mats = { { name = "Thorium Bar", n = 5 } } },
+    }, function() return 4, { bags = 4, bank = 0, alts = {} } end, function() return 100, 1, "tsm" end)
+    local th
+    for _, r in ipairs(list.mats) do if r.name == "Thorium Bar" then th = r end end
+    if not (th and th.need == 15 and th.left == 11 and list.unknownAmounts == 1 and list.total == 100 * 11 + 0) then
+        Problem("SHP", "build", "wrong sums")
+    end
+    -- Price addons (read only): what exists, which one is used.
+    local hasA, names, hasT = AH.Describe()
+    Info(("prices: Auctionator %s%s, TSM %s, using %s"):format(hasA and "yes" or "no",
+        hasA and (" (" .. (#names > 0 and table.concat(names, " ", 1, math.min(#names, 12)) or "no functions") .. ")") or "",
+        hasT and "yes" or "no", tostring(AH.Source() or "none")))
+    if hasA then
+        local ok, p = pcall(AH.Get, 12359)
+        Info("Auctionator price of Thorium Bar: " .. (ok and p and "yes" or "none"))
+    end
+    -- The data (GuideData mats + crafted pieces, b2-interface.md 1-2).
+    local g = ns.GuideData
+    local mats = type(g) == "table" and type(g.mats) == "table" and g.mats or nil
+    if not (mats and next(mats)) then
+        Skip("shopping data", "(no mats in the data yet)")
+    else
+        Count()
+        local noID, missing, crafted, total = 0, {}, 0, 0
+        for name in pairs(mats) do
+            total = total + 1
+            local rec = S.Mat(name)
+            if not (rec and rec.id) then noID = noID + 1 end
+        end
+        if noID > 0 then Problem("SHP", "data", ("%d mats without an item ID"):format(noID)) end
+        Count()
+        for itemID in pairs(type(g.item) == "table" and g.item or {}) do
+            local c = S.Crafted(itemID)
+            if c and #c.mats > 0 then
+                crafted = crafted + 1
+                for _, mt in ipairs(c.mats) do
+                    if not mats[mt.name] then missing[mt.name] = true end
+                end
+            end
+        end
+        local miss = {}
+        for k in pairs(missing) do miss[#miss + 1] = k end
+        table.sort(miss)
+        if #miss > 0 then Problem("SHP", "data", "mats not in the list: " .. table.concat(miss, ", ", 1, math.min(#miss, MAX_LIST))) end
+        Info(("shopping data: %d mats, %d crafted pieces, %d recipe spells"):format(total, crafted, #S.RecipeSpells()))
+    end
+    -- Live list: counts only.
+    local ok, live = pcall(S.List, S)
+    if not ok then Problem("SHP", "list", Short(live))
+    else Info(live and ("shopping: %d to craft, %d mats"):format(#live.pieces, #live.mats) or "shopping: nothing to craft") end
+    -- Next targets.
+    local P = ns.Progress
+    if P and P.NextTargets then
+        Count()
+        local okN, nt = pcall(P.NextTargets, 3)
+        if not okN then Problem("PRG", "next", Short(nt)) elseif #nt > 3 then Problem("PRG", "next", "more than 3") end
+        if okN then Info(("next targets: %d"):format(#nt)) end
+    end
+end
+
+local function CheckLevels()
+    local D = ns.Data
+    Count()
+    if not (D and D.LevelValue and D.FitsLevel and D.LevelText) then return Problem("LVL", "module", "missing") end
+    Count()
+    if D.LevelValue(0) or D.LevelValue(61) or D.LevelValue(2.5) or D.LevelValue("x") or D.LevelValue(55) ~= 55 then
+        Problem("LVL", "value", "bad values pass")
+    end
+    Count()
+    if not D.FitsLevel({ levelMin = 58 }, 53) or D.FitsLevel({ levelMin = 59 }, 53) or not D.FitsLevel({}, 1) then
+        Problem("LVL", "fits", "within-5 rule")
+    end
+    Count()
+    if D.LevelText({}) ~= nil or not D.LevelText({ levelMin = 52, levelMax = 58 }) then Problem("LVL", "text", "wrong") end
+    Count()
+    local bundled, learned, bad, all = 0, 0, 0, 0
+    for _, set in ipairs(D:GetSets()) do
+        all = all + 1
+        if set.levelMax and set.levelMin and set.levelMax < set.levelMin then bad = bad + 1 end
+        local lo, hi, src = D.SetLevel(set)
+        if src == "bundled" then bundled = bundled + 1 elseif src == "learned" then learned = learned + 1 end
+        if lo and hi and hi < lo then bad = bad + 1 end
+    end
+    if bad > 0 then Problem("LVL", "data", ("%d sets with max < min"):format(bad)) end
+    -- learned values: only whole 1..60 count (junk is ignored, never deleted)
+    local t, items, junk = D.LevelsTable and D.LevelsTable(false), 0, 0
+    for _, v in pairs(t or {}) do
+        items = items + 1
+        if not D.LevelValue(v) then junk = junk + 1 end
+    end
+    Info(("levels: %d bundled, %d learned (of %d sets; %d pieces learned%s)"):format(bundled, learned, all, items,
+        junk > 0 and (", " .. junk .. " ignored") or ""))
+end
+
 local function CheckHooks()
     Count()
     if SlashCmdList == nil or SlashCmdList.GEARSET ~= ns.HandleSlash or ns.HandleSlash == nil then
@@ -1886,6 +2134,15 @@ local function StepMain()
     Guard("minimap", CheckMinimap)
     Guard("esc", CheckEsc, "window")
     Guard("tabs", CheckTabs)
+    Guard("model slots", ST.CheckSlots)
+    -- 1.1 beta.2: the piece-list info line (level + armor + classes) is not cut
+    Guard("piece info", function()
+        local PL = ns.PieceList
+        if not (PL and PL.info and PL.info:IsShown()) then return end
+        Count()
+        local st, cut = Read(PL.info, "IsTruncated")
+        if st == "ok" and cut then Info("piece list info line cut") end
+    end)
     OpenProgress()
 end
 
@@ -1898,6 +2155,9 @@ local function StepProgress()
         local text = P and P.pct and P.pct:GetText()
         if not (type(text) == "string" and text:find("%d")) then Problem("PRG", "page", "no number shown") end
     end)
+    if run.state.shopTest then Guard("shopping text", ST.CheckShopText) end
+    if ns.Progress then ns.Progress.shopSample = nil end
+    run.state.shopTest = nil
     ns.UI:ShowTab("sets")
     -- 1.1 beta.1: the dungeon checklist with made-up rows, then back to how it was.
     local Tr = ns.Tracker
@@ -1959,6 +2219,11 @@ OpenProgress = function()
         if run.mode == "full" then return OpenGuide() end
         return Finish()
     end
+    local P = ns.Progress
+    if P and ST.ShopSample then
+        local ok, sample = pcall(ST.ShopSample)
+        if ok and sample then P.shopSample = sample; run.state.shopTest = true end
+    end
     UI:ShowTab("progress")
     Later(2, StepProgress)
 end
@@ -1975,6 +2240,15 @@ local function Restore()
     local s = run.state
     local G, PL, H, UI = ns.GuidePage, ns.PieceList, ns.Help, ns.UI
     if s.trackerTest and ns.Tracker and ns.Tracker.HideTest then Try("checklist", ns.Tracker.HideTest, ns.Tracker) end
+    if s.shopTest and ns.Progress then ns.Progress.shopSample = nil end
+    if s.slotHide then
+        Try("model slots", function()
+            local db = DB()
+            if type(db) == "table" and type(db.preview) == "table" then db.preview.hide = s.slotHide end
+            local PV = ns.Preview
+            if PV and PV.UpdateSlotButtons then PV:UpdateSlotButtons(); PV:Apply() end
+        end)
+    end
     if s.openedHelp and H and H.Hide then Try("help", H.Hide, H) end
     if s.openedCopy and G and G.HideCopyText then Try("copy", G.HideCopyText, G) end
     if s.openedGuide and G and G.Back then
@@ -2097,6 +2371,8 @@ function ST:Start(mode)
     Guard("places", CheckPlaces)
     Guard("hooks", CheckHooks)
     Guard("runs", CheckRuns)
+    Guard("shopping", CheckShopping)
+    Guard("levels", CheckLevels)
     Guard("search", CheckSearch)
     Guard("theme", CheckTheme)
     -- The window: opened if closed (no first-time help while we run), checked next frame.

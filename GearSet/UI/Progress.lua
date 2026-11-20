@@ -416,6 +416,85 @@ function Progress:AddTooltipLine(tip)
     if text then tip:AddLine(text, Theme.colors.text:GetRGB()) end
 end
 
+-- 1.1 beta.2: the 3 sets closest to done. Tracked sets first, then sets this character has
+-- started that its class can wear (out now, own faction, not hidden), fewest pieces left
+-- first, then effort. -> { { set, left } }.
+function Progress.NextTargets(n)
+    n = n or 3
+    local D, O, TR = ns.Data, ns.Owned, Track
+    local out = {}
+    if not (D and D.GetSets and O) then return out end
+    local mine = D.PlayerFaction and D.PlayerFaction()
+    local okC, _, _, cls = pcall(UnitClass, "player")
+    if not okC then cls = nil end
+    for _, set in ipairs(D:GetSets()) do
+        if not set.removed and not set.unreleased and not (set.faction and mine and set.faction ~= mine)
+            and not (D.IsHidden and D.IsHidden(set)) then
+            local tracked = TR.IsSet(set)
+            local have, total = O:SetCount(set)
+            if have < total and (tracked or (have > 0 and (not cls or not D.SetForClass or D.SetForClass(set, cls)))) then
+                out[#out + 1] = { set = set, left = total - have, tracked = tracked }
+            end
+        end
+    end
+    table.sort(out, function(a, b)
+        if (a.tracked and true or false) ~= (b.tracked and true or false) then return a.tracked and true or false end
+        if a.left ~= b.left then return a.left < b.left end
+        local ra = D.EffortRank and D:EffortRank(a.set) or 0
+        local rb = D.EffortRank and D:EffortRank(b.set) or 0
+        if ra ~= rb then return ra < rb end
+        return a.set.name < b.set.name
+    end)
+    for i = #out, n + 1, -1 do out[i] = nil end
+    return out
+end
+
+-- The next targets for the tooltip (nil when off or none).
+local function NextList()
+    local db = ns.db
+    if type(db) == "table" and db.nextTargets == false then return nil end
+    local ok, list = pcall(Progress.NextTargets, 3)
+    if not ok or #list == 0 then return nil end
+    return list
+end
+
+-- One-line form "Next: Devilsaur Armor (1 left), ..." (chat / tests).
+function Progress:NextLineText()
+    local list = NextList()
+    if not list then return nil end
+    local parts = {}
+    for i, e in ipairs(list) do
+        parts[i] = T("NEXT_ITEM", "%s (%d left)"):format(e.set.name, e.left)
+    end
+    return T("NEXT_LINE", "Next: %s"):format(table.concat(parts, ", "))
+end
+
+-- Minimap / broker tooltip: gold "Next:", then up to 3 rows (name left, "n left" grey right),
+-- then a blank line before the click hints.
+function Progress:AddNextLine(tip)
+    if not (tip and tip.AddLine) then return end
+    local list = NextList()
+    if not list then return end
+    local c = Theme.colors
+    tip:AddLine(T("NEXT_HEAD", "Next:"), c.tipLabel:GetRGB())
+    local nr, ng, nb = c.tipName:GetRGB()
+    local gr, gg, gb = c.tipNote:GetRGB()
+    for _, e in ipairs(list) do
+        local left = T("NEXT_LEFT", "%d left"):format(e.left)
+        if tip.AddDoubleLine then
+            tip:AddDoubleLine(e.set.name, left, nr, ng, nb, gr, gg, gb)
+        else
+            tip:AddLine(e.set.name .. "  " .. left, nr, ng, nb)
+        end
+    end
+    local blank = _G.GameTooltip_AddBlankLineToTooltip
+    if type(blank) == "function" and tip == GameTooltip then
+        blank(tip)
+    else
+        tip:AddLine(" ")
+    end
+end
+
 -- ---------------------------------------------------------------------------
 -- Recently got + milestones (pure parts, then the live check)
 
@@ -924,6 +1003,22 @@ function Progress:Build(page)
     scroll:SetPoint("TOPLEFT", RIGHT_X, -74)
     scroll:SetPoint("BOTTOMRIGHT", -30, 30)
     self.scroll, self.child = scroll, child
+    -- 1.1 beta.2: shopping list for crafted pieces of tracked sets / pieces (top, only when any).
+    self.shopHead = Head(child, T("SHOP_HEAD", "Shopping list"))
+    self.shopRows = {}
+    self.shopTotal = child:CreateFontString(nil, "OVERLAY")
+    Theme.Font(self.shopTotal, "small")
+    self.shopTotal:SetJustifyH("LEFT")
+    self.shopTotal:SetWordWrap(false)
+    self.shopTotalMoney = child:CreateFontString(nil, "OVERLAY")
+    Theme.Font(self.shopTotalMoney, "small")
+    self.shopTotalMoney:SetJustifyH("RIGHT")
+    self.shopTotalMoney:SetWordWrap(false)
+    self.shopNote = child:CreateFontString(nil, "OVERLAY")
+    Theme.Font(self.shopNote, "small")
+    self.shopNote:SetTextColor(Theme.colors.shopWhere:GetRGB())
+    self.shopNote:SetJustifyH("LEFT")
+    self.shopNote:SetWordWrap(false)
     self.recentHead = Head(child, T("P_RECENT", "Recently got"))
     self.recentNone = child:CreateFontString(nil, "OVERLAY")
     Theme.Font(self.recentNone, "small")
@@ -1073,11 +1168,262 @@ local function RecentRow(self, i)
     return r
 end
 
+-- ---------------------------------------------------------------------------
+-- Shopping list rows (1.1 beta.2). One row type: icon, name, then 3 right-hand columns
+-- (have / to get / each); a piece row uses the last column, as wide as all 3, for its recipe
+-- state; a label row has no icon (gold name, grey column labels).
+
+local function ShopSizes() return Theme.sizes.shop end
+
+-- Price text for the list: no copper at 1g or more; totals also no silver at 100g or more.
+local function PriceText(copper, isTotal)
+    local S, G = ns.Shopping, ns.Gold
+    copper = S and S.RoundPrice and S.RoundPrice(copper, isTotal) or copper
+    return G and G.Money and G.Money(copper) or tostring(copper)
+end
+
+local function ShopTooltip(row)
+    local kind = row.gsKind
+    if kind ~= "piece" and kind ~= "mat" then return end
+    GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
+    local c = function(key) return Theme.colors[key]:GetRGB() end
+    if kind == "piece" then
+        local p = row.gsData
+        GameTooltip:SetItemByID(p.itemID)
+        if p.recipe then GameTooltip:AddLine(T("SHOP_TIP_RECIPE", "Recipe: %s"):format(p.recipe), c("shopHead")) end
+        if p.prof then
+            GameTooltip:AddLine(T("SHOP_TIP_SKILL", "%s %d"):format(p.prof, p.skill or 0), c("shopWhere"))
+        end
+        local text, color = ns.Shopping.StateText(p.state)
+        GameTooltip:AddLine(text, c(color))
+    else
+        local m = row.gsData
+        GameTooltip:SetText(m.name, c("shopHead"))
+        local parts = m.parts
+        if parts then
+            GameTooltip:AddLine(T("SHOP_TIP_HAVE", "Have %d: bags %d, bank %d"):format(m.have or 0, parts.bags or 0, parts.bank or 0), c("shopText"))
+            for _, a in ipairs(parts.alts or {}) do
+                GameTooltip:AddLine(T("SHOP_TIP_ALT", "%s: %d"):format(a.name, a.n), c("shopWhere"))
+            end
+        end
+        if m.where then
+            local r, g, b = c("shopText")
+            GameTooltip:AddLine(T("SHOP_TIP_GET", "Get it: %s"):format(m.where), r, g, b, true)
+        end
+        if m.unit then
+            local AH, S = ns.AHPrices, ns.Shopping
+            local money = PriceText(m.unit)
+            local src = AH and AH.SourceName(m.source) or ""
+            local age = S.AgeText(m.age)
+            local line = age and T("SHOP_TIP_PRICE", "Price %s each (%s, %s)"):format(money, src, age)
+                or (money .. " (" .. src .. ")")
+            GameTooltip:AddLine(line, c(m.age and m.age > ShopSizes().oldDays and "priceOld" or "shopText"))
+        end
+        if m.unknown and m.unknown > 0 then GameTooltip:AddLine(T("SHOP_AMOUNTS", "%d mat amounts unknown (?)"):format(m.unknown), c("shopWhere")) end
+    end
+    GameTooltip:Show()
+end
+
+local function ShopRow(self, i)
+    local r = self.shopRows[i]
+    if r then return r end
+    local sz = ShopSizes()
+    r = CreateFrame("Button", nil, self.child)
+    r:SetHeight(sz.row)
+    local hl = r:CreateTexture(nil, "HIGHLIGHT")
+    hl:SetAllPoints()
+    Theme.SetArt(hl, Theme.art.listHover)
+    r.gsHl = hl
+    r.icon = r:CreateTexture(nil, "ARTWORK")
+    r.icon:SetSize(sz.icon, sz.icon)
+    r.icon:SetPoint("LEFT", sz.indent, 0)
+    if W and W.ICON_CROP then r.icon:SetTexCoord(unpack(W.ICON_CROP)) end
+    local function Col(width)
+        local fs = r:CreateFontString(nil, "OVERLAY")
+        Theme.Font(fs, "small")
+        fs:SetWidth(width)
+        fs:SetJustifyH("RIGHT")
+        fs:SetWordWrap(false)
+        return fs
+    end
+    r.each = Col(sz.each)
+    r.each:SetPoint("RIGHT", -4, 0)
+    r.get = Col(sz.get)
+    r.get:SetPoint("RIGHT", r.each, "LEFT", -4, 0)
+    r.have = Col(sz.have)
+    r.have:SetPoint("RIGHT", r.get, "LEFT", -4, 0)
+    r.name = r:CreateFontString(nil, "OVERLAY")
+    Theme.Font(r.name, "small")
+    r.name:SetJustifyH("LEFT")
+    r.name:SetWordWrap(false)
+    r:SetScript("OnEnter", ShopTooltip)
+    r:SetScript("OnLeave", GameTooltip_Hide)
+    r:SetScript("OnClick", function(btn)
+        local id = btn.gsData and (btn.gsData.itemID or btn.gsData.id)
+        if id and W and W.HandleModifiedClick then W.HandleModifiedClick(id) end
+    end)
+    self.shopRows[i] = r
+    return r
+end
+
+-- kind "label" / "piece" / "mat"; columns: { have, get, each } texts + colour keys.
+local function FillShopRow(r, kind, data, name, cols)
+    local sz = ShopSizes()
+    r.gsKind, r.gsData = kind, data
+    r.gsHl:SetShown(kind ~= "label")
+    r.icon:SetShown(kind ~= "label")
+    r.name:ClearAllPoints()
+    if kind == "label" then
+        r.name:SetPoint("LEFT", 4, 0)
+        r.name:SetTextColor(Theme.colors.shopHead:GetRGB())
+    else
+        r.icon:SetTexture(ItemIcon(data.itemID or data.id or 0))
+        r.name:SetPoint("LEFT", r.icon, "RIGHT", 6, 0)
+        r.name:SetTextColor(Theme.colors.shopText:GetRGB())
+    end
+    r.name:SetText(name)
+    local wide = kind == "piece"
+    r.each:SetWidth(wide and (sz.have + sz.get + sz.each + 8) or sz.each)
+    r.have:SetShown(not wide)
+    r.get:SetShown(not wide)
+    r.name:SetPoint("RIGHT", wide and r.each or r.have, "LEFT", -6, 0)
+    for _, k in ipairs({ "have", "get", "each" }) do
+        local col = cols[k]
+        r[k]:SetText(col and col[1] or "")
+        local c = col and col[2] or "shopText"
+        if type(c) == "string" then c = Theme.colors[c] end   -- a colour key or a colour object
+        r[k]:SetTextColor(c:GetRGB())
+    end
+end
+
+local function MatsLeft(list)
+    for _, m in ipairs(list.mats) do if m.left > 0 then return true end end
+    return false
+end
+
+local function PricesOff()
+    local db = ns.db
+    return type(db) == "table" and db.priceSource == "off"
+end
+
+-- The shopping list section from y; returns the new y (unchanged when nothing to craft).
+local function LayShopping(self, y, width)
+    local S = ns.Shopping
+    local ok, list = false, nil
+    if self.shopSample then
+        ok, list = true, self.shopSample       -- /gs selftest: a made-up list (text fit)
+    elseif S and S.List then
+        ok, list = pcall(S.List, S)
+    end
+    if not ok then list = nil end
+    self.shopList = list
+    local n, missing = 0, false
+    local function Row(kind, data, name, cols)
+        n = n + 1
+        local r = ShopRow(self, n)
+        FillShopRow(r, kind, data, name, cols)
+        r:ClearAllPoints()
+        r:SetPoint("TOPLEFT", self.child, "TOPLEFT", 0, -y)
+        r:SetWidth(width - 4)
+        r:Show()
+        y = y + ShopSizes().row
+    end
+    if not list then
+        ShowHead(self.shopHead, false)
+        self.shopTotal:Hide(); self.shopTotalMoney:Hide(); self.shopNote:Hide()
+        for i = 1, #self.shopRows do self.shopRows[i]:Hide() end
+        return y, false
+    end
+    self.shopHead:ClearAllPoints()
+    self.shopHead:SetPoint("TOPLEFT", self.child, "TOPLEFT", 0, -y)
+    self.shopHead.gsLine:SetWidth(width - 4)
+    ShowHead(self.shopHead, true)
+    y = y + HEAD_H
+    Row("label", nil, T("SHOP_CRAFT", "To craft"), {})
+    for _, p in ipairs(list.pieces) do
+        local text, loaded = ItemText(p.itemID)
+        if not loaded then missing = true end
+        local state, color = S.StateText(p.state)
+        Row("piece", p, text, { each = { state, color } })
+    end
+    y = y + 4
+    Row("label", nil, T("SHOP_MATS", "Mats"), { have = { T("SHOP_COL_HAVE", "Have"), "shopWhere" },
+        get = { T("SHOP_COL_GET", "To get"), "shopWhere" }, each = { T("SHOP_COL_EACH", "Each"), "shopWhere" } })
+    for _, m in ipairs(list.mats) do
+        local text = m.name
+        if m.id then
+            local t2, loaded = ItemText(m.id)
+            if loaded then text = t2 else missing = true end
+        end
+        local done = m.left == 0 and m.unknown == 0
+        local get = done and "-" or tostring(m.left)
+        if m.unknown > 0 then get = (m.left > 0 and (get .. "+") or "") .. T("SHOP_UNKNOWN", "?") end
+        local each
+        if m.unit then
+            each = { PriceText(m.unit), (m.age and m.age > ShopSizes().oldDays) and "priceOld" or "shopText" }
+        end
+        -- "6/18" (like Blizzard's reagent lists) in the count colour (green enough, gold some, grey none)
+        local have = { T("SHOP_UNKNOWN", "?"), "shopWhere" }
+        if m.have and m.need > 0 then
+            have = { T("SHOP_HAVE_NEED", "%d/%d"):format(m.have, m.need), Theme.CountColorObj(math.min(m.have, m.need), m.need) }
+        elseif m.have then
+            have = { tostring(m.have), "shopText" }
+        end
+        Row("mat", m, text, { have = have, get = { get, done and "shopDone" or "shopText" }, each = each })
+    end
+    for i = n + 1, #self.shopRows do self.shopRows[i]:Hide() end
+    -- "To buy (Auctionator, today)" left, "about 133g" right under the Each column, when a price
+    -- addon gave any price.
+    local AH = ns.AHPrices
+    local total, sum = self.shopTotal, self.shopTotalMoney
+    sum:SetText("")
+    if list.priced > 0 then
+        local src = AH and (AH.SourcesName and AH.SourcesName(list.sources or { list.source }) or AH.SourceName(list.source)) or ""
+        local age = S.AgeText(list.age)
+        local srcText = age and T("SHOP_SOURCE", "(%s, %s)"):format(src, age) or ("(" .. src .. ")")
+        total:SetText(T("SHOP_TOTAL", "To buy %s"):format(srcText))
+        sum:SetText(T("SHOP_TOTAL_MONEY", "about %s"):format(PriceText(list.total, true)))
+        local old = list.age and list.age > ShopSizes().oldDays
+        local r, g, b = Theme.colors[old and "priceOld" or "shopText"]:GetRGB()
+        total:SetTextColor(r, g, b); sum:SetTextColor(r, g, b)
+    elseif MatsLeft(list) and not PricesOff() then   -- no price addon / no price for anything
+        total:SetText(T("SHOP_TOTAL_NONE", "To buy: no price"))
+        total:SetTextColor(Theme.colors.shopWhere:GetRGB())
+    else
+        total:SetText("")
+    end
+    total:SetShown(total:GetText() ~= "" and total:GetText() ~= nil)
+    sum:SetShown(total:IsShown() and sum:GetText() ~= "")
+    if total:IsShown() then
+        local sz = ShopSizes()
+        sum:ClearAllPoints()
+        sum:SetPoint("TOPRIGHT", self.child, "TOPLEFT", width - 8, -(y + 2))
+        sum:SetWidth(sz.each)
+        total:ClearAllPoints()
+        total:SetPoint("TOPLEFT", self.child, "TOPLEFT", 4, -(y + 2))
+        total:SetWidth(width - 12 - (sum:IsShown() and sz.each or 0))
+        y = y + 16
+    end
+    -- notes: a partial total ("2 without a price"), unknown amounts
+    local note, notes = self.shopNote, {}
+    if list.priced > 0 and list.unpriced > 0 then notes[#notes + 1] = T("SHOP_UNPRICED", "%d without a price"):format(list.unpriced) end
+    if list.unknownAmounts > 0 then notes[#notes + 1] = T("SHOP_AMOUNTS", "%d mat amounts unknown (?)"):format(list.unknownAmounts) end
+    note:SetShown(#notes > 0)
+    if #notes > 0 then
+        note:SetText(table.concat(notes, ", "))
+        note:ClearAllPoints()
+        note:SetPoint("TOPLEFT", self.child, "TOPLEFT", 4, -(y + 2))
+        note:SetWidth(width - 8)
+        y = y + 16
+    end
+    return y + 12, missing
+end
+
 local function LayRight(self, scope)
     local width = (self.scroll:GetWidth() or 0)
     if width < 50 then width = 470 end
     self.child:SetWidth(width)
-    local y, missing = 0, false
+    local y, missing = LayShopping(self, 0, width)
     local function PlaceHead(head)
         head:ClearAllPoints()
         head:SetPoint("TOPLEFT", self.child, "TOPLEFT", 0, -y)

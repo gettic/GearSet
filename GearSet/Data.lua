@@ -132,6 +132,108 @@ end
 
 local DATA_INFO_FALLBACK = { version = 0, checked = "?", game = "?" }
 
+-- 1.1 beta.2: required levels. A SetsData `lv` / `lx` value: whole 1..60, else nil.
+function Data.LevelValue(v)
+    v = tonumber(v)
+    if v and v == math.floor(v) and v >= 1 and v <= 60 then return v end
+    return nil
+end
+
+-- Levels learned in game (1.1 beta.2, option A): GearSetDB.levels[itemID] = required level,
+-- read from C_Item.GetItemInfo (5th return) only for set pieces whose info has loaded anyway
+-- (GET_ITEM_INFO_RECEIVED, or already cached when a set is shown). Never asks for a load.
+function Data.LevelsTable(create)
+    local db = type(GearSetDB) == "table" and GearSetDB or nil
+    if not db then return nil end
+    if db.levels == nil and create then db.levels = {} end
+    return type(db.levels) == "table" and db.levels or nil
+end
+
+function Data.LearnedLevel(itemID)
+    local t = Data.LevelsTable(false)
+    return t and Data.LevelValue(t[itemID]) or nil
+end
+
+local function IsSetPiece(itemID)
+    local A = ns.Alts
+    if not (A and A.SetItems) then return false end
+    local ok, items = pcall(A.SetItems)
+    return ok and type(items) == "table" and items[itemID] ~= nil
+end
+
+-- Reads one set piece's required level if the client already has its info; true when saved.
+function Data.LearnLevel(itemID)
+    if type(itemID) ~= "number" or not IsSetPiece(itemID) then return false end
+    local C = C_Item
+    -- No cache check on this client -> don't read (GetItemInfo could ask the server for it).
+    if not (C and type(C.IsItemDataCachedByID) == "function") then return false end
+    local okC, cached = pcall(C.IsItemDataCachedByID, itemID)
+    if not okC or cached ~= true then return false end
+    local get = (C and C.GetItemInfo) or _G.GetItemInfo
+    if type(get) ~= "function" then return false end
+    local ok, name, _, _, _, minLevel = pcall(get, itemID)
+    if not ok or name == nil then return false end
+    if issecretvalue and (issecretvalue(minLevel) or issecretvalue(name)) then return false end
+    local lv = Data.LevelValue(minLevel)
+    if not lv then return false end
+    local t = Data.LevelsTable(true)
+    if not t then return false end
+    if t[itemID] ~= lv then t[itemID] = lv end
+    return true
+end
+
+-- Level range of a set: bundled lv / lx first, else the learned levels of its pieces.
+-- -> min, max, "bundled" | "learned" (nil when nothing is known).
+function Data.SetLevel(set)
+    if not set then return nil end
+    if set.levelMin then return set.levelMin, set.levelMax or set.levelMin, "bundled" end
+    local t = Data.LevelsTable(false)
+    if not t then return nil end
+    local lo, hi
+    for _, p in ipairs(set.pieces or {}) do
+        local lv = Data.LevelValue(t[p.itemID])
+        if lv then
+            if not lo or lv < lo then lo = lv end
+            if not hi or lv > hi then hi = lv end
+        end
+    end
+    if lo then return lo, hi, "learned" end
+    return nil
+end
+
+-- Learns from items whose info arrives anyway (tooltips, lists, other addons).
+local levelEvents = CreateFrame("Frame")
+levelEvents:SetScript("OnEvent", function(_, _, itemID, success)
+    if success ~= false and type(itemID) == "number" then pcall(Data.LearnLevel, itemID) end
+end)
+if ns.SafeRegister then ns.SafeRegister(levelEvents, "GET_ITEM_INFO_RECEIVED")
+else pcall(levelEvents.RegisterEvent, levelEvents, "GET_ITEM_INFO_RECEIVED") end
+Data.levelEvents = levelEvents
+
+-- "Requires level 52-58" / "Requires level 60" (nil when the set has no level).
+function Data.LevelText(set)
+    local lo, hi = Data.SetLevel(set)
+    if not lo then return nil end
+    local L = ns.L or {}
+    if hi and hi > lo then return (L.LEVEL_RANGE or "Requires level %d-%d"):format(lo, hi) end
+    -- one level: Blizzard's own "Requires Level %d", like item tooltips
+    local one = rawget(_G, "ITEM_MIN_LEVEL")
+    if type(one) ~= "string" or not one:find("%d", 1, true) then one = L.LEVEL_ONE or "Requires level %d" end
+    return one:format(lo)
+end
+
+-- "Fits my level (within 5)": the set's lowest level is at most 5 above yours; sets with no
+-- level in the data always fit. `level` for tests.
+function Data.FitsLevel(set, level)
+    local lo = Data.SetLevel(set)
+    if not lo then return true end     -- no level known (bundled or learned): always fits
+    if not level then
+        local ok, l = pcall(UnitLevel, "player")
+        level = ok and type(l) == "number" and l or 60
+    end
+    return lo <= level + 5
+end
+
 -- { version, checked, game } of the bundled data; never nil, wrong types -> fallback values.
 function Data.DataInfo()
     local d = ns.DataInfo
@@ -253,6 +355,9 @@ local function BuildClassic(out)
                     hint = tonumber(entry.h) or 0,
                     kind = (type(entry.k) == "string" and entry.k ~= "") and entry.k or nil,
                     tier = (type(entry.t) == "string" and entry.t ~= "") and entry.t or nil,
+                    -- 1.1 beta.2: required level range (SetsData lv / lx, b2-interface.md 3)
+                    levelMin = Data.LevelValue(entry.lv),
+                    levelMax = Data.LevelValue(entry.lx) or Data.LevelValue(entry.lv),
                     faction = (entry.f == "A" or entry.f == "H") and entry.f or nil,
                     removed = IsOn(entry.r) or nil,
                     checked = IsOn(entry.fc) or nil,
@@ -381,6 +486,7 @@ function Data:Filter(search, f)
         local ok = true
         if s.removed and not f.showRemoved then ok = false end
         if ok and f.hideLater and s.unreleased then ok = false end   -- v1.0.1 (F5)
+        if ok and f.myLevel and not Data.FitsLevel(s) then ok = false end   -- 1.1 beta.2
         if ok and not f.showHidden and Data.IsHidden(s) then ok = false end
         if ok and search ~= "" and not s.name:lower():find(search, 1, true)
             and not (s.tier and (s.tier:lower():find(search, 1, true)
