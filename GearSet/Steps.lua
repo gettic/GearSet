@@ -178,7 +178,7 @@ function Steps.Owns(itemID)
 end
 
 -- ---------------------------------------------------------------------------
--- Records (own small parse: every field kept; rows of the other faction dropped).
+-- Records (Data.Rows: every field kept; rows of the other faction dropped), cached.
 
 local rowCache = {}
 local function Rows(tname, key, mine)
@@ -190,14 +190,7 @@ local function Rows(tname, key, mine)
     local ck = tname .. "\31" .. tostring(key) .. "\31" .. (mine or "")
     local hit = rowCache[ck]
     if hit then return hit end
-    local out = {}
-    for part in raw:gmatch("[^;]+") do
-        local f = {}
-        for v in (part .. "|"):gmatch("(.-)|") do f[#f + 1] = Trim(v) end
-        local fac
-        if #f > 1 and f[#f]:match("^@[AH]$") then fac = f[#f]:sub(2, 2); f[#f] = nil end
-        if Has(f[1]) and (not fac or not mine or fac == mine) then out[#out + 1] = f end
-    end
+    local out = ns.Data.Rows(raw, mine)
     rowCache[ck] = out
     return out
 end
@@ -442,21 +435,35 @@ end
 -- ---------------------------------------------------------------------------
 -- The Plan tab: factions and chains for the wanted pieces and the listed runs.
 
--- Rep rows of a piece: { { faction, need } } from its quest records and its own item record.
+-- Rep rows of a piece: { { faction, need } } from its quest records and its own item record, and the
+-- names of its own-faction quest sources. Static data: cached per item and faction (1.2 optimizer
+-- item 4; only these two short lists are kept, a piece with neither shares NONE). Read only.
+local NONE = {}
+local NO_REPS = { NONE, NONE }
+local repCache = {}
 function Steps.PieceReps(itemID, mine)
+    local ck = tostring(itemID) .. (mine or "")
+    local hit = repCache[ck]
+    if hit then return hit[1], hit[2] end
     local D = ns.Data
-    local out = {}
+    local out, quests = {}, {}
     local function From(rows)
-        for _, f in ipairs(rows or {}) do
+        for _, f in ipairs(rows or NONE) do
             if f[1] == "rep" and Has(f[2]) then out[#out + 1] = { faction = f[2], need = f[3] } end
         end
     end
-    local entries = (D and D.SourceEntries) and D.SourceEntries(itemID) or {}
+    local entries = (D and D.SourceEntries) and D.SourceEntries(itemID) or NONE
     for _, e in ipairs(entries) do
-        if (not e.fac or not mine or e.fac == mine) and e.kind == "q" and Has(e.a) then From(Rows("quest", e.a, mine)) end
+        if (not e.fac or not mine or e.fac == mine) and e.kind == "q" and Has(e.a) then
+            quests[#quests + 1] = e.a
+            From(Rows("quest", e.a, mine))
+        end
     end
     From(Rows("item", itemID, mine))
-    return out, entries
+    if #out == 0 then out = NONE end
+    if #quests == 0 then quests = NONE end
+    repCache[ck] = (out == NONE and quests == NONE) and NO_REPS or { out, quests }
+    return out, quests
 end
 
 local function AddChain(chains, key, mine, why)
@@ -474,18 +481,16 @@ function Steps.ForPlan(wanted, runs, mine)
     mine = mine or Mine()
     local byFaction, chains = {}, {}
     for itemID, w in pairs(wanted or {}) do
-        local reps, entries = Steps.PieceReps(itemID, mine)
+        local reps, quests = Steps.PieceReps(itemID, mine)
         for _, r in ipairs(reps) do
             local f = byFaction[r.faction]
             if not f then f = { faction = r.faction, pieces = {}, later = true }; byFaction[r.faction] = f end
             f.pieces[#f.pieces + 1] = { itemID = itemID, need = r.need, later = w.later }
             if not w.later then f.later = false end
         end
-        for _, e in ipairs(entries) do
-            if e.kind == "q" and Has(e.a) and (not e.fac or not mine or e.fac == mine) then
-                for _, f in ipairs(Rows("quest", e.a, mine) or {}) do
-                    if f[1] == "chain" then AddChain(chains, f[2], mine, e.a) end
-                end
+        for _, q in ipairs(quests) do
+            for _, f in ipairs(Rows("quest", q, mine) or NONE) do
+                if f[1] == "chain" then AddChain(chains, f[2], mine, q) end
             end
         end
     end
@@ -546,7 +551,7 @@ local function Flush()
     Steps.changes = Steps.changes + 1
     if Steps.OnChange then pcall(Steps.OnChange) end
     local P, G = ns.Plan, ns.GuidePage
-    if P and P.page and P.page:IsVisible() then pcall(P.Refresh, P) end
+    if P and P.page and P.page:IsVisible() then pcall(P.Queue or P.Refresh, P) end
     if G and G.page and G.page:IsVisible() and G.Render then pcall(G.Render, G) end
 end
 
@@ -564,6 +569,7 @@ end
 
 function Steps._Reset()
     wipe(rowCache)
+    wipe(repCache)
     pending = false
     Steps.changes = 0
 end

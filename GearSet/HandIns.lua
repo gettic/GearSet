@@ -3,8 +3,8 @@
 -- ToS B2: nothing here ever accepts, completes or picks a quest reward, talks to an NPC, targets,
 -- moves or sets a waypoint: it only prints ONE local chat line per zone entry (B3: via ns.Print,
 -- never in combat, never inside an instance, none when the setting is off, no sound) and feeds the
--- Plan tab's "Ready to hand in" section. B9: the list is built on (debounced) bag changes only;
--- a zone change is one table lookup.
+-- Plan tab's "Ready to hand in" section. B9: a (debounced) bag change only drops the list; it is
+-- built once on the next need (zone check, Plan tab), after that a zone change is one table lookup.
 local _, ns = ...
 
 local HandIns = {}
@@ -89,7 +89,7 @@ function HandIns.Build(wanted, sourcesOf, countOf, mine)
     return out
 end
 
--- The list for this character (cached; rebuilt by HandIns.Rebuild on bag changes).
+-- The list for this character (cached; dropped on bag changes, rebuilt by HandIns.Ready on the next need).
 local cache, byZone
 function HandIns.Rebuild()
     cache, byZone = {}, {}
@@ -106,10 +106,6 @@ function HandIns.Rebuild()
         end
     end
     return cache
-end
-
-function HandIns.List()
-    return cache or HandIns.Rebuild()
 end
 
 function HandIns.Ready(zone)
@@ -200,13 +196,15 @@ local function BagsChanged()
     bagPending = true
     local function run()
         bagPending = false
-        HandIns.Rebuild()
-        if ns.Plan and ns.Plan.Refresh then pcall(ns.Plan.Refresh, ns.Plan) end
+        -- 1.2 optimizer item 1: only drop the list (rebuilding it here cost ~0.3 ms and ~250 KB
+        -- garbage per bag change with nothing shown); Ready() builds it on the next need.
+        cache, byZone = nil, nil
+        if ns.Plan and ns.Plan.Queue then pcall(ns.Plan.Queue, ns.Plan) end
     end
     if C_Timer and C_Timer.After then C_Timer.After(1, run) else run() end
 end
 HandIns.BagsChanged = BagsChanged
--- Tracking or owned pieces changed (Runs.Invalidate): the same debounced rebuild.
+-- Tracking or owned pieces changed (Runs.Invalidate): the same debounced drop.
 if ns.Runs then ns.Runs.OnInvalidate = BagsChanged end
 
 local frame = CreateFrame("Frame")

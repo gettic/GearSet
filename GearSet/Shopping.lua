@@ -11,7 +11,6 @@ ns.Shopping = Shopping
 local EMPTY = {}
 
 local function Has(s) return type(s) == "string" and s ~= "" end
-local function Trim(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
 local function Whole(n) return type(n) == "number" and n == math.floor(n) and n > 0 and n < 2 ^ 31 end
 local function Secret(v) return issecretvalue ~= nil and issecretvalue(v) == true end
 
@@ -26,21 +25,8 @@ Shopping.PROF_IDS = { Alchemy = 171, Blacksmithing = 164, Enchanting = 333, Engi
     Leatherworking = 165, Tailoring = 197, Mining = 186, Skinning = 393, Herbalism = 182,
     Jewelcrafting = 755, Cooking = 185, ["First Aid"] = 129, Fishing = 356 }
 
--- Rows of a record string -> list of field lists (faction-tagged rows of the other faction dropped).
-local function Rows(raw, mine)
-    local out = {}
-    if type(raw) ~= "string" then return out end
-    for part in raw:gmatch("[^;]+") do
-        local f = {}
-        for v in (part .. "|"):gmatch("(.-)|") do f[#f + 1] = Trim(v) end
-        local last = f[#f]
-        local fac
-        if #f > 1 and last and last:match("^@[AH]$") then fac = last:sub(2, 2); f[#f] = nil end
-        if Has(f[1]) and (not fac or not mine or fac == mine) then out[#out + 1] = f end
-    end
-    return out
-end
-Shopping.Rows = Rows
+-- Rows of a record string -> list of field lists (Data.Rows: the shared parser).
+local function Rows(raw, mine) return ns.Data.Rows(raw, mine) end
 
 local function Guide(tname)
     local g = ns.GuideData
@@ -171,8 +157,34 @@ function Shopping.Wanted()
     return out
 end
 
--- Have of a mat: total, { bags, bank, alts = { { name, n } } }.
-function Shopping.Have(matID)
+-- One list's view of your characters (1.2 optimizer item 2): the character list read once, and each
+-- character's Recipes / Professions / MatCounts once (pcall results kept as they came). Before, every
+-- piece and every mat read them again (~1,100 IsSpellKnown calls per list).
+local function Snapshot()
+    local A = ns.Alts
+    if not (A and A.Chars) then return nil end
+    local snap = { memo = {} }
+    snap.ok, snap.chars = pcall(A.Chars, A)
+    function snap.Call(name, key)
+        local m = snap.memo[name]
+        if not m then m = {}; snap.memo[name] = m end
+        local r = m[key]
+        if not r then r = { pcall(A[name], A, key) }; m[key] = r end
+        return r[1], r[2], r[3]
+    end
+    return snap
+end
+local function Chars(A, snap)
+    if snap then return snap.ok, snap.chars end
+    return pcall(A.Chars, A)
+end
+local function Per(A, snap, name, key)
+    if snap then return snap.Call(name, key) end
+    return pcall(A[name], A, key)
+end
+
+-- Have of a mat: total, { bags, bank, alts = { { name, n } } }. `snap` (optional): Snapshot().
+function Shopping.Have(matID, snap)
     local out = { bags = 0, bank = 0, alts = {} }
     if not matID then return nil, out end
     local C = C_Item
@@ -186,10 +198,10 @@ function Shopping.Have(matID)
     local total = out.bags + out.bank
     local A = ns.Alts
     if A and A.Chars and A.MatCounts then
-        local ok, chars = pcall(A.Chars, A)
+        local ok, chars = Chars(A, snap)
         for _, ch in ipairs(ok and type(chars) == "table" and chars or EMPTY) do
             if type(ch) == "table" and not ch.me and ch.key then
-                local okM, m = pcall(A.MatCounts, A, ch.key)
+                local okM, m = Per(A, snap, "MatCounts", ch.key)
                 local c = okM and type(m) == "table" and m[matID]
                 local n = c and ((c[1] or 0) + (c[2] or 0)) or 0
                 if n > 0 then
@@ -202,24 +214,24 @@ function Shopping.Have(matID)
     return total, out
 end
 
--- Recipe state of a crafted piece: "me" | <alt name> | "no" | "crafter" | "?".
-function Shopping.RecipeState(c)
+-- Recipe state of a crafted piece: "me" | <alt name> | "no" | "crafter" | "?". `snap`: as Have.
+function Shopping.RecipeState(c, snap)
     local A = ns.Alts
     if not (A and A.Chars and A.Recipes) then return "?" end
-    local okC, chars = pcall(A.Chars, A)
+    local okC, chars = Chars(A, snap)
     chars = okC and type(chars) == "table" and chars or EMPTY
     local sure, profSeen, hasProf = false, false, false
     for _, ch in ipairs(chars) do
         if type(ch) == "table" and ch.key then
             if c.recipeSpell then
-                local ok, known, readable = pcall(A.Recipes, A, ch.key)
+                local ok, known, readable = Per(A, snap, "Recipes", ch.key)
                 if ok and type(known) == "table" then
                     if known[c.recipeSpell] then return ch.me and "me" or tostring(ch.name or ch.key) end
                     if ch.me and readable then sure = true end
                 end
             end
             if c.profID and A.Professions then
-                local ok, prof, read = pcall(A.Professions, A, ch.key)
+                local ok, prof, read = Per(A, snap, "Professions", ch.key)
                 if ok and type(prof) == "table" then
                     if ch.me or read then profSeen = true end
                     if prof[c.profID] then hasProf = true end
@@ -289,7 +301,9 @@ function Shopping:List()
     if #crafted == 0 then return nil end
     local P = ns.AHPrices
     local priceFn = P and P.Get and function(id) return P.Get(id) end or nil
-    return Shopping.Build(crafted, Shopping.Have, priceFn, Shopping.RecipeState)
+    local snap = Snapshot()
+    return Shopping.Build(crafted, function(id) return Shopping.Have(id, snap) end, priceFn,
+        function(c) return Shopping.RecipeState(c, snap) end)
 end
 
 -- Rounded for the list: no copper at 1g or more; a total (isTotal) no silver at 100g or more.

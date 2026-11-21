@@ -1986,7 +1986,7 @@ function ST.CheckPlanText()
     local h = PL.heads and PL.heads[1]
     if not (h and h:IsShown()) then return Problem("UI", "plan", "no run row") end
     Fits("name", h.name); Fits("info", h.info); Fits("count", h.count); Fits("status", h.status)
-    Fits("summary", PL.summary); Fits("locks", PL.locksLine); Fits("note", PL.note)
+    Fits("summary", PL.summary); Fits("locks", PL.locksLine)
     if PL.otherHead then Fits("otherHead", PL.otherHead) end   -- beta.6 (a Progress.Head: its own text)
     -- beta.6 rep / chain rows (made-up long ones from ST.StepsSample)
     for i, r in ipairs(PL.repRows or {}) do

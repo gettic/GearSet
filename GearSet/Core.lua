@@ -134,7 +134,6 @@ ns.L = {
     PLAN_LOCKS_NONE = "Raid lockouts: none saved",
     PLAN_EMPTY = "Track a set or a piece (Shift-click it in the list) to plan your runs.",
     PLAN_NONE = "None of the pieces you need drop in a dungeon or raid.",
-    PLAN_OTHER = "Not from a run: %d pieces (quests, vendors, crafting). Click a piece for its guide.",
     PLAN_OTHER_HEAD = "Not from a run",      -- beta.6 (ui-b6 #4): section after the runs
     PLAN_OTHER_ROW = "All pieces",           -- its fold row when more than 8 pieces
     PLAN_SRC_VENDOR = "Vendor: %s",          -- "Not from a run" source column / tooltip

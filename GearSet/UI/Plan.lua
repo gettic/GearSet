@@ -95,20 +95,6 @@ function Plan.SourceText(itemID)
     return "", ""
 end
 
--- The type word only (kept for callers / tests).
-function Plan.SourceWord(itemID)
-    local D = ns.Data
-    local mine = D and D.PlayerFaction and D.PlayerFaction()
-    local ok, list = pcall(D.SourceEntries, itemID)
-    for _, e in ipairs(ok and type(list) == "table" and list or {}) do
-        if e.kind ~= "x" and (not e.fac or not mine or e.fac == mine) then
-            local w = D.TypeWord and D.TypeWord(e.kind)
-            if w and w ~= "" then return w end
-        end
-    end
-    return ""
-end
-
 -- A text cut to fit `room` px (measure(text) -> px, 15 % margin): full, else short, else short cut + "...".
 function Plan.FitText(full, short, room, measure)
     local fit = room * 0.85
@@ -919,14 +905,6 @@ function Plan:Build(page)
     Theme.Font(Plan.measure, "small")
     Plan.measure:Hide()
 
-    self.note = page:CreateFontString(nil, "OVERLAY")
-    Theme.Font(self.note, "small")
-    self.note:SetTextColor(C("planNote"):GetRGB())
-    self.note:SetPoint("BOTTOMLEFT", sz.titleX, 10)
-    self.note:SetPoint("BOTTOMRIGHT", sz.summaryX, 10)
-    self.note:SetJustifyH("LEFT")
-    self.note:SetWordWrap(false)
-
     -- B1: the server request only here (tab opened), throttled; the event only while shown.
     self.events = CreateFrame("Frame")
     self.events:SetScript("OnEvent", function()
@@ -1183,8 +1161,6 @@ function Plan:Refresh()
     end
     self.locksLine:SetText(saved > 0 and T("PLAN_LOCKS", "Raid lockouts: %d saved"):format(saved)
         or T("PLAN_LOCKS_NONE", "Raid lockouts: none saved"))
-    -- the old "Not from a run: n pieces" footer: replaced by the section above (ui-b6 #4)
-    self.note:Hide()
     if missing and (self.retries or 0) < 3 and C_Timer and C_Timer.After then
         self.retries = (self.retries or 0) + 1
         C_Timer.After(1, function() Plan:Refresh() end)
@@ -1193,7 +1169,24 @@ function Plan:Refresh()
     end
 end
 
+-- One redraw for changes that come close together (1.2 optimizer item 3: a bag change used to
+-- redraw the tab 5 times: owned counts, hand-ins, Steps, and again after Alts' bag scan). Only
+-- while the tab is shown (S4); no OnUpdate, one pending C_Timer at most.
+Plan.QUEUE_DELAY = 0.25
+local queued = false
+function Plan:Queue()
+    if queued then return end
+    if not (self.page and self.page:IsVisible()) then return end
+    if not (C_Timer and C_Timer.After) then return self:Refresh() end
+    queued = true
+    C_Timer.After(Plan.QUEUE_DELAY, function()
+        queued = false
+        Plan:Refresh()
+    end)
+end
+
 function Plan._Reset()
+    queued = false
     locks = {}
     Plan.requests, Plan.lastRequest = 0, nil
 end

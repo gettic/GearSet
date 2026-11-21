@@ -161,9 +161,28 @@ local function IsSetPiece(itemID)
     return ok and type(items) == "table" and items[itemID] ~= nil
 end
 
+-- 1.2 optimizer item 7: true when every set holding the item ships with a level (`lv`): Data.SetLevel
+-- uses that one, so a learned level would never be read.
+local function OnlyBundledSets(itemID)
+    local Tip, tbl = ns.Tooltip, ClassicTable()
+    if not (Tip and Tip.Lookup and type(tbl) == "table") then return false end
+    local ok, v = pcall(Tip.Lookup, itemID)
+    if not ok or v == nil then return false end
+    local function Bundled(setID)
+        local entry = tbl[setID]
+        return type(entry) == "table" and Data.LevelValue(entry.lv) ~= nil
+    end
+    if type(v) ~= "table" then return Bundled(v) end
+    for _, setID in ipairs(v) do
+        if not Bundled(setID) then return false end
+    end
+    return #v > 0
+end
+
 -- Reads one set piece's required level if the client already has its info; true when saved.
+-- Pieces whose sets all ship with a level are not saved (false).
 function Data.LearnLevel(itemID)
-    if type(itemID) ~= "number" or not IsSetPiece(itemID) then return false end
+    if type(itemID) ~= "number" or not IsSetPiece(itemID) or OnlyBundledSets(itemID) then return false end
     local C = C_Item
     -- No cache check on this client -> don't read (GetItemInfo could ask the server for it).
     if not (C and type(C.IsItemDataCachedByID) == "function") then return false end
@@ -633,6 +652,22 @@ local function SplitTagged(s)
         f[#f] = nil
     end
     return f, fac
+end
+
+-- 1.2: a raw record string ("key|a|b;key|c|@H") -> list of field lists; rows tagged for the other
+-- faction (a last "@A"/"@H" field) dropped, rows without a key skipped. Uncached: Steps.Rows caches
+-- it, Shopping keeps only its own parsed mats / crafted pieces.
+function Data.Rows(raw, mine)
+    local out = {}
+    if type(raw) ~= "string" then return out end
+    for part in raw:gmatch("[^;]+") do
+        local f = SplitFields(part)
+        local fac
+        local last = f[#f]
+        if #f > 1 and last:match("^@[AH]$") then fac = last:sub(2, 2); f[#f] = nil end
+        if f[1] ~= "" and (not fac or not mine or fac == mine) then out[#out + 1] = f end
+    end
+    return out
 end
 
 local function TypeWord(letter)

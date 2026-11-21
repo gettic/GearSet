@@ -639,5 +639,5 @@ function UI:RefreshCounts()
     ns.PieceList:Refresh()
     self:UpdateCountBox()
     if ns.Progress then ns.Progress:Refresh() end   -- only draws while its tab is shown
-    if ns.Plan and ns.Plan.Refresh then ns.Plan:Refresh() end   -- the same
+    if ns.Plan and ns.Plan.Queue then ns.Plan:Queue() end   -- the same (one queued redraw)
 end
