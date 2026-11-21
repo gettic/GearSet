@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 
 ns.ADDON = ADDON
-ns.DB_VERSION = 9
+ns.DB_VERSION = 10
 
 -- All user-facing text in one place (ready for translations later).
 ns.L = {
@@ -37,7 +37,7 @@ ns.L = {
     STATE_equipped = "Equipped",
     STATE_bags = "In bags",
     STATE_bank = "In bank",
-    STATE_look = "Appearance",
+    STATE_look = "Look collected",   -- 1.1.1: the look only; the item still counts as needed (unless db.countLooks)
     STATE_need = "Need",
     STATE_mail = "In mailbox",
     STATE_keyring = "On keyring",
@@ -223,6 +223,7 @@ ns.L = {
     SLOT_SHOW_BACK = "Show the cloak on this model",
     SLOT_SHOW_WEAPONS = "Show the weapons on this model",
     SLOT_TIP_NOTE = "Only this preview; your character is not changed.",
+    SLOT_TIP_HEAD = "Hides the slot on the preview, the set's own piece too. Untick a piece to take off only that piece.",
     LEVEL_RANGE = "Requires level %d-%d",
     LEVEL_ONE = "Requires level %d",
     LEVEL_SHORT = "Level %s",
@@ -287,8 +288,23 @@ ns.L = {
     COPY_TIP = "Shows the name so you can copy it and look the piece up online.",
     COPY_POPUP = "Press Ctrl+C to copy the name, then search for it online.",
     WIKI_LINK = "Wiki link",
-    APPEARANCE_ONLY = "Appearance only",
-    APPEARANCE_NOTE = "A collected appearance counts as having the piece.",
+    APPEARANCE_ONLY = "Look only",
+    APPEARANCE_NOTE = "A collected look counts as having the piece (Settings).",
+    -- 1.1.1 items vs looks (db.countLooks; Owned.lua)
+    APPEARANCE_NOTE_ITEMS = "A collected look doesn't count: the set bonus needs the item.",
+    LOOK_ITEM_NEEDED = "item still needed",
+    LOOKS_LINE = "Looks: %d / %d",
+    LOOKS_LABEL = "Looks (items + collected looks)",
+    P_LOOKS = "Looks collected: %d / %d pieces",
+    S_COUNT_LOOKS = "Count collected appearances as have",
+    S_COUNT_LOOKS_TIP = "Off: only items you own count (what the set bonus needs). A look you collected shows as \"Look collected\" and the item stays on your lists. On: a collected look counts as having the piece.",
+    S_RECHECK_LABEL = "Finished sets",
+    S_RECHECK = "Check finished sets again (%d)",
+    S_RECHECK_PLAIN = "Check finished sets again",
+    S_RECHECK_TIP = "Sets marked finished before Gear Set 1.1.1 may have counted looks. This checks this character and your saved alts, and moves the finished date of every set whose items that character doesn't own now into a kept backup (nothing is deleted). Alts whose bank Gear Set never saw are left alone.",
+    S_RECHECK_DONE = "%d finished dates moved to the backup.",
+    S_RECHECK_NONE = "Every finished set still has all its items.",
+    LOOK_NOTE = "set counts now use the items you own. A collected look shows as \"Look collected\" and the item stays on your lists. You can change this in Settings.",
     PREV_SET = "Previous set",
     NEXT_SET = "Next set",
     -- Guide page (one piece). Row labels, then headings and lines.
@@ -300,7 +316,7 @@ ns.L = {
     G_STATE_equipped = "You have it: equipped",
     G_STATE_bags = "You have it: in your bags",
     G_STATE_bank = "You have it: in your bank",
-    G_STATE_look = "You have its appearance",
+    G_STATE_look = "You have its look, not the item",
     G_STATE_need = "You need this piece",
     G_STATE_mail = "You have it: in your mailbox",
     G_STATE_keyring = "You have it: on your keyring",
@@ -691,6 +707,12 @@ local defaults = {
     -- DB v9 (1.1 beta.6, additive): Alts.lua adds per character `rep` ({ [factionID] = { r, v, t } })
     -- and `quests` ({ [questID] = true }) from Steps.Snapshot - own characters only, our IDs only.
     -- Bad rows are ignored where read (Steps.AltRep / AltChains), never deleted. No new top-level keys.
+    -- DB v10 (1.1.1-beta.2, additive): count collected looks as have (off = items you own only);
+    -- lookNote = the one-time "counts changed" chat line was shown (PrepareDB sets it false for
+    -- data from before v10). Alts.lua's "Check finished sets again" adds per character
+    -- `doneOld` ({ [setID] = epoch }: finished dates moved aside, never deleted).
+    countLooks = false,
+    lookNote = true,
 }
 
 -- Filter defaults, read by the set list's "Reset filters" (one place for both).
@@ -776,6 +798,12 @@ function ns.PrepareDB(t)
     -- A numeric-looking string version ("5") counts by its number before ApplyDefaults,
     -- which would otherwise swap the wrong type for the default and lower a newer version.
     if type(t.version) == "string" and Finite(t.version) then t.version = tonumber(t.version) end
+    -- v10: decided before the defaults fill in version 10. Data from before v10 (a lower number,
+    -- or a broken / missing version on a table that already holds data) gets the one-time note;
+    -- a new install (an empty table) never does.
+    local oldV = tonumber(t.version)
+    -- (lookNote == true already saved = v10 data whose version broke: the note was shown.)
+    local noteDue = (oldV ~= nil and oldV < 10) or (oldV == nil and next(t) ~= nil and t.lookNote ~= true)
     ApplyDefaults(t, defaults)
     ValidateDB(t)
     -- Migrations (compare t.version). v1 -> v2, v2 -> v3, v3 -> v4, v4 -> v5, v5 -> v6, v6 -> v7, v7 -> v8 and v8 -> v9 only add keys (ApplyDefaults
@@ -783,6 +811,7 @@ function ns.PrepareDB(t)
     -- `places`) gets its items as bags; the old key stays. A newer version number is never
     -- lowered, so an older build opening newer data doesn't mark it as old.
     local v = tonumber(t.version) or 0
+    if noteDue then t.lookNote = false end
     if v < 3 then
         for _, rec in pairs(t.chars) do
             if type(rec) == "table" and type(rec.items) == "string" and rec.places == nil then

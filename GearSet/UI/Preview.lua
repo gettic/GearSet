@@ -189,6 +189,8 @@ function Preview:Build(parent, bar)
             local k = (hidden and "SLOT_SHOW_" or "SLOT_") .. SLOT_TEXT[btn.gsSlot]
             GameTooltip:SetText(L[k] or k, 1, 1, 1)
             GameTooltip:AddLine(L.SLOT_TIP_NOTE or "", nil, nil, nil, true)
+            -- 1.1.1 (player review): the button hides the whole slot, the set's own piece too
+            if L.SLOT_TIP_HEAD then GameTooltip:AddLine(L.SLOT_TIP_HEAD, nil, nil, nil, true) end
             GameTooltip:Show()
         end)
         b:SetScript("OnLeave", GameTooltip_Hide)

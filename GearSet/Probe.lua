@@ -475,6 +475,127 @@ local CHECKS = {
         return Has({ "C_TransmogCollection.PlayerHasTransmogItemModifiedAppearance",
             "C_TransmogCollection.GetAppearanceInfoBySource", "C_TransmogCollection.GetAllAppearanceSources" })
     end },
+    -- 1.1.1-beta.2: rows for the 1.2 "look" betas (plans\v1.2.0\plan.md sec. 3.0; ToS N6: every
+    -- call in pcall, only on our own hidden probe model, never opens the Dressing Room).
+    { "Viewer", function()
+        local m = ModelMethods()
+        if not m then return "DressUpModel can't be made" end
+        local out = {}
+        for _, name in ipairs({ "SetPosition", "GetPosition", "SetSheathed", "SetAnimation", "ClearModel", "SetUnit" }) do
+            out[#out + 1] = name .. " " .. YesNo(IsFunc(m[name]))
+        end
+        if IsFunc(m.SetUnit) then
+            local ok, r = pcall(m.SetUnit, m, "player")
+            out[#out + 1] = "SetUnit(player) " .. (ok and Safe(r) or "error")
+        end
+        if IsFunc(m.SetPosition) and IsFunc(m.GetPosition) then
+            local ok = pcall(m.SetPosition, m, 0, 0.5, -0.25)
+            local okG, _, y, z = pcall(m.GetPosition, m)
+            local back = ok and okG and type(y) == "number" and type(z) == "number"
+                and math.abs(y - 0.5) < 0.01 and math.abs(z + 0.25) < 0.01
+            out[#out + 1] = "position round trip " .. YesNo(back)
+            pcall(m.SetPosition, m, 0, 0, 0)
+        end
+        local ms = rawget(_G, "ModelSettings")
+        local key
+        local okR, _, race = Call("UnitRace", "player")
+        local okS, sex = Call("UnitSex", "player")
+        if okR and type(race) == "string" and okS then key = race .. (sex == 2 and "Male" or "Female") end
+        out[#out + 1] = "ModelSettings " .. YesNo(type(ms) == "table")
+            .. (type(ms) == "table" and key and (" " .. key .. " " .. YesNo(type(ms[key]) == "table")) or "")
+        return table.concat(out, ", ")
+    end },
+    { "Target model", function()
+        local okP, isPlayer = Call("UnitIsPlayer", "target")
+        if not (okP and isPlayer == true) then return "no player target" end
+        if InCombatLockdown and InCombatLockdown() then return "in combat, not tried" end
+        local m = ModelMethods()
+        if not (m and IsFunc(m.SetUnit)) then return "SetUnit no" end
+        local okI, inInst = Call("IsInInstance")
+        local ok, r = pcall(m.SetUnit, m, "target")
+        local res
+        if not ok then res = "error"
+        elseif Safe(r) == "secret" then res = "secret"
+        else res = r and "yes" or "no" end
+        pcall(m.SetUnit, m, "player")
+        return "SetUnit(target) " .. res .. ((okI and inInst) and ", in an instance" or ", outside instances")
+    end },
+    { "Dressing Room", function()
+        local s = Has({ "DressUpTransmogSet", "DressUpItemTransmogInfoList", "DressUpItemLink",
+            "ItemUtil.CreateItemTransmogInfo", "TransmogUtil.CreateCustomSetSlashCommand" })
+        local f = rawget(_G, "DressUpFrame")
+        s = s .. ", DressUpFrame.ModelScene " .. YesNo(type(f) == "table" and type(f.ModelScene) == "table")
+        return s .. ", " .. Val("C_TransmogCollection.GetNumMaxCustomSets")
+    end },
+    { "Same look", function()
+        local out = {}
+        for _, id in ipairs({ 16827, 16820 }) do
+            local ok, app, src = Call("C_TransmogCollection.GetItemInfo", id)
+            if not ok then
+                out[#out + 1] = id .. " GetItemInfo " .. (Get(_G, "C_TransmogCollection.GetItemInfo") and "error" or "no")
+            elseif type(app) ~= "number" then
+                out[#out + 1] = id .. " appearance " .. Safe(app)
+            else
+                local s = ("%d app %s src %s"):format(id, Safe(app), Safe(src))
+                local okA, list = Call("C_TransmogCollection.GetAllAppearanceSources", app)
+                if okA and type(list) == "table" then
+                    s = s .. " sources " .. #list
+                    for i = 1, math.min(3, #list) do
+                        local okS, info = Call("C_TransmogCollection.GetSourceInfo", list[i])
+                        if okS and type(info) == "table" then
+                            s = s .. " " .. Safe(info.itemID) .. (info.isCollected and "+" or "-")
+                        end
+                    end
+                else
+                    s = s .. " sources " .. (okA and Safe(list) or "error")
+                end
+                out[#out + 1] = s
+            end
+        end
+        return table.concat(out, "; ")
+    end },
+    { "Viewer art", function()
+        local s = "MaximizeMinimizeButtonFrameTemplate "
+        local info = Get(_G, "C_XMLUtil.GetTemplateInfo")
+        if IsFunc(info) then
+            local ok, r = pcall(info, "MaximizeMinimizeButtonFrameTemplate")
+            s = s .. YesNo(ok and r ~= nil)
+        else
+            s = s .. "?"
+        end
+        local T, m = ns.Theme, ModelMethods()
+        if T and T.TryTexture and m then
+            local tex = m:CreateTexture()
+            local okR, _, race = Call("UnitRace", "player")
+            local files = { "Interface\\Common\\UI-ModelControlPanel" }
+            if okR and type(race) == "string" then files[2] = "Interface\\DressUpFrame\\DressUpBackground-" .. race .. "1" end
+            for _, f in ipairs(files) do
+                local okT, loads = pcall(T.TryTexture, tex, f)
+                s = s .. ", " .. (f:match("([^\\]+)$") or f) .. " " .. YesNo(okT and loads)
+            end
+        end
+        for _, slot in ipairs({ "SHIRTSLOT", "TABARDSLOT" }) do
+            local ok, id, texture = Call("C_PaperDollInfo.GetInventorySlotInfo", slot)
+            s = s .. (", %s %s %s"):format(slot, ok and Safe(id) or "?", ok and Safe(texture) or "")
+        end
+        return s
+    end },
+    { "Looks only", function()
+        local D, O = ns.Data, ns.Owned
+        if not (D and D.GetSets and O and O.GetState) then return "?" end
+        local ok, sets = pcall(D.GetSets, D)
+        if not ok or type(sets) ~= "table" then return "?" end
+        local pieces, inSets = 0, 0
+        for _, set in ipairs(sets) do
+            local n = 0
+            for _, p in ipairs(set.pieces or {}) do
+                local okS, st = pcall(O.GetState, O, p)
+                if okS and st == "look" then n = n + 1 end
+            end
+            if n > 0 then pieces = pieces + n; inSets = inSets + 1 end
+        end
+        return ("%d pieces in %d sets (counted as %s)"):format(pieces, inSets, (O.CountsLooks and O.CountsLooks()) and "have" or "need")
+    end },
     { "Other addons", function()
         local out = {}
         for _, name in ipairs({ "TomTom", "Auctionator", "TradeSkillMaster", "Questie" }) do

@@ -298,6 +298,10 @@ InitRow = function(row, piece)
     end
     -- Under the state: the alt line, else (piece still needed) its fixed gold cost.
     local extra = PieceList.AltLine(piece, state)
+    -- 1.1.1: a collected look with the item still needed (items-only counting) says so.
+    if not extra and state == "look" and not ns.Owned:IsHave(piece) then
+        extra = L.LOOK_ITEM_NEEDED or "item still needed"
+    end
     if not extra and not piece.unknown and not ns.Owned:IsHave(piece) and ns.Progress and ns.Progress.PieceMoney then
         extra = ns.Progress.PieceMoney(itemID)
     end
@@ -586,8 +590,15 @@ local function CountTooltip(self)
         end
     end
     if b.look > 0 then
+        -- 1.1.1: the Looks count (items + looks) and what the setting does with looks
+        local looks, total = ns.Owned:LookCount(set)
+        local r, g, bl = W.StateColor("look"):GetRGB()
+        local vr, vg, vb = Theme.colors.text:GetRGB()
+        GameTooltip:AddDoubleLine(L.LOOKS_LABEL or "Looks",
+            ("%d / %d"):format(looks, total), r, g, bl, vr, vg, vb)
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine(L.APPEARANCE_NOTE, Theme.colors.subtle:GetRGB())
+        local note = ns.Owned.CountsLooks() and L.APPEARANCE_NOTE or (L.APPEARANCE_NOTE_ITEMS or L.APPEARANCE_NOTE)
+        GameTooltip:AddLine(note, Theme.colors.subtle:GetRGB())
     end
     PieceList.AddDoneLines(GameTooltip, set)
     -- WoW Forever lines: pieces not out yet (not in "Have x / y"), checked / not confirmed.

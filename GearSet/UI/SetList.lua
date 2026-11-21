@@ -151,6 +151,15 @@ local function SetTooltip(row)
     end
     local have, total = ns.Owned:SetCount(set)
     GameTooltip:AddLine(L.HAVE_COUNT:format(have, total), Theme.CountColor(have, total))
+    -- 1.1.1: "Looks: 7 / 8" when collected looks add to what you own
+    local O = ns.Owned
+    if O.LookCount then
+        local looks = O:LookCount(set)
+        if looks > have then
+            local c = Theme.stateColor and Theme.stateColor.look or Theme.colors.subtle
+            GameTooltip:AddLine((L.LOOKS_LINE or "Looks: %d / %d"):format(looks, total), c:GetRGB())
+        end
+    end
     SetList.AddLevelLine(GameTooltip, set)
     if ns.PieceList and ns.PieceList.AddDoneLines then pcall(ns.PieceList.AddDoneLines, GameTooltip, set) end
     SetList.AddAltLines(GameTooltip, set)

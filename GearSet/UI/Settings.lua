@@ -29,6 +29,7 @@ local VAR = {
     lootMark       = "GearSet_LootMark",
     nextTargets    = "GearSet_NextTargets",    -- 1.1 beta.2 (UI\Progress.lua tooltip line)
     handIns        = "GearSet_HandIns",        -- 1.1 beta.4 (HandIns.lua chat line)
+    countLooks     = "GearSet_CountLooks",     -- 1.1.1 (Owned.lua: items vs collected looks)
 }
 -- 1.1 beta.2: the price source dropdown (a string setting, not in VAR: S:Refresh only
 -- handles the booleans there). Values: AHPrices.lua.
@@ -152,7 +153,52 @@ local VALUES = {
         set = function(v) local db = DB(); if db then db.nextTargets = v and true or false end end,
         default = true,
     },
+    -- 1.1.1: count collected looks as have (off = items you own only).
+    countLooks = {
+        get = function() local db = DB(); return db and db.countLooks == true or false end,
+        set = function(v)
+            local O = ns.Owned
+            if O and O.SetCountsLooks then
+                O.SetCountsLooks(v)
+            else
+                local db = DB(); if db then db.countLooks = v and true or false end
+            end
+        end,
+        default = false,
+    },
 }
+
+-- 1.1.1 "Check finished sets again" (Alts:RecheckDone): how many dates it would move.
+local function RecheckCount()
+    local A = ns.Alts
+    if not (A and A.RecheckDone) then return 0 end
+    local ok, n = pcall(A.RecheckDone, A, true)
+    return ok and type(n) == "number" and n or 0
+end
+
+-- plain = no count (at load: the alt index isn't built that early; S:Refresh fills the count in
+-- before the page opens).
+local function RecheckText(plain)
+    if plain then return T("S_RECHECK_PLAIN", "Check finished sets again") end
+    return T("S_RECHECK", "Check finished sets again (%d)"):format(RecheckCount())
+end
+
+function S.Recheck()
+    local A = ns.Alts
+    if not (A and A.RecheckDone) then return 0 end
+    local ok, n = pcall(A.RecheckDone, A, false)
+    n = ok and type(n) == "number" and n or 0
+    if ns.Print then
+        if n > 0 then
+            ns.Print(T("S_RECHECK_DONE", "%d finished dates moved to the backup."):format(n))
+        else
+            ns.Print(T("S_RECHECK_NONE", "Every finished set still has all its items."))
+        end
+    end
+    if n > 0 and ns.UI and ns.UI.IsShown and ns.UI:IsShown() and ns.UI.RefreshAll then pcall(ns.UI.RefreshAll, ns.UI) end
+    S:Refresh()
+    return n
+end
 
 local function PriceGet()
     local db = DB()
@@ -492,6 +538,14 @@ function S:Init()
         T("S_ALT_CLICK_TIP", "Works on bag items, chat links, loot and the character window."))
 
     Header(layout, T("S_PROGRESS", "Progress"))
+    self.settings.countLooks = Checkbox(category, "countLooks",
+        T("S_COUNT_LOOKS", "Count collected appearances as have"),
+        T("S_COUNT_LOOKS_TIP", "Off: only items you own count (what the set bonus needs). On: a collected look counts as having the piece."))
+    self.recheckInit = Button(category, layout, T("S_RECHECK_LABEL", "Finished sets"), RecheckText(true), S.Recheck,
+        T("S_RECHECK_TIP", "Checks this character and your saved alts; moves the finished date of every set whose items that character doesn't own now into a kept backup."))
+    if type(self.recheckInit) == "table" and type(self.recheckInit.AddModifyPredicate) == "function" then
+        pcall(self.recheckInit.AddModifyPredicate, self.recheckInit, function() return RecheckCount() > 0 end)
+    end
     self.settings.milestoneNotes = Checkbox(category, "milestoneNotes",
         T("S_MILESTONES", "Milestone notes in chat"),
         T("S_MILESTONES_TIP", "One quiet chat line when you reach a milestone, like your first complete set. No sound."))
@@ -553,6 +607,7 @@ end
 local function OpenNow()
     local c = S.category
     if not (c and type(Settings.OpenToCategory) == "function") then return false end
+    S.opened = true
     S:Refresh()
     return (pcall(Settings.OpenToCategory, CategoryID(c)))
 end
@@ -607,5 +662,7 @@ function S:Refresh()
     SetData(self.unhideInit, "buttonText", UnhideText())
     SetData(self.skipInit, "buttonText", SkippedText())
     SetData(self.forgetInit, "name", ForgetLabel())
+    -- counted only once the page was opened (OpenNow), not on every list refresh at load
+    if self.opened then SetData(self.recheckInit, "buttonText", RecheckText()) end
     self.refreshing = nil
 end

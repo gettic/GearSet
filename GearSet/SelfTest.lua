@@ -837,6 +837,14 @@ local V9_SAMPLE = {
         quests = { [4182] = true, [4183] = true, x = 5 } } },
 }
 
+-- 1.1.1-beta.2 (DB v10): looks counted as have, note already shown, a character with finished
+-- dates moved aside by "Check finished sets again" (made-up "A" again).
+local V10_SAMPLE = {
+    version = 10, countLooks = true, lookNote = true,
+    chars = { ["A-Realm"] = { name = "A", realm = "Realm", done = { [181] = 1700000000 },
+        doneOld = { [204] = 1690000000, [5] = "junk" } } },
+}
+
 local function CheckSaved()
     local prep = ns.PrepareDB
     Count()
@@ -1018,9 +1026,31 @@ local function CheckSaved()
     if not ok then
         Problem("DB", "v9", Short(err))
     else
-        local lost = Lost(V9_SAMPLE, v9)
-        if lost then Problem("DB", "v9", "changed " .. lost) end
+        local lost = Lost(V9_SAMPLE, v9, nil, 0, { version = true })   -- 1.1.1: version raised to 10
+        if lost then Problem("DB", "v9", "changed " .. lost)
+        elseif v9.countLooks ~= false or v9.lookNote ~= false or v9.version ~= ns.DB_VERSION then
+            Problem("DB", "v9 -> v10", "v10 keys not added (countLooks off, note due)")
+        end
     end
+    -- 3i. 1.1.1 (DB v10): v10 data goes through unchanged (backup dates and junk kept); wrong-typed
+    -- values fall back; a fresh table never gets the "counts changed" note.
+    Count()
+    local v10 = DeepCopy(V10_SAMPLE)
+    ok, err = pcall(prep, v10)
+    if not ok then
+        Problem("DB", "v10", Short(err))
+    else
+        local lost = Lost(V10_SAMPLE, v10)
+        if lost then Problem("DB", "v10", "changed " .. lost) end
+    end
+    Count()
+    local bad10, fresh = { version = 10, countLooks = "yes", lookNote = 4 }, {}
+    ok, err = pcall(prep, bad10)
+    local okF, errF = pcall(prep, fresh)
+    if not ok then Problem("DB", "bad v10", Short(err))
+    elseif not okF then Problem("DB", "fresh", Short(errF))
+    elseif bad10.countLooks ~= false or bad10.lookNote ~= true then Problem("DB", "bad v10", "not fixed")
+    elseif fresh.lookNote ~= true or fresh.countLooks ~= false then Problem("DB", "fresh", "note due on a new install") end
     Count()
     local bad8 = { version = 8, plan = 5, handIns = "x", seenOut = 3 }
     local bad8b = { version = 8, plan = { pinned = { ["A-Realm"] = 4, ["B-Realm"] = { MC = true } } } }
@@ -1439,6 +1469,39 @@ local function CheckSearch()
 end
 
 -- Info "memory: N KB" = this addon's Lua memory as the game counts it (read-only; out of combat).
+-- 1.1.1 items vs looks (Owned.lua), read-only on the live counts: a collected look never counts
+-- as have with the setting off; the Looks count is never below the items; Info line with the
+-- number of look-only pieces.
+local function CheckOwned()
+    local O, D = ns.Owned, ns.Data
+    if not (O and O.LookCount and O.ItemCount and O.CountsLooks and D and D.GetSets) then
+        return Skip("owned", "(no looks count)")
+    end
+    local sets = D:GetSets()
+    local looks, inSets, bad = 0, 0, {}
+    local countsLooks = O.CountsLooks()
+    for _, set in ipairs(sets) do
+        Count()
+        local n = 0
+        for _, p in ipairs(set.pieces) do
+            local st = O:GetState(p)
+            if st == "look" then
+                n = n + 1
+                if O:IsOwned(p) or (O:IsHave(p) ~= countsLooks) then bad[#bad + 1] = tostring(p.itemID) end
+            end
+        end
+        if n > 0 then looks = looks + n; inSets = inSets + 1 end
+        local items, total = O:ItemCount(set)
+        local lk, lt = O:LookCount(set)
+        local have = O:SetCount(set)
+        if lk < items or have < items or lt < total then bad[#bad + 1] = set.key end
+    end
+    if #bad > 0 then
+        Problem("OWNED", "looks", "count rule broken: " .. table.concat(bad, ", ", 1, math.min(#bad, 5)))
+    end
+    Info(("looks only: %d pieces in %d sets (counted as %s)"):format(looks, inSets, countsLooks and "have" or "need"))
+end
+
 local function MemoryInfo()
     if InCombat() then return end
     local update = (C_AddOns and C_AddOns.UpdateAddOnMemoryUsage) or _G.UpdateAddOnMemoryUsage
@@ -2759,6 +2822,7 @@ function ST:Start(mode)
     Guard("db", CheckSaved)
     Guard("alts", CheckAlts)
     Guard("progress", CheckProgress)
+    Guard("owned", CheckOwned)
     Guard("data", CheckData)
     Guard("places", CheckPlaces)
     Guard("hooks", CheckHooks)

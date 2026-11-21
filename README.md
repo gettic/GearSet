@@ -53,6 +53,8 @@ Open them with the gear button at the top right of the window, a right-click on 
 | Alt-click an item to open its guide | Turns Alt-click on or off (on by default) |
 | Milestone notes in chat | One quiet chat line when you reach a [milestone](#tabs-and-progress) (on by default) |
 | Next targets in the button tooltip | The minimap and broker tooltip name the [3 sets closest to done](#tabs-and-progress) (on by default). Under **Progress** |
+| Count collected appearances as have | Off by default: only items you own count, as the set bonus needs. On: a collected look counts as having the piece. Under **Progress**. See [Items and looks](#items-and-looks) |
+| Check finished sets again (n) | Moves the finished date of each set whose items a character no longer owns into a kept backup. Nothing is deleted. Greyed out when n is 0. See [Items and looks](#items-and-looks). Under **Progress** |
 | Prices from | Where the [shopping list](#shopping-list) gets auction prices: "Auctionator or TSM" (default), "Auctionator", "TSM" or "Off". Under **Shopping** |
 | Open the dungeon checklist by itself | Opens the [dungeon checklist](#dungeon-checklist-and-loot-roll-star) when you enter a dungeon or raid with pieces you need (on by default) |
 | With nothing tracked, use sets I've started | When you track nothing, the checklist and the loot roll star use sets you have started and your class can wear (on by default) |
@@ -74,16 +76,26 @@ Open them with the gear button at the top right of the window, a right-click on 
 | Removed sets | Sets taken out of the game in patch 1.11 (old PvP rare sets) are hidden. "Show removed sets" shows them with a grey name |
 | Faction | PvP and Arathi Basin sets show a small faction icon. "Only my faction" hides the other faction's sets |
 | No match | The list says which search and filters are on, with a button to clear them |
-| Count | Each set shows how many of its pieces you have |
+| Count | Each set shows how many of its pieces you own (items, not looks). The set tooltip adds "Looks: n / N" when collected looks add to that |
 | Hide a set | Right-click it and pick "Hide this set". "Show hidden sets" in the filter menu lists hidden sets again in grey with a "hidden" tag; right-click one and pick "Show this set". "Reset filters" turns "Show hidden sets" off. Hidden sets are kept through `/reload` and updates |
 | Tier | The set tooltip shows the tier tag (Dungeon Set 1/2, Tier 1-3, Zul'Gurub, Ruins / Temple of Ahn'Qiraj, PvP), for example "Tier: Tier 2" |
 | Sort | In the filter menu: "Most owned first" (default), "Closest to finishing", "Least effort" or "Name" |
 | Order | "Most owned first": complete sets first, then sets you have some pieces of, then the rest. In each group, the sets you own most of come first, then A-Z. "Closest to finishing": sets missing the fewest pieces first, complete sets last. "Least effort": sets that need the least work for the pieces you still need first, then sets with unknown effort, complete sets last. In every order, sets that are out now come before sets not out yet. The chosen set stays in view when the order changes |
-| Finished sets | A set you finished stays finished, even after you upgrade or sell pieces. Its tooltip shows the date you finished it |
+| Finished sets | A set you finished stays finished, even after you upgrade or sell pieces. Its tooltip shows the date you finished it. The date is only recorded when you own every item |
 | Track a set | Shift-click it. A gold star shows on the row. Tracking is saved per character |
 | Right-click menu | Track, Share in chat, Hide |
 | Tracked only, Tier | In the filter menu: "Tracked only" lists only tracked sets (or sets with a tracked piece). "Tier" picks one tier tag |
 | Share in chat | Right-click a set and pick "Share in chat". It puts the set name and its item links into your chat box (up to 255 characters, whole links only). When not every piece fits, it reads "Set name: [link] [link] +5 more" and Gear Set says how many fit. You press Enter to send. Gear Set never sends anything itself. If nothing can be added (chat box too full, or item info still loading), one "Gear Set:" line in chat says why |
+
+### Items and looks
+
+By default Gear Set counts only items you own, because that is what a set bonus needs. If you collected a piece's look (for example from a group roll you lost) but don't own the item, the piece shows "Look collected" in blue with "item still needed" under it. It stays on the checklist, the loot roll star and the Plan tab, and the set tooltip and Progress tab show the looks count separately.
+
+| What | How |
+|---|---|
+| Count looks as have | Settings > Progress > "Count collected appearances as have" (off by default) |
+| Check finished sets again | Settings > Progress. Moves the finished date of sets whose items a character no longer owns into a kept backup. Nothing is deleted. Old dates stay until you press it. It leaves alone alts whose bank Gear Set has never seen |
+| After the update | One chat line explains the change, once |
 
 ### Preview (middle)
 
@@ -96,11 +108,11 @@ Your character wearing the chosen set.
 | Show only the set | Tick "Only the set" (bottom bar) to take off your own gear (off by default, so your own gear shows with the set) |
 | Take a piece off | Untick its box in the list on the right; tick it again to put it back |
 | Start over | "Reset view" (bottom bar) turns the model back, zooms out and puts all pieces back |
-| Hide helm, cloak or weapons | Three small buttons next to "Reset view" hide that slot on the preview only. Your character is not changed. Click again to show it. The choice is kept for all characters |
+| Hide helm, cloak or weapons | Three small buttons next to "Reset view" hide that slot on the preview only, the set's own piece too. Your character is not changed. Click again to show it. The choice is kept for all characters |
 
 ### Pieces (right)
 
-The set's pieces. At the top: the set name (arrows beside it go to the previous or next set), its armor type and classes, and "Have x / y". Hover "Have x / y" to see how many pieces are equipped, in your bags, bank, mailbox, keyring or account bank, or only collected as an appearance. Next to it, "Set bonuses (2/3)" shows the bonuses in effect out of all (grey when the set has none). Only pieces you wear count. Hover it to see "Set name (worn/total)" and each bonus; a bonus is green when you wear enough pieces. Each piece shows where it is: Equipped, In bags, In bank, In mailbox, On keyring, Account bank, Appearance or Need. The mailbox, keyring and account bank are only checked when you open the mailbox or bank, so those pieces show a grey date, such as "seen 3 days ago". The account bank only counts if the game lets addons read it. For pieces your other characters have, see [Your other characters](#your-other-characters).
+The set's pieces. At the top: the set name (arrows beside it go to the previous or next set), its armor type and classes, and "Have x / y". Hover "Have x / y" to see how many pieces are equipped, in your bags, bank, mailbox, keyring or account bank, or only collected as a look (see [Items and looks](#items-and-looks)). Next to it, "Set bonuses (2/3)" shows the bonuses in effect out of all (grey when the set has none). Only pieces you wear count. Hover it to see "Set name (worn/total)" and each bonus; a bonus is green when you wear enough pieces. Each piece shows where it is: Equipped, In bags, In bank, In mailbox, On keyring, Account bank, Look collected (with "item still needed" under it) or Need. The mailbox, keyring and account bank are only checked when you open the mailbox or bank, so those pieces show a grey date, such as "seen 3 days ago". The account bank only counts if the game lets addons read it. For pieces your other characters have, see [Your other characters](#your-other-characters).
 
 Next to "Set bonuses" are two more hovers:
 
@@ -201,7 +213,7 @@ Three tabs sit at the bottom of the window: **Sets** (the window described above
 | What | How |
 |---|---|
 | Count box | "Sets complete" under the title bar, for this character. Hover for details, click to open this tab |
-| Totals | The % of set pieces you have, and how many sets are complete or started |
+| Totals | The % of set pieces you own, and how many sets are complete or started. When collected looks add to that, a line "Looks collected: n / N pieces" follows (this character) |
 | Bars | Blizzard-style bars (like the Skills page), one per content kind and tier. They scroll. Click a bar to list those sets |
 | Recently got | Set pieces you got lately, with dates |
 | Characters | Each saved character as a bar |
@@ -274,7 +286,7 @@ To remove an old character, use Settings > Characters > "Forget a character", or
 
 ### Inspect
 
-After you inspect someone, a strip under the inspect window shows the set they wear most, for example "Gear Set: Stabby wears Bloodfang 6/8". Hover it to see all their sets. Nothing about other players is saved.
+After you inspect someone, a strip under the inspect window shows the set they wear most, for example "Gear Set: Stabby wears Bloodfang 6/8". Hover it to see all their sets. It counts the items worn, not their looks. Nothing about other players is saved.
 
 ### Data bars
 
@@ -295,7 +307,7 @@ Most of the data is classic data, not yet checked on WoW Forever. The guide page
 | Colour | Pieces (right) | Sets (left) and "Have x / y" |
 |---|---|---|
 | Green | You have it: equipped, in bags, bank, mailbox, keyring or account bank | You have every piece |
-| Blue | Appearance collected (counts as have) | - |
+| Blue | Look collected, item still needed (counts only with "Count collected appearances as have") | - |
 | Gold | - | You have some pieces |
 | Grey | You still need it | You have none |
 
@@ -312,7 +324,7 @@ Most of the data is classic data, not yet checked on WoW Forever. The guide page
 | `/gs plan` | Open the window on the [Plan tab](#plan-tab) |
 | `/gs help` | List the commands in chat and show the help on the window |
 | `/gs check` | Show the data version, last-checked date, WoW Forever build, data sources and how many sets and sources are checked on Forever, then check the built-in set list against the game and print any problems |
-| `/gs probe` | List which game features this client has (waypoints, current map, tooltips, lockouts with bosses, keys, zone names, attunes, reputation, keyring, account bank, journals, art) and put the result in a copy box to paste into a bug report |
+| `/gs probe` | List which game features this client has (waypoints, current map, tooltips, lockouts with bosses, keys, zone names, attunes, reputation, keyring, account bank, journals, art, and the 1.2 viewer: Viewer, Target model, Dressing Room, Same look, Viewer art, Looks only) and put the result in a copy box to paste into a bug report |
 | `/gs selftest` | The addon checks its own window, buttons, art, saved settings (on copies, yours are never changed) and data, then puts one line in a copy box to paste into a bug report. The line also says how many characters are saved, whether the account bank could be read, and how much memory the addon uses (for example "memory: 2500 KB"; left out if the game can't tell). It has no character name, realm, guild or web address. In combat it waits until the fight ends |
 | `/gs selftest full` | The same, and it also opens and closes a guide page and the help |
 

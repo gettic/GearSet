@@ -317,6 +317,18 @@ function Progress:Get(scope)
     return s
 end
 
+-- 1.1.1: the "Looks collected" summary for this character (items + collected looks, same sets
+-- and class rule as "This character"); cached like Get. nil = no data yet.
+function Progress:Looks()
+    if cache.looks then return cache.looks end
+    local sets, O = AllSets(), ns.Owned
+    if not (sets and O and O.LookCount) then return nil end
+    local count = function(set) return O:LookCount(set) end
+    local s = Progress.Summarize(sets, count, Faction(), HiddenFn(), ClassFilter(MyClassID()))
+    cache.looks = s
+    return s
+end
+
 -- One summary per saved character (Progress tab rows; this character first).
 function Progress:Chars()
     if cache.chars then return cache.chars end
@@ -1556,8 +1568,14 @@ function Progress:Refresh()
     end
     self.pct:SetText(PctTitle(s))
     self.pct:SetTextColor(Theme.colors.progressHead:GetRGB())
-    self.summary:SetText(T("P_SUMMARY", "%d complete, %d started, %d / %d pieces"):format(
-        s.complete, s.started, s.have, s.total))
+    local summary = T("P_SUMMARY", "%d complete, %d started, %d / %d pieces"):format(
+        s.complete, s.started, s.have, s.total)
+    -- 1.1.1: "Looks collected" next to it (this character) when looks add to the items
+    local looks = scope == "char" and self:Looks()
+    if looks and looks.have > s.have then
+        summary = summary .. "  -  " .. T("P_LOOKS", "Looks collected: %d / %d pieces"):format(looks.have, looks.total)
+    end
+    self.summary:SetText(summary)
     local t = self:TrackedStats()
     if t.sets + t.pieces > 0 then
         self.tracked:SetText(T("P_TRACKED", "Tracked: %d sets and %d pieces, %d pieces still needed"):format(t.sets, t.pieces, t.left))

@@ -646,6 +646,106 @@ function Alts:MarkCompleted(setID)
     liveDone[id] = Now()
 end
 
+-- 1.1.1 "Check finished sets again" (Settings): finished dates saved before items-only counting
+-- may have come from collected looks. Every saved finished set (each own character, plus this
+-- character's unsaved ones) whose items that character doesn't own now has its date moved to
+-- rec.doneOld[setID] (oldest date; other dates of that set in rec.doneOldMore[setID], a list;
+-- broken saved values kept under "<field>Bad"; nothing is deleted). dry = only count.
+-- This character: Owned:ItemCount on the built set (sets with pieces this client doesn't know
+-- are skipped); other characters: their last saved items (+ the account bank), and only once
+-- Gear Set has seen their bank (never read / bank never seen -> left alone).
+-- Returns the number of dates moved (or that would be moved).
+function Alts:RecheckDone(dry)
+    local db = DB()
+    if not db then return 0 end
+    local me = self:MyKey()
+    local O, D = ns.Owned, ns.Data
+    Index()
+    local function OwnsAll(key, id, rec)
+        if key == me then
+            local set = D and D.GetSet and D:GetSet("c" .. id)
+            if not (set and O and O.ItemCount) then return true end      -- unknown set: leave it
+            if O.UnknownCount and O.UnknownCount(set) > 0 then return true end
+            local have, total = O:ItemCount(set)
+            return total == 0 or have >= total
+        end
+        -- nothing ever read for that character (no places saved): leave its dates alone
+        if not (type(rec) == "table" and type(rec.places) == "table" and next(rec.places)) then return true end
+        -- its bank was never seen: the items may be there, so leave its dates alone too
+        if rec.places.bank == nil then return true end
+        local items = charItems and charItems[key] or {}
+        local pieces = Alts.SetPieceIDs(id)
+        for _, x in ipairs(pieces) do
+            if not (items[x] or (accountItems and accountItems[x])) then return false end
+        end
+        return true
+    end
+    local moved = 0
+    -- A broken (non-table) saved value is kept under the first free side key, never overwritten.
+    local function TableAt(rec, field)
+        local cur = rec[field]
+        if type(cur) == "table" then return cur end
+        if cur ~= nil then
+            local side, n = field .. "Bad", 1
+            while rec[side] ~= nil do n = n + 1; side = field .. "Bad" .. n end
+            rec[side] = cur
+        end
+        rec[field] = {}
+        return rec[field]
+    end
+    -- doneOld[id] holds the oldest date; every other date of that set goes into the list
+    -- doneOldMore[id] (so a second recheck after buying and selling again loses nothing).
+    local function Move(key, rec, id, t)
+        moved = moved + 1
+        if dry then return end
+        local old = TableAt(rec, "doneOld")
+        local cur = old[id]
+        if cur == nil then old[id] = t; return end
+        if cur == t then return end
+        local more = TableAt(rec, "doneOldMore")
+        if type(more[id]) ~= "table" then
+            if more[id] ~= nil then TableAt(more, id) else more[id] = {} end
+        end
+        local list = more[id]
+        if Num(cur) and cur <= t then
+            list[#list + 1] = t
+        else
+            list[#list + 1] = cur              -- a newer or broken old value moves to the list
+            old[id] = t
+        end
+    end
+    for key, rec in pairs(db.chars) do
+        if type(key) == "string" and type(rec) == "table" and type(rec.done) == "table" then
+            for id, t in pairs(rec.done) do
+                if type(id) == "number" and Num(t) and not OwnsAll(key, id, rec) then
+                    Move(key, rec, id, t)
+                    if not dry then rec.done[id] = nil end
+                end
+            end
+        end
+    end
+    -- this character's finished sets not saved yet (saved at logout)
+    if me then
+        for id, t in pairs(liveDone) do
+            if not OwnsAll(me, id) then
+                if dry then
+                    moved = moved + 1
+                else
+                    if type(db.chars[me]) ~= "table" then db.chars[me] = { name = myName, realm = myRealm } end
+                    Move(me, db.chars[me], id, t)
+                    liveDone[id] = nil
+                end
+            end
+        end
+    end
+    if not dry and moved > 0 then
+        Dirty()
+        if O and O.Invalidate then O:Invalidate() end
+        if ns.Progress and ns.Progress.Invalidate then pcall(ns.Progress.Invalidate, ns.Progress) end
+    end
+    return moved
+end
+
 function Alts:GetSetProgress(setID, charKey)
     local id = SetIDOf(setID)
     if not id then return 0, 0 end
